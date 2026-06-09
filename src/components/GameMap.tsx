@@ -64,6 +64,9 @@ export default function GameMap({
   const onHoverCityRef = useRef(onHoverCity);
   const citiesRef = useRef(cities);
 
+  // Keep track of previous connections to animate newly built lines
+  const prevEdgesRef = useRef<Edge[]>(edges);
+
   useEffect(() => {
     selectedCityIdRef.current = selectedCityId;
     onSelectCityRef.current = onSelectCity;
@@ -71,6 +74,144 @@ export default function GameMap({
     onHoverCityRef.current = onHoverCity;
     citiesRef.current = cities;
   }, [selectedCityId, onSelectCity, onConnectCities, onHoverCity, cities]);
+
+  // Train animation helper
+  const animateTrainPath = (fromCity: City, toCity: City) => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+
+    // Create a beautiful, premium, custom SVG train/locomotive wrapper
+    const trainSvg = `
+      <div style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 24px; height: 24px; filter: drop-shadow(0px 3px 4px rgba(0,0,0,0.45));">
+          <!-- Outer circular high-contrast rim -->
+          <circle cx="12" cy="12" r="11" fill="#0f172a" stroke="#fbbf24" stroke-width="1.8"/>
+          <!-- Train body (cab & engine boiler facing right) -->
+          <rect x="4" y="10.5" width="11" height="4" rx="1" fill="#ef4444" />
+          <rect x="13.5" y="7.5" width="5.5" height="7" rx="0.8" fill="#ef4444" />
+          <!-- Cabin Window -->
+          <rect x="14.5" y="8.5" width="3.5" height="2.5" rx="0.5" fill="#38bdf8" />
+          <!-- Chimney smoke stack & gold headlight -->
+          <rect x="6" y="8" width="1.5" height="2.5" fill="#facc15" />
+          <polygon points="19,11 21,12 19,13" fill="#fbbf24" />
+          <!-- Wheels -->
+          <circle cx="6.5" cy="15.2" r="1.3" fill="#fef08a" />
+          <circle cx="10.5" cy="15.2" r="1.3" fill="#fef08a" />
+          <circle cx="14.5" cy="15.2" r="1.3" fill="#fef08a" />
+          <!-- Small sweet particles of white steam -->
+          <circle cx="5.5" cy="5.5" r="0.9" fill="#f1f5f9" opacity="0.8" />
+          <circle cx="4.2" cy="4.5" r="1.2" fill="#f1f5f9" opacity="0.6" />
+        </svg>
+      </div>
+    `;
+
+    // Angle of movement for rotation
+    const dLat = toCity.lat - fromCity.lat;
+    const dLng = toCity.lng - fromCity.lng;
+    const angle = Math.atan2(dLat, dLng) * (180 / Math.PI);
+    // Since geographic maps have positive Y pointing North, but pixel grids have positive Y pointing South:
+    const rotationAngle = -angle; 
+
+    // Create Marker that transforms rotatively
+    const trainIcon = L.divIcon({
+      html: `
+        <div style="transform: rotate(${rotationAngle}deg); transform-origin: center; width: 28px; height: 28px;">
+          ${trainSvg}
+        </div>
+      `,
+      className: 'leaflet-train-icon-marker',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+
+    const trainMarker = L.marker([fromCity.lat, fromCity.lng], {
+      icon: trainIcon,
+      zIndexOffset: 10000 // Ensure trains render on top of normal cities/rails
+    }).addTo(map);
+
+    const startTime = performance.now();
+    const duration = 2500; // 2.5 seconds transit time
+
+    const updateFrame = (now: number) => {
+      const elapsed = now - startTime;
+      const pct = Math.min(elapsed / duration, 1);
+
+      // Smooth Ease-In-Out
+      const ease = pct < 0.5 
+        ? 2 * pct * pct 
+        : 1 - Math.pow(-2 * pct + 2, 2) / 2;
+
+      const currentLat = fromCity.lat + (toCity.lat - fromCity.lat) * ease;
+      const currentLng = fromCity.lng + (toCity.lng - fromCity.lng) * ease;
+
+      trainMarker.setLatLng([currentLat, currentLng]);
+
+      if (pct < 1) {
+        requestAnimationFrame(updateFrame);
+      } else {
+        // Remove train once destination reached
+        trainMarker.remove();
+
+        // Spawn beautiful gold wave celebration burst
+        const burstSvg = `
+          <div class="relative flex items-center justify-center pointer-events-none">
+            <span class="absolute inline-flex h-12 w-12 rounded-full bg-amber-400/55 animate-ping"></span>
+            <span class="absolute inline-flex h-6 w-6 rounded-full bg-amber-500/25 animate-pulse"></span>
+          </div>
+        `;
+        const burstIcon = L.divIcon({
+          html: burstSvg,
+          className: 'train-arrival-sparkle',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+        const burstMarker = L.marker([toCity.lat, toCity.lng], { icon: burstIcon }).addTo(map);
+        setTimeout(() => burstMarker.remove(), 1000);
+      }
+    };
+
+    requestAnimationFrame(updateFrame);
+  };
+
+  // 1. Detect and Animate new track validations immediately
+  useEffect(() => {
+    const prevEdges = prevEdgesRef.current;
+    if (prevEdges && edges.length > prevEdges.length) {
+      // Find the edge that was recently added
+      const addedEdges = edges.filter(e => !prevEdges.some(pe => pe.id === e.id));
+      addedEdges.forEach(edge => {
+        const fromCity = cities.find(c => c.id === edge.from);
+        const toCity = cities.find(c => c.id === edge.to);
+        if (fromCity && toCity) {
+          // Play train traveling from origin to destination
+          animateTrainPath(fromCity, toCity);
+        }
+      });
+    }
+    prevEdgesRef.current = edges;
+  }, [edges, cities]);
+
+  // 2. Play casual passive backing trains over randomly connected paths to increase realism
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (edges.length === 0 || !mapRef.current) return;
+      // Spawn random train along an existing edge
+      const randomEdge = edges[Math.floor(Math.random() * edges.length)];
+      const fromCity = cities.find(c => c.id === randomEdge.from);
+      const toCity = cities.find(c => c.id === randomEdge.to);
+      if (fromCity && toCity) {
+        // Toggle direction randomly for organic flow
+        const reverse = Math.random() > 0.5;
+        if (reverse) {
+          animateTrainPath(toCity, fromCity);
+        } else {
+          animateTrainPath(fromCity, toCity);
+        }
+      }
+    }, 14000); // Trigger a lively train elsewhere every 14 seconds
+
+    return () => clearInterval(timer);
+  }, [edges, cities]);
 
   // Helper to generate the custom marker HTML based on city properties
   const getMarkerHtml = (city: City, conns: number, isSelected: boolean, isHovered: boolean) => {
@@ -184,6 +325,24 @@ export default function GameMap({
       opacity: 0.8
     }).addTo(map);
 
+    // Set up a ResizeObserver to handle container size changes beautifully and invalidate size
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize({ animate: false });
+      }
+    });
+
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
+    // Secondary fallback in case container takes slightly longer to layout
+    const fallbackTimer = setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    }, 200);
+
     // Clicking map background deselects active node
     map.on('click', (e) => {
       // Ignore clicks on markers (leaflet stops propagation typically, but if it leaks, check target)
@@ -282,6 +441,8 @@ export default function GameMap({
     });
 
     return () => {
+      resizeObserver.disconnect();
+      clearTimeout(fallbackTimer);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
