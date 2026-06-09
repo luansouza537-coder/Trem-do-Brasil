@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Custom Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* Customize Leaflet styles to blend with theme */
+.leaflet-custom-tooltip {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid rgba(71, 85, 105, 0.4) !important;
+  color: #f1f5f9 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+  backdrop-filter: blur(4px);
+}
+
+.leaflet-custom-tooltip .text-slate-800 {
+  color: #1e293b !important;
+}
+
+.leaflet-custom-tooltip .bg-slate-100 {
+  background-color: #f1f5f9 !important;
+}
+
+.leaflet-railway-tooltip {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+  padding: 6px 12px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Pulse animation for highlights */
+@keyframes map-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+.map-glow-highlight {
+  animation: map-pulse 2s infinite ease-in-out;
+}
+

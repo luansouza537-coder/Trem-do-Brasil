@@ -1,0 +1,6 @@
+{
+  "name": "Trilho Real - Conectando o Brasil",
+  "description": "Um jogo de conexão ferroviária onde o objetivo é ligar 57 cidades do Brasil em uma única linha contínua sem ciclos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
