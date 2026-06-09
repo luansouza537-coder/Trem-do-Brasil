@@ -231,7 +231,7 @@ export default function App() {
       />
 
       {/* 3. Primary Leaflet Map Container */}
-      <main className="flex-1 h-2/3 md:h-full relative overflow-hidden">
+      <main className="flex-1 h-[60vh] md:h-full relative overflow-hidden">
         
         {/* Helper overlay when a city is selected */}
         {selectedCityId && (

@@ -364,57 +364,79 @@ export default function GameMap({
           [toCity.lat, toCity.lng]
         ];
 
-        // 1. Dark thick underlay mimicking ties/background ballast
-        const baseLayer = L.polyline(latlngs, {
-          color: '#1e293b', // slate-800
-          weight: 7,
-          opacity: 0.9,
+        // 1. Ballast base layer (Leito de brita cinza largo)
+        const ballastLayer = L.polyline(latlngs, {
+          color: '#334155', // slate-700
+          weight: 8,
+          opacity: 0.85,
           lineCap: 'round'
         });
 
-        // 2. Dashed top track line creating distinct railway slats
-        const trackLayer = L.polyline(latlngs, {
-          color: '#ef4444', // heavy red
-          weight: 3.5,
+        // 2. Wooden Sleepers/Ties (Dormentes de madeira espaçados)
+        const tieLayer = L.polyline(latlngs, {
+          color: '#451a03', // canela escuro/mogno
+          weight: 6.5,
           opacity: 1.0,
-          dashArray: '6, 6', // spacing creating railroad cross bars
-          lineCap: 'square'
+          dashArray: '2, 5', // barras transversais realistas
+          lineCap: 'butt'
         });
 
-        // Click a track segment to DELETE / ERASE the track instantly! Amazing UX
+        // 3. Steel Rails Base (Banda metálica vermelha)
+        const railsBase = L.polyline(latlngs, {
+          color: '#ef4444', // vermelho vivo
+          weight: 4,
+          opacity: 1.0,
+          lineCap: 'round'
+        });
+
+        // 4. Steel Rails Center Split (Duplica o visual criando dois trilhos paralelos)
+        const railsSplit = L.polyline(latlngs, {
+          color: '#0f172a', // cor escura para cavar o meio
+          weight: 1.4,
+          opacity: 1.0,
+          lineCap: 'round'
+        });
+
+        // 5. Interactive invisible hitbox (Excelente sensibilidade ao toque e mouse)
+        const interactiveLayer = L.polyline(latlngs, {
+          color: 'transparent',
+          weight: 15,
+          opacity: 0.0
+        });
+
+        // Click handler to remove track segments instantly
         const deleteHandler = (e: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e);
-          // Trigger mock reconnect of same points to toggle deletion in parent state
-          onConnectCities(edge.from, edge.to);
+          onConnectCitiesRef.current(edge.from, edge.to);
         };
 
-        baseLayer.on('click', deleteHandler);
-        trackLayer.on('click', deleteHandler);
+        interactiveLayer.on('click', deleteHandler);
 
-        // Hover effect over railways
+        // Hover effects on the interactive area
         const hoverIn = () => {
-          trackLayer.setStyle({ color: '#f59e0b', weight: 4.5 }); // highlight to gold
-          baseLayer.setStyle({ weight: 9 });
+          railsBase.setStyle({ color: '#fbbf24', weight: 5 }); // brilha em ouro
+          ballastLayer.setStyle({ color: '#475569', weight: 10 });
         };
         const hoverOut = () => {
-          trackLayer.setStyle({ color: '#ef4444', weight: 3.5 }); // reset to red
-          baseLayer.setStyle({ weight: 7 });
+          railsBase.setStyle({ color: '#ef4444', weight: 4 });
+          ballastLayer.setStyle({ color: '#334155', weight: 8 });
         };
 
-        trackLayer.on('mouseover', hoverIn);
-        trackLayer.on('mouseout', hoverOut);
-        baseLayer.on('mouseover', hoverIn);
-        baseLayer.on('mouseout', hoverOut);
+        interactiveLayer.on('mouseover', hoverIn);
+        interactiveLayer.on('mouseout', hoverOut);
 
-        // Bind delete confirmation tooltip
-        trackLayer.bindTooltip(`Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-red-400 font-bold">Clique para remover trilho</span>`, {
+        // Bind delete confirmation tooltip to the interactive area
+        interactiveLayer.bindTooltip(`Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-red-400 font-bold">Clique para remover trilho</span>`, {
           sticky: true,
           direction: 'auto',
           className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
         });
 
-        trackGroupRef.current?.addLayer(baseLayer);
-        trackGroupRef.current?.addLayer(trackLayer);
+        trackGroupRef.current?.addLayer(ballastLayer);
+        trackGroupRef.current?.addLayer(tieLayer);
+        trackGroupRef.current?.addLayer(railsBase);
+        trackGroupRef.current?.addLayer(railsSplit);
+        trackGroupRef.current?.addLayer(interactiveLayer);
       }
     });
   }, [edges, cities]);
@@ -459,7 +481,7 @@ export default function GameMap({
         // Click handler to instantly build this track guide
         const buildHandler = (e: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e);
-          onConnectCities(pair.from, pair.to);
+          onConnectCitiesRef.current(pair.from, pair.to);
         };
 
         guideLine.on('click', buildHandler);

@@ -106,7 +106,7 @@ export default function Sidebar({
   }, [cities, search, typeFilter, connsFilter, cityConnections]);
 
   return (
-    <div id="control-sidebar" className="w-full md:w-96 text-slate-100 flex flex-col h-full overflow-hidden select-none">
+    <div id="control-sidebar" className="w-full md:w-96 text-slate-100 flex flex-col h-[40vh] md:h-full overflow-hidden select-none shrink-0">
       {/* Header */}
       <div className="p-4 bg-slate-900 border-b border-slate-700/80 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">

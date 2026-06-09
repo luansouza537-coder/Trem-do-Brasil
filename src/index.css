@@ -24,29 +24,48 @@
 
 /* Customize Leaflet styles to blend with theme */
 .leaflet-custom-tooltip {
-  background: rgba(15, 23, 42, 0.95) !important;
-  border: 1px solid rgba(71, 85, 105, 0.4) !important;
-  color: #f1f5f9 !important;
-  border-radius: 8px !important;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.96) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  color: #f8fafc !important;
+  border-radius: 10px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(8px);
+  padding: 8px 12px !important;
 }
 
-.leaflet-custom-tooltip .text-slate-800 {
-  color: #1e293b !important;
+.leaflet-custom-tooltip .text-slate-800,
+.leaflet-custom-tooltip .text-slate-900 {
+  color: #f8fafc !important;
 }
 
-.leaflet-custom-tooltip .bg-slate-100 {
-  background-color: #f1f5f9 !important;
+.leaflet-custom-tooltip .text-slate-500,
+.leaflet-custom-tooltip .text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+.leaflet-custom-tooltip .bg-slate-100,
+.leaflet-custom-tooltip .bg-slate-200 {
+  background-color: rgba(51, 65, 85, 0.6) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+}
+
+.leaflet-custom-tooltip .text-slate-800.font-bold {
+  color: #f8fafc !important;
+}
+
+.leaflet-custom-tooltip .border-slate-100 {
+  border-color: rgba(51, 65, 85, 0.4) !important;
 }
 
 .leaflet-railway-tooltip {
-  background: #0f172a !important;
+  background: rgba(15, 23, 42, 0.96) !important;
   color: #f8fafc !important;
-  border: 1px solid #334155 !important;
-  padding: 6px 12px !important;
-  border-radius: 6px !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(8px);
 }
 
 /* Pulse animation for highlights */
