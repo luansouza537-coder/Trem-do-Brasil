@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers } from '../types';
 import { formatDistance } from '../utils/geo';
-import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES } from '../utils/gameRules';
+import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant } from '../utils/gameRules';
 import { 
   Train, 
   Search, 
@@ -60,7 +60,7 @@ interface SidebarProps {
     spentHubs: number;
     grantIncome: number;
     currentBudget: number;
-    unlockedGrants: any[];
+    unlockedGrants: FundGrant[];
     spentOnWorkers?: number;
     spentOnResources?: number;
   };

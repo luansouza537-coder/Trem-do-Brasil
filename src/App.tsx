@@ -41,6 +41,7 @@ import {
   Check,
   Layers
 } from 'lucide-react';
+import { saveGame, loadGame, deleteSave, hasSave, getSaveDate } from './utils/persistence';
 
 interface Toast {
   id: string;
@@ -113,10 +114,33 @@ export default function App() {
   // Random history trivia index on win
   const [historyFactIndex, setHistoryFactIndex] = useState(0);
 
+  const [hasSaveGame, setHasSaveGame] = useState(() => hasSave());
+  const [saveDate, setSaveDate] = useState<string | null>(() => getSaveDate());
+  const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Load sound setting preference
   useEffect(() => {
     sound.setMute(isMuted);
   }, [isMuted]);
+
+  // Auto-save game state to localStorage whenever key state changes (debounced 2s)
+  useEffect(() => {
+    if (welcomeOpen) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveGame({
+        edges, upgradedHubs, maintenanceYards, constructionType,
+        resources, spentOnResources, workers, spentOnWorkers,
+        activeEvents, gameYear, monthIdx,
+      });
+      setHasSaveGame(true);
+      setSaveDate(getSaveDate());
+    }, 2000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
+      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -311,7 +335,28 @@ export default function App() {
     setCurrentEvent(null);
 
     sound.playReset();
+    deleteSave(); setHasSaveGame(false); setSaveDate(null);
     showToast("Malha ferroviária e estruturas demolidas. Comece a traçar novas rotas!", "info");
+  };
+
+  // Load saved game state from localStorage
+  const handleLoadGame = () => {
+    const save = loadGame();
+    if (!save) return;
+    setEdges(save.edges);
+    setUpgradedHubs(save.upgradedHubs);
+    setMaintenanceYards(save.maintenanceYards);
+    setConstructionType(save.constructionType);
+    setResources(save.resources);
+    setSpentOnResources(save.spentOnResources);
+    setWorkers(save.workers);
+    setSpentOnWorkers(save.spentOnWorkers);
+    setActiveEvents(save.activeEvents);
+    setGameYear(save.gameYear);
+    setMonthIdx(save.monthIdx);
+    setWelcomeOpen(false);
+    sound.playConnect();
+    showToast(`Partida carregada! Ano ${save.gameYear}.`, 'success');
   };
 
   // Hire workforce handler
@@ -527,9 +572,10 @@ export default function App() {
         ? Math.round(existingEdge.distance * 12000000)
         : getTrackCostDetail(cityA, cityB, existingEdge.distance).totalCost;
 
-      // Refund 100% of the materials to inventory
+      // Refund materials actually consumed at construction time (not recalculated with current crisis effects)
       const activeEffects = activeEvents.map(e => e.statusEffect);
-      const refundedResources = getTrackResourcesRequired(cityA, cityB, existingEdge.distance, existingEdge.type, activeEffects);
+      const refundedResources = existingEdge.resourcesConsumed
+        ?? getTrackResourcesRequired(cityA, cityB, existingEdge.distance, existingEdge.type ?? 'rail', []);
       setResources(prev => {
         const u = { ...prev };
         Object.keys(refundedResources).forEach(k => {
@@ -629,6 +675,7 @@ export default function App() {
 
     // 4. Machinery Operators penalty ("Acelera a obra. Se faltar, tempo dobra")
     const isShortOperators = workers.operador < reqWorkers.operador;
+    const operatorPenaltyCost = isShortOperators ? targetCost : 0;
     if (isShortOperators) {
       targetCost = targetCost * 2.0; // Double construction financial cost
     }
@@ -673,6 +720,10 @@ export default function App() {
     if (buyCost > 0) {
       setSpentOnResources(prev => prev + buyCost);
     }
+    // Track operator penalty as extra expense (not captured in spentRail which uses base cost)
+    if (operatorPenaltyCost > 0) {
+      setSpentOnResources(prev => prev + operatorPenaltyCost);
+    }
 
     setResources(prev => {
       const u = { ...prev };
@@ -688,11 +739,23 @@ export default function App() {
       from: idA,
       to: idB,
       distance: distanceVal,
-      type: constructionType
+      type: constructionType,
+      resourcesConsumed: reqs,
     };
 
     const nextEdges = [...edges, newEdge];
     setEdges(nextEdges);
+
+    // Pre-emptive maintenance warning for the newly added edge
+    const postBuildDistances = calculateRailwayDistancesFromYards(CITIES, nextEdges, maintenanceYards);
+    const newEdgeMaintDist = Math.min(
+      postBuildDistances[idA] ?? Infinity,
+      postBuildDistances[idB] ?? Infinity
+    );
+    if (newEdgeMaintDist > 800) {
+      showToast(`⚠️ Trecho ${cityA.name} ↔ ${cityB.name} está fora do alcance de manutenção (${newEdgeMaintDist === Infinity ? '∞' : newEdgeMaintDist.toFixed(0)} km do pátio mais próximo). Construa um pátio de manutenção próximo para cobrir este trecho!`, 'info');
+    }
+
     setSelectedCityId(null);
     sound.playConnect();
 
@@ -1002,15 +1065,26 @@ export default function App() {
               </div>
 
               {/* Action */}
-              <div className="mt-8">
+              <div className="mt-8 flex flex-col gap-3">
+                {hasSaveGame && (
+                  <button
+                    onClick={handleLoadGame}
+                    className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-display font-extrabold uppercase py-3.5 px-6 rounded-xl transition-all shadow-lg text-xs tracking-widest cursor-pointer active:scale-95"
+                  >
+                    Continuar Partida 💾 {saveDate ? `(${saveDate})` : ''}
+                  </button>
+                )}
                 <button
                   onClick={() => {
+                    if (hasSaveGame && !window.confirm('Iniciar uma nova partida apagará seu progresso salvo. Continuar?')) return;
+                    deleteSave();
+                    setHasSaveGame(false);
                     setWelcomeOpen(false);
                     sound.playSelect();
                   }}
                   className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-display font-extrabold uppercase py-3.5 px-6 rounded-xl transition-all shadow-lg text-xs tracking-widest cursor-pointer active:scale-95"
                 >
-                  Iniciar Jornada 🚂
+                  {hasSaveGame ? 'Nova Partida 🆕' : 'Iniciar Jornada 🚂'}
                 </button>
               </div>
             </div>
