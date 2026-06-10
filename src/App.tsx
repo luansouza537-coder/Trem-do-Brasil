@@ -123,6 +123,15 @@ export default function App() {
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
+  // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
+  useEffect(() => {
+    setBudgetHistory(prev => [
+      ...prev.slice(-23),
+      { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
+    ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.currentBudget]);
+
   // Load sound setting preference
   useEffect(() => {
     sound.setMute(isMuted);
@@ -136,7 +145,7 @@ export default function App() {
       saveGame({
         edges, upgradedHubs, maintenanceYards, constructionType,
         resources, spentOnResources, workers, spentOnWorkers,
-        activeEvents, gameYear, monthIdx,
+        activeEvents, gameYear, monthIdx, constructionQueue,
       });
       setHasSaveGame(true);
       setSaveDate(getSaveDate());
@@ -197,11 +206,7 @@ export default function App() {
         setSpentOnWorkers((prev) => prev + monthlyPayroll);
         showToast(`🚚 Folha de Pagamento: R$ ${monthlyPayroll.toLocaleString('pt-BR')} pagos para ${totalWorkers.toLocaleString('pt-BR')} profissionais em campo.`, 'info');
       }
-      // Record budget snapshot for history chart
-      setBudgetHistory(prev => [
-        ...prev.slice(-23),
-        { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
-      ]);
+      // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
 
       // Advance construction queue
       setConstructionQueue(prev => {
@@ -391,6 +396,7 @@ export default function App() {
     setActiveEvents(save.activeEvents);
     setGameYear(save.gameYear);
     setMonthIdx(save.monthIdx);
+    setConstructionQueue(save.constructionQueue ?? []);
     setWelcomeOpen(false);
     sound.playConnect();
     showToast(`Partida carregada! Ano ${save.gameYear}.`, 'success');
@@ -725,8 +731,6 @@ export default function App() {
       setSelectedCityId(null);
       return;
     }
-    const operatorPenaltyCost = 0;
-    
     let buyCost = 0;
     const isHighInflation = activeEffects.includes('INFLACAO_GLOBAL');
     const shortages: Partial<GameResources> = {};
@@ -766,10 +770,6 @@ export default function App() {
     // 6. Safe to build: Deduct used materials and apply buying costs if autoBuy occurred
     if (buyCost > 0) {
       setSpentOnResources(prev => prev + buyCost);
-    }
-    // Track operator penalty as extra expense (not captured in spentRail which uses base cost)
-    if (operatorPenaltyCost > 0) {
-      setSpentOnResources(prev => prev + operatorPenaltyCost);
     }
 
     setResources(prev => {

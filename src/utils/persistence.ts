@@ -1,4 +1,4 @@
-import { Edge, GameResources, GameEvent, GameWorkers } from '../types';
+import { Edge, GameResources, GameEvent, GameWorkers, ConstructionProject } from '../types';
 
 export interface SaveGame {
   version: number;
@@ -14,6 +14,7 @@ export interface SaveGame {
   activeEvents: GameEvent[];
   gameYear: number;
   monthIdx: number;
+  constructionQueue: ConstructionProject[];
 }
 
 const SAVE_KEY = 'renif_v1_savegame';

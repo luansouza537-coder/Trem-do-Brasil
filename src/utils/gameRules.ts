@@ -95,11 +95,11 @@ export function getTrackResourcesRequired(
 }
 
 export const WORKER_SALARIES: Record<keyof GameWorkers, number> = {
-  terraplanagem: 4500,    // R$ 4.500/pessoa/mês
-  assentamento:  5500,    // R$ 5.500/pessoa/mês
-  sinalizacao:   7000,    // R$ 7.000/pessoa/mês
-  explosivos:    12000,   // R$ 12.000/pessoa/mês
-  manutencao:    4000,    // R$ 4.000/pessoa/mês
+  terraplanagem: 4_500_000,    // R$ 4.500.000/pessoa/mês
+  assentamento:  5_500_000,    // R$ 5.500.000/pessoa/mês
+  sinalizacao:   7_000_000,    // R$ 7.000.000/pessoa/mês
+  explosivos:    12_000_000,   // R$ 12.000.000/pessoa/mês
+  manutencao:    4_000_000,    // R$ 4.000.000/pessoa/mês
 };
 
 export const WORKER_NAMES: Record<keyof GameWorkers, string> = {
