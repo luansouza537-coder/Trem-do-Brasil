@@ -397,10 +397,10 @@ export default function Sidebar({
           <div className="p-3.5 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-amber-500" /> Equipe de Engenharia & RH:
+                <Users className="w-3.5 h-3.5 text-amber-500" /> Equipes de Obra:
               </span>
               <span className="text-[9.5px] text-amber-400 font-bold font-mono">
-                Despesa: R$ {(totalPayroll / 1000000).toFixed(0)}M/mês
+                R$ {totalPayroll.toLocaleString('pt-BR')}/mês
               </span>
             </div>
 
@@ -409,74 +409,59 @@ export default function Sidebar({
               {(Object.keys(workers) as Array<keyof GameWorkers>).map((key) => {
                 const qty = workers[key] ?? 0;
                 const salary = WORKER_SALARIES[key];
-                const name = key === 'basico' ? 'Básico (Servente / Carpinteiro)' :
-                             key === 'operador' ? 'Operador de Máquinas (Tratores)' :
-                             key === 'especialista' ? 'Especialista (Engenheiro / Soldador)' :
-                             'Túnel / Montanha (Perfuratriz)';
-                const desc = key === 'basico' ? 'Consumo por km de obra padrão.' :
-                             key === 'operador' ? 'Acelera obra. Sem isto, custo de trecho DOBRA!' :
-                             key === 'especialista' ? 'Essencial para certificar e concluir rotas.' :
-                             'Exigido em serras/áreas rochosas com explosivos.';
-                
+                const emoji = key === 'terraplanagem' ? '🚜' : key === 'assentamento' ? '🔩' : key === 'sinalizacao' ? '⚡' : key === 'explosivos' ? '🧨' : '🔧';
+                const desc = key === 'terraplanagem' ? 'Escavação, aterros e preparo do leito ferroviário' :
+                             key === 'assentamento'  ? 'Colocação de dormentes, trilhos e lastro de brita' :
+                             key === 'sinalizacao'   ? 'Cabos de cobre, sinaleiros e controle de tráfego' :
+                             key === 'explosivos'    ? 'Perfuração e detonação em serras e montanhas' :
+                                                      'Inspeção e reparo de trilhos em operação';
                 return (
                   <div key={key} className="bg-slate-950/75 border border-slate-850 p-2 rounded-lg flex flex-col gap-1">
                     <div className="flex items-center justify-between gap-1.5">
                       <div className="min-w-0">
                         <span className="text-[10px] font-black text-slate-200 block truncate leading-tight">
-                          {key === 'basico' && '👷 '}
-                          {key === 'operador' && '🚜 '}
-                          {key === 'especialista' && '📐 '}
-                          {key === 'perfurador' && '🧨 '}
-                          {name}
+                          {emoji} {WORKER_NAMES[key]}
                         </span>
-                        <span className="text-[8.5px] text-slate-400 block leading-tight">
-                          {desc}
-                        </span>
+                        <span className="text-[8.5px] text-slate-400 block leading-tight">{desc}</span>
                         <span className="text-[8px] text-slate-500 font-bold font-sans">
-                          Salário: R$ {(salary / 1000000).toFixed(1)}M/mês por profissional
+                          R$ {salary.toLocaleString('pt-BR')}/pessoa/mês
                         </span>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-[11.5px] font-black text-amber-400 font-sans block">
-                          {qty} ativos
+                        <span className="text-[14px] font-black text-amber-400 font-sans block">
+                          {qty.toLocaleString('pt-BR')}
                         </span>
+                        <span className="text-[8px] text-slate-500">pessoas</span>
                       </div>
                     </div>
 
-                    {/* Hire / lay-off buttons */}
-                    <div className="flex items-center justify-between border-t border-slate-900/60 pt-1.5 mt-1">
+                    <div className="flex items-center justify-between border-t border-slate-900/60 pt-1.5 mt-1 gap-1">
                       <div className="flex gap-1">
-                        <button
-                          onClick={() => onFireWorker(key, 5)}
-                          disabled={qty <= 0}
-                          className="px-1.5 py-0.5 rounded bg-slate-850 hover:bg-rose-950 hover:text-rose-450 border border-slate-700 disabled:opacity-30 transition cursor-pointer text-[8px] font-black uppercase tracking-wider"
-                          title="Dispensar 5 trabalhadores"
-                        >
-                          Demitir -5
+                        <button onClick={() => onFireWorker(key, 100)} disabled={qty <= 0}
+                          className="px-1.5 py-0.5 rounded bg-slate-850 hover:bg-rose-950 hover:text-rose-400 border border-slate-700 disabled:opacity-30 transition cursor-pointer text-[8px] font-black uppercase">
+                          -100
                         </button>
-                        <button
-                          onClick={() => onFireWorker(key, 1)}
-                          disabled={qty <= 0}
-                          className="px-1 py-0.5 rounded bg-slate-850 hover:bg-rose-950/40 hover:text-rose-400 border border-slate-700 disabled:opacity-30 transition cursor-pointer text-[8px] font-sans"
-                          title="Dispensar 1 trabalhador"
-                        >
-                          -1
+                        <button onClick={() => onFireWorker(key, 50)} disabled={qty <= 0}
+                          className="px-1 py-0.5 rounded bg-slate-850 hover:bg-rose-950/40 hover:text-rose-400 border border-slate-700 disabled:opacity-30 transition cursor-pointer text-[8px]">
+                          -50
+                        </button>
+                        <button onClick={() => onFireWorker(key, 10)} disabled={qty <= 0}
+                          className="px-1 py-0.5 rounded bg-slate-850 hover:bg-rose-950/40 hover:text-rose-400 border border-slate-700 disabled:opacity-30 transition cursor-pointer text-[8px]">
+                          -10
                         </button>
                       </div>
                       <div className="flex gap-1">
-                        <button
-                          onClick={() => onHireWorker(key, 1)}
-                          className="px-1 py-0.5 rounded bg-slate-850 hover:bg-amber-500/10 hover:text-amber-400 border border-slate-700 cursor-pointer text-[8px] font-sans"
-                          title="Contratar 1 trabalhador (Taxa de admissão: R$ 1.5M)"
-                        >
-                          +1
+                        <button onClick={() => onHireWorker(key, 10)}
+                          className="px-1 py-0.5 rounded bg-slate-850 hover:bg-amber-500/10 hover:text-amber-400 border border-slate-700 cursor-pointer text-[8px]">
+                          +10
                         </button>
-                        <button
-                          onClick={() => onHireWorker(key, 5)}
-                          className="px-1.5 py-0.5 rounded bg-slate-850 text-slate-300 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 transition cursor-pointer text-[8px] font-black uppercase tracking-wider"
-                          title="Contratar 5 trabalhadores (Taxa de admissão: R$ 7.5M)"
-                        >
-                          Contratar +5
+                        <button onClick={() => onHireWorker(key, 50)}
+                          className="px-1 py-0.5 rounded bg-slate-850 hover:bg-amber-500/10 hover:text-amber-400 border border-slate-700 cursor-pointer text-[8px]">
+                          +50
+                        </button>
+                        <button onClick={() => onHireWorker(key, 100)}
+                          className="px-1.5 py-0.5 rounded bg-slate-850 text-slate-300 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 transition cursor-pointer text-[8px] font-black uppercase">
+                          +100
                         </button>
                       </div>
                     </div>
@@ -485,6 +470,36 @@ export default function Sidebar({
               })}
             </div>
           </div>
+
+          {/* 2b. Obras em Andamento */}
+          {constructionQueue.length > 0 && (
+            <div className="p-3.5 flex flex-col gap-2 bg-orange-950/10 border-t border-orange-500/20">
+              <span className="text-[10px] text-orange-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
+                🚧 Obras em Andamento ({constructionQueue.length}):
+              </span>
+              <div className="flex flex-col gap-2">
+                {constructionQueue.map(p => {
+                  const pct = Math.round(((p.totalMonths - p.monthsRemaining) / p.totalMonths) * 100);
+                  return (
+                    <div key={p.edgeId} className="bg-slate-950/60 border border-orange-500/20 rounded-lg p-2 flex flex-col gap-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9.5px] font-bold text-slate-200 truncate">
+                          {p.type === 'balsa' ? '🚢' : '🚂'} {p.from} → {p.to}
+                        </span>
+                        <span className="text-[8px] text-orange-400 font-bold shrink-0 ml-1">
+                          {p.monthsRemaining} mes(es)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                        <div className="h-full bg-orange-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[8px] text-slate-500">{p.distance.toFixed(0)} km · {pct}% concluído</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 3. Insumos de Construção */}
           <div className="p-3.5 flex flex-col gap-2">

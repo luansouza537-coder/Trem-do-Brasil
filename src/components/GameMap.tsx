@@ -647,6 +647,24 @@ export default function GameMap({
           [toCity.lat, toCity.lng]
         ];
 
+        // Render building edges as dashed orange construction lines
+        if (edge.status === 'building') {
+          const glow = L.polyline(latlngs, { color: '#fbbf24', weight: 10, opacity: 0.18, lineCap: 'round' });
+          const line = L.polyline(latlngs, { color: '#f97316', weight: 3.5, opacity: 0.9, dashArray: '8, 6', lineCap: 'round' });
+          line.bindTooltip(`🚧 Em Construção: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance.toFixed(0)} km)<br/><span style="color:#fbbf24;font-size:10px">Clique para cancelar obra (reembolso 50%)</span>`, {
+            sticky: true, direction: 'auto',
+            className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
+          });
+          const cancelHandler = (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onConnectCitiesRef.current(edge.from, edge.to);
+          };
+          line.on('click', cancelHandler);
+          trackGroupRef.current?.addLayer(glow);
+          trackGroupRef.current?.addLayer(line);
+          return;
+        }
+
         const isBalsa = edge.type === 'balsa';
 
         if (isBalsa) {
