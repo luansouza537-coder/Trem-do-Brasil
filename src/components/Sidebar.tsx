@@ -136,7 +136,7 @@ export default function Sidebar({
   activeEvents = [],
 
   // Workforce default values
-  workers = { basico: 35, operador: 15, especialista: 8, perfurador: 4 },
+  workers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 },
   onHireWorker = () => {},
   onFireWorker = () => {},
   budgetHistory = [],

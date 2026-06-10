@@ -123,15 +123,6 @@ export default function App() {
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
-  // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
-  useEffect(() => {
-    setBudgetHistory(prev => [
-      ...prev.slice(-23),
-      { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
-    ]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budgetState.currentBudget]);
-
   // Load sound setting preference
   useEffect(() => {
     sound.setMute(isMuted);
@@ -533,6 +524,15 @@ export default function App() {
       spentOnResources,
     };
   }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants]);
+
+  // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
+  useEffect(() => {
+    setBudgetHistory(prev => [
+      ...prev.slice(-23),
+      { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
+    ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.currentBudget]);
 
   // Dijkstra nearest yard distance
   const nearestYardDistances = useMemo(() => {
