@@ -76,6 +76,20 @@ export default function GameMap({
   const activeBgTrainsRef = React.useRef(0);
   const MAX_BG_TRAINS = 3;
 
+  // Yard radius circles layer
+  const yardRadiiGroupRef = useRef<L.LayerGroup | null>(null);
+
+  // Double-click delete confirmation refs
+  const pendingDeleteRef = useRef<string | null>(null);
+  const pendingDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Marker diff optimization
+  const prevCityConnectionsRef = useRef<Record<string, number>>({});
+  const prevSelectedIdRef = useRef<string | null>(null);
+  const prevHoveredIdRef = useRef<string | null>(null);
+  const prevUpgradedHubsRef = useRef<string[]>([]);
+  const prevMaintenanceYardsRef = useRef<string[]>([]);
+
   useEffect(() => {
     selectedCityIdRef.current = selectedCityId;
     onSelectCityRef.current = onSelectCity;
@@ -324,6 +338,27 @@ export default function GameMap({
     }
   }, [flyToSignal]);
 
+  // Draw 800km coverage circles for maintenance yards
+  useEffect(() => {
+    if (!yardRadiiGroupRef.current) return;
+    yardRadiiGroupRef.current.clearLayers();
+    maintenanceYards.forEach(yardId => {
+      const city = cities.find(c => c.id === yardId);
+      if (city && yardRadiiGroupRef.current) {
+        L.circle([city.lat, city.lng], {
+          radius: 800000,
+          color: '#10b981',
+          fillColor: '#10b981',
+          fillOpacity: 0.06,
+          weight: 1.5,
+          opacity: 0.4,
+          dashArray: '4, 8',
+          interactive: false,
+        }).addTo(yardRadiiGroupRef.current);
+      }
+    });
+  }, [maintenanceYards, cities]);
+
   // 1. Map Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -351,6 +386,7 @@ export default function GameMap({
     // Track layers
     trackGroupRef.current = L.layerGroup().addTo(map);
     suggestedGroupRef.current = L.layerGroup().addTo(map);
+    yardRadiiGroupRef.current = L.layerGroup().addTo(map);
     
     // Create rubber-band path layer
     rubberBandRef.current = L.polyline([], {
@@ -509,65 +545,84 @@ export default function GameMap({
     }).addTo(mapRef.current);
   }, [tileLayerType]);
 
-  // Update city markers appearance dynamically based on app state
+  // Update city markers appearance dynamically — only for cities that actually changed
   useEffect(() => {
+    const prevConns = prevCityConnectionsRef.current;
+    const prevSel = prevSelectedIdRef.current;
+    const prevHov = prevHoveredIdRef.current;
+    const prevHubs = prevUpgradedHubsRef.current;
+    const prevYards = prevMaintenanceYardsRef.current;
+
     cities.forEach(city => {
       const marker = markersRef.current[city.id];
-      if (marker) {
-        const conns = cityConnectionsMap[city.id] || 0;
-        const isSel = selectedCityId === city.id;
-        const isGov = hoveredCityId === city.id;
-        const isUpgraded = upgradedHubs?.includes(city.id) || false;
-        const hasYard = maintenanceYards?.includes(city.id) || false;
+      if (!marker) return;
 
-        // Swap out icons completely without destroying spatial markers
-        marker.setIcon(L.divIcon({
-          html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard),
-          className: 'custom-city-marker',
-          iconSize: [28, 28],
-          iconAnchor: [14, 14]
-        }));
+      const conns = cityConnectionsMap[city.id] || 0;
+      const isSel = selectedCityId === city.id;
+      const isGov = hoveredCityId === city.id;
+      const isUpgraded = upgradedHubs?.includes(city.id) || false;
+      const hasYard = maintenanceYards?.includes(city.id) || false;
 
-        // Dynamically update the floating tooltips connection state live
-        const trackerType = city.portType === 'maritime' 
-          ? '⚓ Porto Marítimo' 
-          : city.portType === 'fluvial' 
-            ? '🚢 Porto Fluvial' 
-            : city.type === 'capital' 
-              ? '★ Capital' 
-              : '● Cidade';
+      const wasUpgraded = prevHubs.includes(city.id);
+      const hadYard = prevYards.includes(city.id);
+      const prevConn = prevConns[city.id] ?? -1;
+      const wasSel = prevSel === city.id;
+      const wasHov = prevHov === city.id;
 
-        const maxConns = isUpgraded ? 3 : 2;
+      const changed = conns !== prevConn || isSel !== wasSel || isGov !== wasHov
+        || isUpgraded !== wasUpgraded || hasYard !== hadYard;
 
-        let maintenanceText = '';
-        if (conns > 0) {
-          const mDist = nearestYardDistances[city.id];
-          if (mDist === undefined || mDist === Infinity) {
-            maintenanceText = `<p class="text-[10px] text-rose-600 font-bold mt-1 bg-rose-50/80 px-1 py-0.5 rounded border border-rose-200">⚠️ Risco de Falha! Sem Manutenção</p>`;
-          } else {
-            maintenanceText = `<p class="text-[10px] text-emerald-600 font-semibold mt-1 bg-emerald-50/80 px-1 py-0.5 rounded border border-emerald-200">🔧 Cobertura: ${mDist} km / 800 km</p>`;
-          }
+      if (!changed) return;
+
+      marker.setIcon(L.divIcon({
+        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard),
+        className: 'custom-city-marker',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      }));
+
+      const trackerType = city.portType === 'maritime'
+        ? '⚓ Porto Marítimo'
+        : city.portType === 'fluvial'
+          ? '🚢 Porto Fluvial'
+          : city.type === 'capital'
+            ? '★ Capital'
+            : '● Cidade';
+
+      const maxConns = isUpgraded ? 3 : 2;
+      let maintenanceText = '';
+      if (conns > 0) {
+        const mDist = nearestYardDistances[city.id];
+        if (mDist === undefined || mDist === Infinity) {
+          maintenanceText = `<p class="text-[10px] text-rose-600 font-bold mt-1 bg-rose-50/80 px-1 py-0.5 rounded border border-rose-200">⚠️ Risco de Falha! Sem Manutenção</p>`;
+        } else {
+          maintenanceText = `<p class="text-[10px] text-emerald-600 font-semibold mt-1 bg-emerald-50/80 px-1 py-0.5 rounded border border-emerald-200">🔧 Cobertura: ${mDist} km / 800 km</p>`;
         }
-
-        const tooltipContent = `
-          <div class="p-1.5 font-sans leading-tight">
-            <div class="flex items-center gap-1.5 mb-0.5">
-              <span class="font-bold text-slate-800 text-sm whitespace-nowrap">${city.name}</span>
-              <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1 rounded">${city.state}</span>
-            </div>
-            <p class="text-[10px] text-slate-400 font-medium">${trackerType}${isUpgraded ? ' (★ Central Hub)' : ''}${hasYard ? ' (🔧 Yard)' : ''}</p>
-            ${maintenanceText}
-            <div class="mt-1 flex items-center justify-between text-[10px] border-t border-slate-100 pt-1 text-slate-600">
-              <span class="mr-3 font-medium">Conexões:</span>
-              <span class="font-extrabold ${conns >= maxConns ? 'text-emerald-600' : 'text-amber-500'}">
-                ${conns} / ${maxConns}
-              </span>
-            </div>
-          </div>
-        `;
-        marker.setTooltipContent(tooltipContent);
       }
+
+      marker.setTooltipContent(`
+        <div class="p-1.5 font-sans leading-tight">
+          <div class="flex items-center gap-1.5 mb-0.5">
+            <span class="font-bold text-slate-800 text-sm whitespace-nowrap">${city.name}</span>
+            <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1 rounded">${city.state}</span>
+          </div>
+          <p class="text-[10px] text-slate-400 font-medium">${trackerType}${isUpgraded ? ' (★ Central Hub)' : ''}${hasYard ? ' (🔧 Yard)' : ''}</p>
+          ${maintenanceText}
+          <div class="mt-1 flex items-center justify-between text-[10px] border-t border-slate-100 pt-1 text-slate-600">
+            <span class="mr-3 font-medium">Conexões:</span>
+            <span class="font-extrabold ${conns >= maxConns ? 'text-emerald-600' : 'text-amber-500'}">
+              ${conns} / ${maxConns}
+            </span>
+          </div>
+        </div>
+      `);
     });
+
+    prevCityConnectionsRef.current = { ...cityConnectionsMap };
+    prevSelectedIdRef.current = selectedCityId;
+    prevHoveredIdRef.current = hoveredCityId;
+    prevUpgradedHubsRef.current = [...(upgradedHubs ?? [])];
+    prevMaintenanceYardsRef.current = [...(maintenanceYards ?? [])];
 
     // Clear rubber band if selectedCity is null
     if (!selectedCityId && rubberBandRef.current) {
@@ -630,7 +685,20 @@ export default function GameMap({
 
           const deleteHandler = (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e);
-            onConnectCitiesRef.current(edge.from, edge.to);
+            if (pendingDeleteRef.current === edge.id) {
+              clearTimeout(pendingDeleteTimerRef.current!);
+              pendingDeleteRef.current = null;
+              onConnectCitiesRef.current(edge.from, edge.to);
+            } else {
+              pendingDeleteRef.current = edge.id;
+              balsaLine.setStyle({ color: '#fbbf24', weight: 5 });
+              interactiveLayer.setTooltipContent(`Balsa: ${edge.from} ⇄ ${edge.to}<br/><span class="text-amber-400 font-bold">⚠️ Clique novamente para confirmar remoção</span>`);
+              if (pendingDeleteTimerRef.current) clearTimeout(pendingDeleteTimerRef.current);
+              pendingDeleteTimerRef.current = setTimeout(() => {
+                pendingDeleteRef.current = null;
+                balsaLine.setStyle({ color: '#0ea5e9', weight: 4.5 });
+              }, 3000);
+            }
           };
           interactiveLayer.on('click', deleteHandler);
 
@@ -696,10 +764,23 @@ export default function GameMap({
             opacity: 0.0
           });
 
-          // Click handler to remove track segments instantly
+          // Click handler — requires double-click confirmation within 3s
           const deleteHandler = (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e);
-            onConnectCitiesRef.current(edge.from, edge.to);
+            if (pendingDeleteRef.current === edge.id) {
+              clearTimeout(pendingDeleteTimerRef.current!);
+              pendingDeleteRef.current = null;
+              onConnectCitiesRef.current(edge.from, edge.to);
+            } else {
+              pendingDeleteRef.current = edge.id;
+              railsBase.setStyle({ color: '#f97316', weight: 5 });
+              interactiveLayer.setTooltipContent(`Trilho: ${fromCity.name} ⇄ ${toCity.name}<br/><span class="text-amber-400 font-bold">⚠️ Clique novamente para confirmar remoção</span>`);
+              if (pendingDeleteTimerRef.current) clearTimeout(pendingDeleteTimerRef.current);
+              pendingDeleteTimerRef.current = setTimeout(() => {
+                pendingDeleteRef.current = null;
+                railsBase.setStyle({ color: '#ef4444', weight: 4 });
+              }, 3000);
+            }
           };
 
           interactiveLayer.on('click', deleteHandler);

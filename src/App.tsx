@@ -18,7 +18,8 @@ import {
   RESOURCE_BUY_PRICES,
   getTrackWorkersRequired,
   WORKER_SALARIES,
-  WORKER_NAMES
+  WORKER_NAMES,
+  getYearInflationMultiplier
 } from './utils/gameRules';
 import { 
   Train, 
@@ -117,6 +118,7 @@ export default function App() {
   const [hasSaveGame, setHasSaveGame] = useState(() => hasSave());
   const [saveDate, setSaveDate] = useState<string | null>(() => getSaveDate());
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
   // Load sound setting preference
   useEffect(() => {
@@ -190,6 +192,11 @@ export default function App() {
         setSpentOnWorkers((prev) => prev + monthlyPayroll);
         showToast(`🚚 Folha de Pagamento: R$ ${monthlyPayroll.toLocaleString('pt-BR')} pagos para ${workers.basico + workers.operador + workers.especialista + workers.perfurador} profissionais em campo.`, 'info');
       }
+      // Record budget snapshot for history chart
+      setBudgetHistory(prev => [
+        ...prev.slice(-23),
+        { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
+      ]);
     }
 
     // 1. Durations Tick
@@ -448,27 +455,29 @@ export default function App() {
   // Dynamic cost & grant budget state (calculated reactively to avoid state bugs)
   const startingBudget = 1250000000000; // R$ 1.250.000.000.000,00 starting cash
 
+  // Split intermodal grants into own useMemo — only re-runs when edges change
+  const intermodalGrants = useMemo(() => getIntermodalGrants(CITIES, edges), [edges]);
+
   const budgetState = useMemo(() => {
     let spentRail = 0;
     let spentBalsa = 0;
-    
+
     edges.forEach(edge => {
       const cityA = CITIES.find(c => c.id === edge.from);
       const cityB = CITIES.find(c => c.id === edge.to);
       if (cityA && cityB) {
         if (edge.type === 'balsa') {
-          spentBalsa += Math.round(edge.distance * 12000000); // R$ 12.000.000 / km
+          spentBalsa += Math.round(edge.distance * 12000000);
         } else {
           spentRail += getTrackCostDetail(cityA, cityB, edge.distance).totalCost;
         }
       }
     });
 
-    const spentYards = maintenanceYards.length * 15000000000; // R$ 15.000.000.000
-    const spentHubs = upgradedHubs.length * 30000000000; // R$ 30.000.000.000
-    
-    const unlockedGrants = getIntermodalGrants(CITIES, edges);
-    const grantIncome = unlockedGrants
+    const spentYards = maintenanceYards.length * 15000000000;
+    const spentHubs = upgradedHubs.length * 30000000000;
+
+    const grantIncome = intermodalGrants
       .filter(g => g.unlocked)
       .reduce((sum, g) => sum + g.value, 0);
 
@@ -483,11 +492,11 @@ export default function App() {
       spentHubs,
       grantIncome,
       currentBudget,
-      unlockedGrants,
+      unlockedGrants: intermodalGrants,
       spentOnWorkers,
       spentOnResources,
     };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers]);
+  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants]);
 
   // Dijkstra nearest yard distance
   const nearestYardDistances = useMemo(() => {
@@ -627,6 +636,7 @@ export default function App() {
 
     // Checking construction type & budgets
     const distanceVal = getHaversineDistance(cityA.lat, cityA.lng, cityB.lat, cityB.lng);
+    const inflationMultiplier = getYearInflationMultiplier(gameYear);
     let targetCost = 0;
 
     if (constructionType === 'balsa') {
@@ -636,9 +646,12 @@ export default function App() {
         setSelectedCityId(null);
         return;
       }
-      targetCost = Math.round(distanceVal * 12000000);
+      targetCost = Math.round(distanceVal * 12000000 * inflationMultiplier);
     } else {
-      targetCost = getTrackCostDetail(cityA, cityB, distanceVal).totalCost;
+      targetCost = Math.round(getTrackCostDetail(cityA, cityB, distanceVal).totalCost * inflationMultiplier);
+    }
+    if (inflationMultiplier > 1.0) {
+      showToast(`⚠️ Inflação acumulada ${gameYear}: +${Math.round((inflationMultiplier - 1) * 100)}% sobre custo base`, 'info');
     }
 
     // Verify resource requirements and shortages
@@ -859,6 +872,7 @@ export default function App() {
         workers={workers}
         onHireWorker={handleHireWorker}
         onFireWorker={handleFireWorker}
+        budgetHistory={budgetHistory}
       />
 
       {/* 3. Primary Leaflet Map Container */}

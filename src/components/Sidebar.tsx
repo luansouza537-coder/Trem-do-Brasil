@@ -82,6 +82,7 @@ interface SidebarProps {
   workers?: GameWorkers;
   onHireWorker?: (role: keyof GameWorkers, count: number) => void;
   onFireWorker?: (role: keyof GameWorkers, count: number) => void;
+  budgetHistory?: { label: string; budget: number }[];
 }
 
 export default function Sidebar({
@@ -137,6 +138,7 @@ export default function Sidebar({
   workers = { basico: 35, operador: 15, especialista: 8, perfurador: 4 },
   onHireWorker = () => {},
   onFireWorker = () => {},
+  budgetHistory = [],
 }: SidebarProps) {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'cities' | 'operations'>('cities');
@@ -352,6 +354,40 @@ export default function Sidebar({
                  <span className="text-emerald-400 font-bold font-sans">+R$ {budgetState.grantIncome.toLocaleString('pt-BR')}</span>
               </div>
             </div>
+          </div>
+
+          {/* 1b. Histórico de Caixa (SVG chart) */}
+          <div className="p-3.5 bg-slate-900/20 flex flex-col gap-2">
+            <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
+              📈 Histórico de Caixa (últimos 24 meses):
+            </span>
+            {budgetHistory.length < 2 ? (
+              <p className="text-[9.5px] text-slate-500 italic">Aguardando dados do próximo mês...</p>
+            ) : (() => {
+              const W = 280, H = 64;
+              const minB = Math.min(...budgetHistory.map(h => h.budget));
+              const maxB = Math.max(...budgetHistory.map(h => h.budget));
+              const range = maxB - minB || 1;
+              const pts = budgetHistory.map((h, i) => {
+                const x = (i / (budgetHistory.length - 1)) * W;
+                const y = H - ((h.budget - minB) / range) * (H - 8) - 4;
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+              }).join(' ');
+              const isUp = budgetHistory[budgetHistory.length - 1].budget >= budgetHistory[0].budget;
+              const lineColor = isUp ? '#10b981' : '#f43f5e';
+              const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(0)}B` : `${(v/1e6).toFixed(0)}M`;
+              return (
+                <div className="relative">
+                  <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+                    <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+                    <text x="0" y={H} fontSize="7" fill="#64748b">{budgetHistory[0].label}</text>
+                    <text x={W} y={H} fontSize="7" fill="#64748b" textAnchor="end">{budgetHistory[budgetHistory.length-1].label}</text>
+                    <text x={W} y="8" fontSize="7" fill="#94a3b8" textAnchor="end">{fmt(maxB)}</text>
+                    <text x={W} y={H - 2} fontSize="7" fill="#94a3b8" textAnchor="end">{fmt(minB)}</text>
+                  </svg>
+                </div>
+              );
+            })()}
           </div>
 
           {/* 2. Equipe de Engenharia (Trabalhadores) */}
@@ -604,6 +640,38 @@ export default function Sidebar({
       {/* Tab: Cities list and Map selection */}
       {activeTab === 'cities' && (
         <>
+          {/* Region Progress Mini-Map */}
+          {(() => {
+            const REGIONS: { name: string; color: string; ids: string[] }[] = [
+              { name: 'Norte', color: '#10b981', ids: ['17','18','19','20','21','22','27','49','50','73','74','75','76','77','78','82','86','96','97'] },
+              { name: 'Nordeste', color: '#f59e0b', ids: ['8','9','10','11','12','13','14','15','16','44','45','46','47','48','51','52','61','62','63','64','65','84','91','92','93'] },
+              { name: 'Centro-Oeste', color: '#60a5fa', ids: ['23','24','25','26','53','54','55','79','80','81','87'] },
+              { name: 'Sudeste', color: '#a78bfa', ids: ['1','2','3','4','28','29','30','31','38','39','40','41','42','43','58','59','60','83','85','88','90','94','95'] },
+              { name: 'Sul', color: '#f472b6', ids: ['5','6','7','32','33','34','35','36','37','56','66','67','68','69','70','71','72','89'] },
+            ];
+            return (
+              <div className="p-3 bg-slate-950/60 border-b border-slate-850 flex flex-col gap-2 shrink-0">
+                <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">🗺️ Progresso por Região:</span>
+                <div className="flex flex-col gap-1.5">
+                  {REGIONS.map(region => {
+                    const total = region.ids.length;
+                    const connected = region.ids.filter(id => (cityConnections[id] ?? 0) > 0).length;
+                    const pct = Math.round((connected / total) * 100);
+                    return (
+                      <div key={region.name} className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-slate-400 w-20 shrink-0">{region.name}</span>
+                        <div className="flex-1 bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: region.color }} />
+                        </div>
+                        <span className="text-[9px] font-mono text-slate-400 shrink-0 w-10 text-right">{connected}/{total}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Construction Mode Selector */}
           <div className="bg-slate-900/95 border-b border-slate-850 p-3 flex flex-col gap-2 shrink-0">
             <div className="flex items-center justify-between text-xs">
