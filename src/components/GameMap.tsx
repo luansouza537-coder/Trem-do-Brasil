@@ -73,6 +73,9 @@ export default function GameMap({
   // Keep track of previous connections to animate newly built lines
   const prevEdgesRef = useRef<Edge[]>(edges);
 
+  const activeBgTrainsRef = React.useRef(0);
+  const MAX_BG_TRAINS = 3;
+
   useEffect(() => {
     selectedCityIdRef.current = selectedCityId;
     onSelectCityRef.current = onSelectCity;
@@ -205,14 +208,12 @@ export default function GameMap({
       const randomEdge = edges[Math.floor(Math.random() * edges.length)];
       const fromCity = cities.find(c => c.id === randomEdge.from);
       const toCity = cities.find(c => c.id === randomEdge.to);
-      if (fromCity && toCity) {
-        // Toggle direction randomly for organic flow
+      if (fromCity && toCity && activeBgTrainsRef.current < MAX_BG_TRAINS) {
+        activeBgTrainsRef.current += 1;
         const reverse = Math.random() > 0.5;
-        if (reverse) {
-          animateTrainPath(toCity, fromCity);
-        } else {
-          animateTrainPath(fromCity, toCity);
-        }
+        const [a, b] = reverse ? [toCity, fromCity] : [fromCity, toCity];
+        animateTrainPath(a, b);
+        setTimeout(() => { activeBgTrainsRef.current -= 1; }, 3000);
       }
     }, 14000); // Trigger a lively train elsewhere every 14 seconds
 

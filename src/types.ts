@@ -14,6 +14,7 @@ export interface Edge {
   to: string;
   distance: number;
   type?: 'rail' | 'balsa';
+  resourcesConsumed?: GameResources;
 }
 
 export interface GameStats {
