@@ -5,6 +5,7 @@ export interface City {
   lat: number;
   lng: number;
   type: 'capital' | 'cidade';
+  portType?: 'maritime' | 'fluvial';
 }
 
 export interface Edge {
@@ -12,6 +13,7 @@ export interface Edge {
   from: string;
   to: string;
   distance: number;
+  type?: 'rail' | 'balsa';
 }
 
 export interface GameStats {
@@ -20,3 +22,32 @@ export interface GameStats {
   isComplete: boolean;
   hasErrors: boolean;
 }
+
+export interface GameResources {
+  aco: number;
+  brita: number;
+  madeira: number;
+  cimento: number;
+  cobre: number;
+  explosivos: number;
+}
+
+export interface GameWorkers {
+  basico: number;
+  operador: number;
+  especialista: number;
+  perfurador: number;
+}
+
+export interface GameEvent {
+  id: string;
+  title: string;
+  description: string;
+  type: 'strike' | 'env_delay' | 'politics' | 'crisis' | 'natural';
+  statusEffect: string;
+  costToResolve?: number;
+  durationMonths: number;
+  monthsLeft: number;
+  resolved?: boolean;
+}
+

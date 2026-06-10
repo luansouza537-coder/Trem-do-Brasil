@@ -14,6 +14,9 @@ interface GameMapProps {
   tileLayerType: 'voyager' | 'positron' | 'dark' | 'satellite';
   flyToSignal: { lat: number; lng: number; timestamp: number } | null;
   showSuggestions: boolean;
+  upgradedHubs: string[];
+  maintenanceYards: string[];
+  nearestYardDistances: Record<string, number>;
 }
 
 const TILE_LAYERS = {
@@ -46,6 +49,9 @@ export default function GameMap({
   tileLayerType,
   flyToSignal,
   showSuggestions,
+  upgradedHubs = [],
+  maintenanceYards = [],
+  nearestYardDistances = {},
 }: GameMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -214,16 +220,24 @@ export default function GameMap({
   }, [edges, cities]);
 
   // Helper to generate the custom marker HTML based on city properties
-  const getMarkerHtml = (city: City, conns: number, isSelected: boolean, isHovered: boolean) => {
+  const getMarkerHtml = (
+    city: City, 
+    conns: number, 
+    isSelected: boolean, 
+    isHovered: boolean,
+    isUpgradedHub: boolean = false,
+    hasMaintenanceYard: boolean = false
+  ) => {
     const isCapital = city.type === 'capital';
+    const maxConns = isUpgradedHub ? 3 : 2;
     
     // Choose theme colors depending on the connection saturation
     let statusClass = 'border-slate-400 bg-slate-900 text-slate-300';
     let coreDotClass = 'bg-slate-400';
-    if (conns === 2) {
+    if (conns >= maxConns) {
       statusClass = 'border-emerald-500 bg-emerald-950 text-emerald-300';
       coreDotClass = 'bg-emerald-400';
-    } else if (conns === 1) {
+    } else if (conns > 0) {
       statusClass = 'border-amber-500 bg-amber-950 text-amber-300';
       coreDotClass = 'bg-amber-400';
     } else if (isCapital) {
@@ -240,26 +254,46 @@ export default function GameMap({
         ? 'scale-110 ring-2 ring-slate-200 z-40' 
         : 'hover:scale-105 z-30';
 
+    // Advanced dynamic central hubs and maintenance badges
+    const hubBadge = isUpgradedHub 
+      ? `<span class="absolute -top-1.5 -left-1.5 text-[9px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-amber-500 border border-slate-950 text-slate-950 font-black shadow-md z-[60]" title="Terminal Central Integrador">★</span>`
+      : '';
+
+    const yardBadge = hasMaintenanceYard
+      ? `<span class="absolute -bottom-1.5 -left-1.5 text-[8px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-emerald-600 border border-slate-950 text-white font-bold shadow-md z-[60]" title="Pátio de Manutenção Ativo">🔧</span>`
+      : '';
+
     return `
       <div class="relative flex items-center justify-center transition-all duration-350 ${scaleClass}">
         <!-- Selected halo effect -->
         ${isSelected ? '<span class="absolute inline-flex h-9 w-9 rounded-full bg-amber-500/30 animate-pulse"></span>' : ''}
         ${isHovered && !isSelected ? '<span class="absolute inline-flex h-8 w-8 rounded-full bg-slate-300/20"></span>' : ''}
 
+        <!-- Upgrades and Status Badges Overlay -->
+        ${hubBadge}
+        ${yardBadge}
+
         <!-- Main Pin node -->
-        <div class="w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 bg-slate-900 ${statusClass} transition-all">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 bg-slate-900 ${statusClass} transition-all" style="font-size: 11px;">
           <!-- Outer core ring depending on type -->
-          <div class="w-3.5 h-3.5 rounded-full flex items-center justify-center ${isCapital ? 'animate-pulse' : ''}">
-            <div class="w-2 h-2 rounded-full ${coreDotClass}"></div>
-          </div>
+          ${city.portType === 'maritime' 
+            ? '<span class="text-amber-400 font-bold select-none leading-none">⚓</span>' 
+            : city.portType === 'fluvial' 
+              ? '<span class="text-teal-300 font-bold select-none leading-none">🚢</span>' 
+              : `
+              <div class="w-3.5 h-3.5 rounded-full flex items-center justify-center ${isCapital ? 'animate-pulse' : ''}">
+                <div class="w-2 h-2 rounded-full ${coreDotClass}"></div>
+              </div>
+              `
+          }
         </div>
 
         <!-- Connection Badge indicator -->
         <span class="absolute -top-1.5 -right-1.5 text-[8.5px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full text-white shadow-sm border border-slate-700 ${
-          conns === 2 
-            ? 'bg-emerald-600 border-emerald-400' 
-            : conns === 1 
-              ? 'bg-amber-600 border-amber-400 animate-pulse' 
+          conns >= maxConns 
+            ? 'bg-emerald-600 border-emerald-450' 
+            : conns > 0 
+              ? 'bg-amber-600 border-amber-450 animate-pulse' 
               : 'bg-slate-700'
         }">
           ${conns}
@@ -372,13 +406,15 @@ export default function GameMap({
       }
     });
 
-    // Add marker nodes for all 57 cities
+    // Add marker nodes for all cities in the game
     cities.forEach(city => {
       const conns = cityConnectionsMap[city.id] || 0;
       const isSel = selectedCityId === city.id;
       const isGov = hoveredCityId === city.id;
+      const isUpgraded = upgradedHubs?.includes(city.id) || false;
+      const hasYard = maintenanceYards?.includes(city.id) || false;
 
-      const markerHtml = getMarkerHtml(city, conns, isSel, isGov);
+      const markerHtml = getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard);
       const customIcon = L.divIcon({
         html: markerHtml,
         className: 'custom-city-marker',
@@ -389,18 +425,26 @@ export default function GameMap({
       const marker = L.marker([city.lat, city.lng], { icon: customIcon });
 
       // Interactive hover tooltips
-      const trackerType = city.type === 'capital' ? '★ Capital' : '● Cidade';
+      const trackerType = city.portType === 'maritime' 
+        ? '⚓ Porto Marítimo' 
+        : city.portType === 'fluvial' 
+          ? '🚢 Porto Fluvial' 
+          : city.type === 'capital' 
+            ? '★ Capital' 
+            : '● Cidade';
+
+      const maxConns = isUpgraded ? 3 : 2;
       const tooltipContent = `
         <div class="p-1 px-1.5 font-sans leading-tight">
           <div class="flex items-center gap-1.5 mb-0.5">
-            <span class="font-bold text-slate-900 text-sm">${city.name}</span>
+            <span class="font-bold text-slate-900 text-sm whitespace-nowrap">${city.name}</span>
             <span class="text-[10px] bg-slate-200 text-slate-800 font-bold px-1 rounded">${city.state}</span>
           </div>
-          <p class="text-[10px] text-slate-500 font-medium">${trackerType}</p>
+          <p class="text-[10px] text-slate-500 font-medium">${trackerType}${isUpgraded ? ' (★ Terminal Central)' : ''}${hasYard ? ' (🔧 Manutenção)' : ''}</p>
           <div class="mt-1 flex items-center justify-between text-[10px] border-t border-slate-100 pt-1 text-slate-600">
             <span>Conexões:</span>
-            <span class="font-extrabold ${conns === 2 ? 'text-emerald-600' : 'text-amber-500'}">
-              ${conns} / 2
+            <span class="font-extrabold ${conns >= maxConns ? 'text-emerald-600' : 'text-amber-500'}">
+              ${conns} / ${maxConns}
             </span>
           </div>
         </div>
@@ -472,28 +516,50 @@ export default function GameMap({
         const conns = cityConnectionsMap[city.id] || 0;
         const isSel = selectedCityId === city.id;
         const isGov = hoveredCityId === city.id;
+        const isUpgraded = upgradedHubs?.includes(city.id) || false;
+        const hasYard = maintenanceYards?.includes(city.id) || false;
 
         // Swap out icons completely without destroying spatial markers
         marker.setIcon(L.divIcon({
-          html: getMarkerHtml(city, conns, isSel, isGov),
+          html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard),
           className: 'custom-city-marker',
           iconSize: [28, 28],
           iconAnchor: [14, 14]
         }));
 
         // Dynamically update the floating tooltips connection state live
-        const trackerType = city.type === 'capital' ? '★ Capital' : '● Cidade';
+        const trackerType = city.portType === 'maritime' 
+          ? '⚓ Porto Marítimo' 
+          : city.portType === 'fluvial' 
+            ? '🚢 Porto Fluvial' 
+            : city.type === 'capital' 
+              ? '★ Capital' 
+              : '● Cidade';
+
+        const maxConns = isUpgraded ? 3 : 2;
+
+        let maintenanceText = '';
+        if (conns > 0) {
+          const mDist = nearestYardDistances[city.id];
+          if (mDist === undefined || mDist === Infinity) {
+            maintenanceText = `<p class="text-[10px] text-rose-600 font-bold mt-1 bg-rose-50/80 px-1 py-0.5 rounded border border-rose-200">⚠️ Risco de Falha! Sem Manutenção</p>`;
+          } else {
+            maintenanceText = `<p class="text-[10px] text-emerald-600 font-semibold mt-1 bg-emerald-50/80 px-1 py-0.5 rounded border border-emerald-200">🔧 Cobertura: ${mDist} km / 800 km</p>`;
+          }
+        }
+
         const tooltipContent = `
           <div class="p-1.5 font-sans leading-tight">
             <div class="flex items-center gap-1.5 mb-0.5">
               <span class="font-bold text-slate-800 text-sm whitespace-nowrap">${city.name}</span>
               <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1 rounded">${city.state}</span>
             </div>
-            <p class="text-[10px] text-slate-400 font-medium">${trackerType}</p>
+            <p class="text-[10px] text-slate-400 font-medium">${trackerType}${isUpgraded ? ' (★ Central Hub)' : ''}${hasYard ? ' (🔧 Yard)' : ''}</p>
+            ${maintenanceText}
             <div class="mt-1 flex items-center justify-between text-[10px] border-t border-slate-100 pt-1 text-slate-600">
-              <span class="mr-3">Conexões:</span>
-              <span class="font-extrabold ${conns === 2 ? 'text-emerald-600' : 'text-amber-500'}">
-                ${conns} / 2
+              <span class="mr-3 font-medium">Conexões:</span>
+              <span class="font-extrabold ${conns >= maxConns ? 'text-emerald-600' : 'text-amber-500'}">
+                ${conns} / ${maxConns}
               </span>
             </div>
           </div>
@@ -506,7 +572,7 @@ export default function GameMap({
     if (!selectedCityId && rubberBandRef.current) {
       rubberBandRef.current.setLatLngs([]);
     }
-  }, [cities, edges, selectedCityId, hoveredCityId, cityConnectionsMap]);
+  }, [cities, edges, selectedCityId, hoveredCityId, cityConnectionsMap, upgradedHubs, maintenanceYards, nearestYardDistances]);
 
   // Draw actual railway lines with layered aesthetics (dark base + dashed indicator)
   useEffect(() => {
@@ -525,79 +591,144 @@ export default function GameMap({
           [toCity.lat, toCity.lng]
         ];
 
-        // 1. Ballast base layer (Leito de brita cinza largo)
-        const ballastLayer = L.polyline(latlngs, {
-          color: '#334155', // slate-700
-          weight: 8,
-          opacity: 0.85,
-          lineCap: 'round'
-        });
+        const isBalsa = edge.type === 'balsa';
 
-        // 2. Wooden Sleepers/Ties (Dormentes de madeira espaçados)
-        const tieLayer = L.polyline(latlngs, {
-          color: '#451a03', // canela escuro/mogno
-          weight: 6.5,
-          opacity: 1.0,
-          dashArray: '2, 5', // barras transversais realistas
-          lineCap: 'butt'
-        });
+        if (isBalsa) {
+          // 1. Water path shadow/rim
+          const balsaShadow = L.polyline(latlngs, {
+            color: '#0284c7', // Sky-600
+            weight: 7,
+            opacity: 0.4,
+            lineCap: 'round'
+          });
 
-        // 3. Steel Rails Base (Banda metálica vermelha)
-        const railsBase = L.polyline(latlngs, {
-          color: '#ef4444', // vermelho vivo
-          weight: 4,
-          opacity: 1.0,
-          lineCap: 'round'
-        });
+          // 2. Dotted aquatic line representing shipping ferry lane
+          const balsaLine = L.polyline(latlngs, {
+            color: '#0ea5e9', // Sky-500
+            weight: 4.5,
+            opacity: 0.9,
+            dashArray: '6, 8',
+            lineCap: 'round'
+          });
 
-        // 4. Steel Rails Center Split (Duplica o visual criando dois trilhos paralelos)
-        const railsSplit = L.polyline(latlngs, {
-          color: '#0f172a', // cor escura para cavar o meio
-          weight: 1.4,
-          opacity: 1.0,
-          lineCap: 'round'
-        });
+          // 3. Central light core ripple wave
+          const balsaRipple = L.polyline(latlngs, {
+            color: '#e0f2fe', // Sky-100 water ripple
+            weight: 1.5,
+            opacity: 0.8,
+            dashArray: '1, 14',
+            lineCap: 'round'
+          });
 
-        // 5. Interactive invisible hitbox (Excelente sensibilidade ao toque e mouse)
-        const interactiveLayer = L.polyline(latlngs, {
-          color: 'transparent',
-          weight: 15,
-          opacity: 0.0
-        });
+          // 4. Interactive hitbox
+          const interactiveLayer = L.polyline(latlngs, {
+            color: 'transparent',
+            weight: 15,
+            opacity: 0.0
+          });
 
-        // Click handler to remove track segments instantly
-        const deleteHandler = (e: L.LeafletMouseEvent) => {
-          L.DomEvent.stopPropagation(e);
-          onConnectCitiesRef.current(edge.from, edge.to);
-        };
+          const deleteHandler = (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onConnectCitiesRef.current(edge.from, edge.to);
+          };
+          interactiveLayer.on('click', deleteHandler);
 
-        interactiveLayer.on('click', deleteHandler);
+          // Hover highlights
+          interactiveLayer.on('mouseover', () => {
+            balsaLine.setStyle({ color: '#38bdf8', weight: 6 });
+            balsaShadow.setStyle({ color: '#fbbf24', weight: 9, opacity: 0.8 }); // gold glow selection
+          });
+          interactiveLayer.on('mouseout', () => {
+            balsaLine.setStyle({ color: '#0ea5e9', weight: 4.5 });
+            balsaShadow.setStyle({ color: '#0284c7', weight: 7, opacity: 0.4 });
+          });
 
-        // Hover effects on the interactive area
-        const hoverIn = () => {
-          railsBase.setStyle({ color: '#fbbf24', weight: 5 }); // brilha em ouro
-          ballastLayer.setStyle({ color: '#475569', weight: 10 });
-        };
-        const hoverOut = () => {
-          railsBase.setStyle({ color: '#ef4444', weight: 4 });
-          ballastLayer.setStyle({ color: '#334155', weight: 8 });
-        };
+          interactiveLayer.bindTooltip(`Balsa Hidroviária: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-[11px] text-cyan-400 font-bold">Clique para desativar rota hidroviária</span>`, {
+            sticky: true,
+            direction: 'auto',
+            className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
+          });
 
-        interactiveLayer.on('mouseover', hoverIn);
-        interactiveLayer.on('mouseout', hoverOut);
+          trackGroupRef.current?.addLayer(balsaShadow);
+          trackGroupRef.current?.addLayer(balsaLine);
+          trackGroupRef.current?.addLayer(balsaRipple);
+          trackGroupRef.current?.addLayer(interactiveLayer);
 
-        // Bind delete confirmation tooltip to the interactive area
-        interactiveLayer.bindTooltip(`Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-red-400 font-bold">Clique para remover trilho</span>`, {
-          sticky: true,
-          direction: 'auto',
-          className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
-        });
+        } else {
+          // 1. Ballast base layer (Leito de brita cinza largo)
+          const ballastLayer = L.polyline(latlngs, {
+            color: '#334155', // slate-700
+            weight: 8,
+            opacity: 0.85,
+            lineCap: 'round'
+          });
 
-        trackGroupRef.current?.addLayer(ballastLayer);
-        trackGroupRef.current?.addLayer(tieLayer);
-        trackGroupRef.current?.addLayer(railsBase);
-        trackGroupRef.current?.addLayer(railsSplit);
-        trackGroupRef.current?.addLayer(interactiveLayer);
+          // 2. Wooden Sleepers/Ties (Dormentes de madeira espaçados)
+          const tieLayer = L.polyline(latlngs, {
+            color: '#451a03', // canela escuro/mogno
+            weight: 6.5,
+            opacity: 1.0,
+            dashArray: '2, 5', // barras transversais realistas
+            lineCap: 'butt'
+          });
+
+          // 3. Steel Rails Base (Banda metálica vermelha)
+          const railsBase = L.polyline(latlngs, {
+            color: '#ef4444', // vermelho vivo
+            weight: 4,
+            opacity: 1.0,
+            lineCap: 'round'
+          });
+
+          // 4. Steel Rails Center Split (Duplica o visual criando dois trilhos paralelos)
+          const railsSplit = L.polyline(latlngs, {
+            color: '#0f172a', // cor escura para cavar o meio
+            weight: 1.4,
+            opacity: 1.0,
+            lineCap: 'round'
+          });
+
+          // 5. Interactive invisible hitbox (Excelente sensibilidade ao toque e mouse)
+          const interactiveLayer = L.polyline(latlngs, {
+            color: 'transparent',
+            weight: 15,
+            opacity: 0.0
+          });
+
+          // Click handler to remove track segments instantly
+          const deleteHandler = (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onConnectCitiesRef.current(edge.from, edge.to);
+          };
+
+          interactiveLayer.on('click', deleteHandler);
+
+          // Hover effects on the interactive area
+          const hoverIn = () => {
+            railsBase.setStyle({ color: '#fbbf24', weight: 5 }); // brilha em ouro
+            ballastLayer.setStyle({ color: '#475569', weight: 10 });
+          };
+          const hoverOut = () => {
+            railsBase.setStyle({ color: '#ef4444', weight: 4 });
+            ballastLayer.setStyle({ color: '#334155', weight: 8 });
+          };
+
+          interactiveLayer.on('mouseover', hoverIn);
+          interactiveLayer.on('mouseout', hoverOut);
+
+          // Bind delete confirmation tooltip to the interactive area
+          interactiveLayer.bindTooltip(`Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-red-400 font-bold">Clique para remover trilho</span>`, {
+            sticky: true,
+            direction: 'auto',
+            className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
+          });
+
+          trackGroupRef.current?.addLayer(ballastLayer);
+          trackGroupRef.current?.addLayer(tieLayer);
+          trackGroupRef.current?.addLayer(railsBase);
+          trackGroupRef.current?.addLayer(railsSplit);
+          trackGroupRef.current?.addLayer(interactiveLayer);
+        }
       }
     });
   }, [edges, cities]);
