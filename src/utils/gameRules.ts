@@ -369,3 +369,11 @@ export function calculateRailwayDistancesFromYards(
 
   return distances;
 }
+
+export function getYearInflationMultiplier(gameYear: number): number {
+  if (gameYear <= 2035) return 1.0;
+  if (gameYear <= 2045) return 1.15;
+  if (gameYear <= 2055) return 1.35;
+  if (gameYear <= 2065) return 1.60;
+  return 1.90;
+}
