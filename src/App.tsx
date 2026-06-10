@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CITIES } from './data/cities';
-import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers } from './types';
+import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject } from './types';
 import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
 import { sound } from './services/sound';
@@ -17,6 +17,7 @@ import {
   getTrackResourcesRequired,
   RESOURCE_BUY_PRICES,
   getTrackWorkersRequired,
+  getConstructionMonths,
   WORKER_SALARIES,
   WORKER_NAMES,
   getYearInflationMultiplier
@@ -89,12 +90,14 @@ export default function App() {
 
   // Workforce state (workers pool and spent payroll)
   const [workers, setWorkers] = useState<GameWorkers>({
-    basico: 35,
-    operador: 15,
-    especialista: 8,
-    perfurador: 4
+    terraplanagem: 500,
+    assentamento:  300,
+    sinalizacao:   80,
+    explosivos:    30,
+    manutencao:    150,
   });
   const [spentOnWorkers, setSpentOnWorkers] = useState(0);
+  const [constructionQueue, setConstructionQueue] = useState<ConstructionProject[]>([]);
 
   const [activeEvents, setActiveEvents] = useState<GameEvent[]>([]);
   const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
@@ -183,20 +186,45 @@ export default function App() {
     if (lastPaidMonthRef.current !== monthKey) {
       lastPaidMonthRef.current = monthKey;
 
-      const monthlyPayroll = (workers.basico * WORKER_SALARIES.basico) +
-                             (workers.operador * WORKER_SALARIES.operador) +
-                             (workers.especialista * WORKER_SALARIES.especialista) +
-                             (workers.perfurador * WORKER_SALARIES.perfurador);
+      const monthlyPayroll = (workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
+                             (workers.assentamento  * WORKER_SALARIES.assentamento)  +
+                             (workers.sinalizacao   * WORKER_SALARIES.sinalizacao)   +
+                             (workers.explosivos    * WORKER_SALARIES.explosivos)    +
+                             (workers.manutencao    * WORKER_SALARIES.manutencao);
 
+      const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
       if (monthlyPayroll > 0) {
         setSpentOnWorkers((prev) => prev + monthlyPayroll);
-        showToast(`🚚 Folha de Pagamento: R$ ${monthlyPayroll.toLocaleString('pt-BR')} pagos para ${workers.basico + workers.operador + workers.especialista + workers.perfurador} profissionais em campo.`, 'info');
+        showToast(`🚚 Folha de Pagamento: R$ ${monthlyPayroll.toLocaleString('pt-BR')} pagos para ${totalWorkers.toLocaleString('pt-BR')} profissionais em campo.`, 'info');
       }
       // Record budget snapshot for history chart
       setBudgetHistory(prev => [
         ...prev.slice(-23),
         { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
       ]);
+
+      // Advance construction queue
+      setConstructionQueue(prev => {
+        const stillBuilding: ConstructionProject[] = [];
+        const completed: ConstructionProject[] = [];
+        prev.forEach(p => {
+          if (p.monthsRemaining <= 1) completed.push(p);
+          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
+        });
+        if (completed.length > 0) {
+          setEdges(prevEdges => prevEdges.map(e => {
+            const done = completed.find(p => p.edgeId === e.id);
+            return done ? { ...e, status: 'complete' as const } : e;
+          }));
+          completed.forEach(p => {
+            const cityA = CITIES.find(c => c.id === p.from);
+            const cityB = CITIES.find(c => c.id === p.to);
+            showToast(`✅ Construção concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)`, 'success');
+            sound.playConnect();
+          });
+        }
+        return stillBuilding;
+      });
     }
 
     // 1. Durations Tick
@@ -331,12 +359,14 @@ export default function App() {
 
     // Reset workers state
     setWorkers({
-      basico: 35,
-      operador: 15,
-      especialista: 8,
-      perfurador: 4
+      terraplanagem: 500,
+      assentamento:  300,
+      sinalizacao:   80,
+      explosivos:    30,
+      manutencao:    150,
     });
     setSpentOnWorkers(0);
+    setConstructionQueue([]);
 
     setActiveEvents([]);
     setCurrentEvent(null);
@@ -385,10 +415,10 @@ export default function App() {
     sound.playConnect();
 
     const nameMap: Record<keyof GameWorkers, string> = {
-      basico: 'Operário Básico',
-      operador: 'Operador de Máquinas',
-      especialista: 'Especialista',
-      perfurador: 'Perfurador de Túnel'
+      terraplanagem: 'Terraplanagem',
+      assentamento: 'Assentamento',
+      sinalizacao: 'Sinalização',
+      explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
 
     showToast(`Admissão: +${amount} ${nameMap[role]}(s) contratado(s). Taxa paga: R$ ${totalCost.toLocaleString('pt-BR')}.`, 'success');
@@ -411,10 +441,10 @@ export default function App() {
     sound.playDisconnect();
 
     const nameMap: Record<keyof GameWorkers, string> = {
-      basico: 'Operário Básico',
-      operador: 'Operador de Máquinas',
-      especialista: 'Especialista',
-      perfurador: 'Perfurador de Túnel'
+      terraplanagem: 'Terraplanagem',
+      assentamento: 'Assentamento',
+      sinalizacao: 'Sinalização',
+      explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
 
     showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s) desligados da equipe de obras!`, 'info');
@@ -576,15 +606,26 @@ export default function App() {
       setEdges((prev) => prev.filter((e) => e.id !== existingEdge.id));
       setSelectedCityId(null);
       sound.playDisconnect();
-      
-      const refundedCost = existingEdge.type === 'balsa' 
+
+      const isBuilding = existingEdge.status === 'building';
+      if (isBuilding) {
+        setConstructionQueue(prev => prev.filter(p => p.edgeId !== existingEdge.id));
+      }
+
+      const refundRatio = isBuilding ? 0.5 : 1.0;
+      const baseCost = existingEdge.type === 'balsa'
         ? Math.round(existingEdge.distance * 12000000)
         : getTrackCostDetail(cityA, cityB, existingEdge.distance).totalCost;
+      const refundedCost = Math.round(baseCost * refundRatio);
 
-      // Refund materials actually consumed at construction time (not recalculated with current crisis effects)
       const activeEffects = activeEvents.map(e => e.statusEffect);
-      const refundedResources = existingEdge.resourcesConsumed
+      const consumed = existingEdge.resourcesConsumed
         ?? getTrackResourcesRequired(cityA, cityB, existingEdge.distance, existingEdge.type ?? 'rail', []);
+      const refundedResources: GameResources = {} as GameResources;
+      Object.keys(consumed).forEach(k => {
+        const key = k as keyof GameResources;
+        refundedResources[key] = Math.floor(consumed[key] * refundRatio);
+      });
       setResources(prev => {
         const u = { ...prev };
         Object.keys(refundedResources).forEach(k => {
@@ -595,10 +636,14 @@ export default function App() {
       });
 
       const refundedText = Object.entries(refundedResources)
-        .map(([k, v]) => `${v.toFixed(0)}t de ${k === 'aco' ? 'Aço' : k === 'brita' ? 'Brita' : k === 'madeira' ? 'Madeira' : k === 'cimento' ? 'Cimento' : k === 'cobre' ? 'Cobre' : 'Explosivos'}`)
+        .map(([k, v]) => `${(v as number).toFixed(0)}t de ${k === 'aco' ? 'Aço' : k === 'brita' ? 'Brita' : k === 'madeira' ? 'Madeira' : k === 'cimento' ? 'Cimento' : k === 'cobre' ? 'Cobre' : 'Explosivos'}`)
         .join(", ");
 
-      showToast(`Rota entre ${cityA.name} e ${cityB.name} demolida. R$ ${refundedCost.toLocaleString('pt-BR')} liberados e insumos estornados ao estoque: ${refundedText}!`, 'info');
+      if (isBuilding) {
+        showToast(`🚧 Obra cancelada (reembolso 50%): R$ ${refundedCost.toLocaleString('pt-BR')} e materiais devolvidos: ${refundedText}`, 'info');
+      } else {
+        showToast(`Rota ${cityA.name} ↔ ${cityB.name} demolida. R$ ${refundedCost.toLocaleString('pt-BR')} liberados. Insumos: ${refundedText}`, 'info');
+      }
       return;
     }
 
@@ -658,40 +703,29 @@ export default function App() {
     const activeEffects = activeEvents.map(e => e.statusEffect);
     const reqs = getTrackResourcesRequired(cityA, cityB, distanceVal, constructionType, activeEffects);
 
-    // Verify workforce requirements and shortages
+    // Verify workforce requirements
     const hasExplosives = reqs.explosivos > 0;
     const reqWorkers = getTrackWorkersRequired(cityA, cityB, distanceVal, constructionType, hasExplosives);
 
-    // 1. Basic workers check (Servente, Carpinteiro, Armador)
-    if (workers.basico < reqWorkers.basico) {
+    if (workers.terraplanagem < reqWorkers.terraplanagem) {
       sound.playError();
-      showToast(`⚠️ Equipe básica insuficiente! O trecho de ${distanceVal.toFixed(0)} km requer pelo menos ${reqWorkers.basico} Serventes/Carpinteiros contratados ativos (Contratados atuais: ${workers.basico}). Recrute profissionais no painel lateral!`, 'error');
+      showToast(`⚠️ Equipe de Terraplanagem insuficiente! Este trecho requer pelo menos ${reqWorkers.terraplanagem} trabalhadores (atual: ${workers.terraplanagem}). Contrate mais no painel de equipes!`, 'error');
       setSelectedCityId(null);
       return;
     }
-
-    // 2. Specialists check (Soldador, Engenheiro, Eletricista)
-    if (workers.especialista < reqWorkers.especialista) {
+    if (workers.assentamento < reqWorkers.assentamento) {
       sound.playError();
-      showToast(`⚠️ Especialistas insuficientes! Solda térmica e conformidade técnica deste trecho exigem pelo menos ${reqWorkers.especialista} Especialistas (Engenheiros) contratados ativos (Contratados atuais: ${workers.especialista}).`, 'error');
+      showToast(`⚠️ Equipe de Assentamento insuficiente! Este trecho requer pelo menos ${reqWorkers.assentamento} trabalhadores (atual: ${workers.assentamento}). Contrate mais no painel de equipes!`, 'error');
       setSelectedCityId(null);
       return;
     }
-
-    // 3. Drillers check (Perfuratriz, Mangoteiro)
-    if (reqWorkers.perfurador > 0 && workers.perfurador < reqWorkers.perfurador) {
+    if (reqWorkers.explosivos > 0 && workers.explosivos < reqWorkers.explosivos) {
       sound.playError();
-      showToast(`⚠️ Falta de equipe serrana! O trecho íngreme que atravessa serras exige detonações de explosivos, necessitando de pelo menos ${reqWorkers.perfurador} Perfuradores contratados ativos (Contratados atuais: ${workers.perfurador}).`, 'error');
+      showToast(`⚠️ Equipe de Explosivos insuficiente! Túneis e serras neste trecho requerem pelo menos ${reqWorkers.explosivos} especialistas em explosivos (atual: ${workers.explosivos}).`, 'error');
       setSelectedCityId(null);
       return;
     }
-
-    // 4. Machinery Operators penalty ("Acelera a obra. Se faltar, tempo dobra")
-    const isShortOperators = workers.operador < reqWorkers.operador;
-    const operatorPenaltyCost = isShortOperators ? targetCost : 0;
-    if (isShortOperators) {
-      targetCost = targetCost * 2.0; // Double construction financial cost
-    }
+    const operatorPenaltyCost = 0;
     
     let buyCost = 0;
     const isHighInflation = activeEffects.includes('INFLACAO_GLOBAL');
@@ -747,27 +781,33 @@ export default function App() {
       return u;
     });
 
-    const newEdge: Edge = {
+    // Start construction — edge enters queue as 'building'
+    const months = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
+    const project: ConstructionProject = {
+      edgeId: `${idA}-${idB}`,
+      from: idA,
+      to: idB,
+      distance: distanceVal,
+      type: constructionType,
+      resourcesConsumed: reqs,
+      totalMonths: months,
+      monthsRemaining: months,
+      startedYear: gameYear,
+      startedMonth: monthIdx,
+    };
+    setConstructionQueue(prev => [...prev, project]);
+
+    const buildingEdge: Edge = {
       id: `${idA}-${idB}`,
       from: idA,
       to: idB,
       distance: distanceVal,
       type: constructionType,
       resourcesConsumed: reqs,
+      status: 'building',
     };
-
-    const nextEdges = [...edges, newEdge];
+    const nextEdges = [...edges, buildingEdge];
     setEdges(nextEdges);
-
-    // Pre-emptive maintenance warning for the newly added edge
-    const postBuildDistances = calculateRailwayDistancesFromYards(CITIES, nextEdges, maintenanceYards);
-    const newEdgeMaintDist = Math.min(
-      postBuildDistances[idA] ?? Infinity,
-      postBuildDistances[idB] ?? Infinity
-    );
-    if (newEdgeMaintDist > 800) {
-      showToast(`⚠️ Trecho ${cityA.name} ↔ ${cityB.name} está fora do alcance de manutenção (${newEdgeMaintDist === Infinity ? '∞' : newEdgeMaintDist.toFixed(0)} km do pátio mais próximo). Construa um pátio de manutenção próximo para cobrir este trecho!`, 'info');
-    }
 
     setSelectedCityId(null);
     sound.playConnect();
@@ -776,29 +816,26 @@ export default function App() {
     const consumedText = Object.entries(reqs)
       .map(([k, v]) => `${v.toFixed(0)}t de ${k === 'aco' ? 'Aço' : k === 'brita' ? 'Brita' : k === 'madeira' ? 'Madeira' : k === 'cimento' ? 'Cimento' : k === 'cobre' ? 'Cobre' : 'Explosivos'}`)
       .join(", ");
-    
-    const autoBuyText = buyCost > 0
-      ? ` e auto-adquiridos R$ ${(buyCost / 1000000000).toFixed(2)} Bilhões em insumos em falta`
-      : '';
 
-    const operatorsWarningText = isShortOperators
-      ? ` ⚠️ Custo FINANCEIRO DOBRADO (Manual): Falta de Operadores de Máquinas contratados (${workers.operador}/${reqWorkers.operador}).`
+    const autoBuyText = buyCost > 0
+      ? ` | Auto-compra: R$ ${(buyCost / 1000000000).toFixed(2)}B`
       : '';
 
     if (constructionType === 'balsa') {
-      showToast(`Balsa estabelecida: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) - Investimento: R$ ${formattedCost}${autoBuyText}.${operatorsWarningText} Materiais: ${consumedText}`, 'success');
+      showToast(`🚧 Obra iniciada: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) — ${months} mes(es) — R$ ${formattedCost}${autoBuyText}. Materiais: ${consumedText}`, 'info');
     } else {
       const detail = getTrackCostDetail(cityA, cityB, distanceVal);
-      showToast(`Aço assentado: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) - Terreno: ${detail.terrainName} - Investimento: R$ ${formattedCost}${autoBuyText}.${operatorsWarningText} Materiais: ${consumedText}`, 'success');
+      showToast(`🚧 Obra iniciada: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) — Terreno: ${detail.terrainName} — ${months} mes(es) — R$ ${formattedCost}${autoBuyText}. Materiais: ${consumedText}`, 'info');
     }
 
-    // 7. Check for perfect linear win conditions
-    const hasFinishedPath = nextEdges.length === CITIES.length - 1;
+    // 7. Check for perfect linear win conditions (only completed edges count)
+    const completedEdges = nextEdges.filter(e => e.status !== 'building');
+    const hasFinishedPath = completedEdges.length === CITIES.length - 1;
     if (hasFinishedPath) {
-      const componentSize = getComponentSize(CITIES[0].id, nextEdges);
+      const componentSize = getComponentSize(CITIES[0].id, completedEdges);
       if (componentSize === CITIES.length) {
-        const nextNearestDistances = calculateRailwayDistancesFromYards(CITIES, nextEdges, maintenanceYards);
-        const unmaintainedCount = nextEdges.filter(edge => {
+        const nextNearestDistances = calculateRailwayDistancesFromYards(CITIES, completedEdges, maintenanceYards);
+        const unmaintainedCount = completedEdges.filter(edge => {
           const dA = nextNearestDistances[edge.from] ?? Infinity;
           const dB = nextNearestDistances[edge.to] ?? Infinity;
           return Math.min(dA, dB) > 800;
@@ -873,6 +910,7 @@ export default function App() {
         onHireWorker={handleHireWorker}
         onFireWorker={handleFireWorker}
         budgetHistory={budgetHistory}
+        constructionQueue={constructionQueue}
       />
 
       {/* 3. Primary Leaflet Map Container */}

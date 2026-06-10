@@ -15,6 +15,7 @@ export interface Edge {
   distance: number;
   type?: 'rail' | 'balsa';
   resourcesConsumed?: GameResources;
+  status?: 'complete' | 'building';
 }
 
 export interface GameStats {
@@ -34,10 +35,24 @@ export interface GameResources {
 }
 
 export interface GameWorkers {
-  basico: number;
-  operador: number;
-  especialista: number;
-  perfurador: number;
+  terraplanagem: number;
+  assentamento: number;
+  sinalizacao: number;
+  explosivos: number;
+  manutencao: number;
+}
+
+export interface ConstructionProject {
+  edgeId: string;
+  from: string;
+  to: string;
+  distance: number;
+  type: 'rail' | 'balsa';
+  resourcesConsumed: GameResources;
+  totalMonths: number;
+  monthsRemaining: number;
+  startedYear: number;
+  startedMonth: number;
 }
 
 export interface GameEvent {
@@ -51,4 +66,3 @@ export interface GameEvent {
   monthsLeft: number;
   resolved?: boolean;
 }
-

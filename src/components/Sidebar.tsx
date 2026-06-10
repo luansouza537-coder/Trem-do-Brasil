@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { City, Edge, GameResources, GameEvent, GameWorkers } from '../types';
+import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject } from '../types';
 import { formatDistance } from '../utils/geo';
 import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant } from '../utils/gameRules';
 import { 
@@ -83,6 +83,7 @@ interface SidebarProps {
   onHireWorker?: (role: keyof GameWorkers, count: number) => void;
   onFireWorker?: (role: keyof GameWorkers, count: number) => void;
   budgetHistory?: { label: string; budget: number }[];
+  constructionQueue?: ConstructionProject[];
 }
 
 export default function Sidebar({
@@ -139,6 +140,7 @@ export default function Sidebar({
   onHireWorker = () => {},
   onFireWorker = () => {},
   budgetHistory = [],
+  constructionQueue = [],
 }: SidebarProps) {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'cities' | 'operations'>('cities');
@@ -159,10 +161,11 @@ export default function Sidebar({
 
   // Monthly workforce payroll calculation
   const totalPayroll = useMemo(() => {
-    return (workers.basico * WORKER_SALARIES.basico) +
-           (workers.operador * WORKER_SALARIES.operador) +
-           (workers.especialista * WORKER_SALARIES.especialista) +
-           (workers.perfurador * WORKER_SALARIES.perfurador);
+    return (workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
+           (workers.assentamento  * WORKER_SALARIES.assentamento)  +
+           (workers.sinalizacao   * WORKER_SALARIES.sinalizacao)   +
+           (workers.explosivos    * WORKER_SALARIES.explosivos)    +
+           (workers.manutencao    * WORKER_SALARIES.manutencao);
   }, [workers]);
 
   // Derived stats

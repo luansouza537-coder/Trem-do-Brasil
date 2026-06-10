@@ -95,53 +95,63 @@ export function getTrackResourcesRequired(
 }
 
 export const WORKER_SALARIES: Record<keyof GameWorkers, number> = {
-  basico: 5000000,       // R$ 5.000.000 por mês (escala realista do jogo, compatível com o orçamento de trilhões/bilhões!)
-  operador: 12000000,    // R$ 12.000.000 por mês
-  especialista: 25050300, // R$ 25.050.300 por mês
-  perfurador: 18000000,   // R$ 18.000.000 por mês
+  terraplanagem: 4500,    // R$ 4.500/pessoa/mês
+  assentamento:  5500,    // R$ 5.500/pessoa/mês
+  sinalizacao:   7000,    // R$ 7.000/pessoa/mês
+  explosivos:    12000,   // R$ 12.000/pessoa/mês
+  manutencao:    4000,    // R$ 4.000/pessoa/mês
 };
 
 export const WORKER_NAMES: Record<keyof GameWorkers, string> = {
-  basico: 'Básico (Servente, Carpinteiro, Armador)',
-  operador: 'Operador de Máquinas (Escavadeira, Trator, Britador)',
-  especialista: 'Especialista (Soldador, Engenheiro, Eletricista)',
-  perfurador: 'Túnel / Montanha (Perfuratriz, Mangoteiro)',
+  terraplanagem: 'Terraplanagem',
+  assentamento:  'Assentamento de Trilhos',
+  sinalizacao:   'Sinalização & Elétrica',
+  explosivos:    'Explosivos & Túneis',
+  manutencao:    'Manutenção',
 };
 
-/**
- * Calculates workforce requirements to build a stretch.
- * @param distance Length of the route in km
- * @param type 'rail' or 'balsa'
- * @param hasExplosives If the route consumes explosives
- */
+export function getConstructionMonths(
+  cityA: City,
+  cityB: City,
+  distance: number,
+  type: 'rail' | 'balsa',
+  workers: GameWorkers
+): number {
+  const isNorth = (s: string) => ['AM','PA','RO','RR','AP','AC','TO'].includes(s);
+  const isMountain = (s: string) => ['SC','RS','RJ','ES','MG'].includes(s);
+
+  let kmPerMonth = type === 'balsa' ? 400 : 200;
+  if (type !== 'balsa') {
+    if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 120;
+    else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 100;
+  }
+
+  const coreWorkers = workers.terraplanagem + workers.assentamento;
+  let workerMod = 1.0;
+  if (coreWorkers < 100) workerMod = 0.4;
+  else if (coreWorkers < 300) workerMod = 0.7;
+  else if (coreWorkers < 600) workerMod = 1.0;
+  else if (coreWorkers < 1000) workerMod = 1.4;
+  else workerMod = 1.8;
+
+  const sigMod = Math.min(1.3, 1.0 + workers.sinalizacao * 0.001);
+  const effectiveKmPerMonth = kmPerMonth * workerMod * sigMod;
+  return Math.max(1, Math.ceil(distance / effectiveKmPerMonth));
+}
+
 export function getTrackWorkersRequired(
   cityA: City,
   cityB: City,
   distance: number,
   type: 'rail' | 'balsa',
-  hasExplosives: boolean
+  needsExplosivos: boolean
 ): GameWorkers {
-  if (type === 'balsa') {
-    return {
-      basico: Math.max(3, Math.ceil(distance * 0.08)),
-      operador: Math.max(1, Math.ceil(distance * 0.03)),
-      especialista: Math.max(2, Math.ceil(distance * 0.04)),
-      perfurador: 0,
-    };
-  }
-
-  // Montanha/Serra detection
-  const isSerras =
-    (cityA.portType === 'maritime' && cityB.portType !== 'maritime') ||
-    (cityB.portType === 'maritime' && cityA.portType !== 'maritime');
-
-  const needsExplosives = hasExplosives || isSerras || (distance > 250 && Math.random() > 0.5);
-
   return {
-    basico: Math.max(10, Math.ceil(distance * 0.25)),
-    operador: Math.max(4, Math.ceil(distance * 0.12)),
-    especialista: Math.max(3, Math.ceil(distance * 0.06)),
-    perfurador: needsExplosives ? Math.max(5, Math.ceil(distance * 0.10)) : 0,
+    terraplanagem: type === 'balsa' ? 20 : Math.ceil(distance * 0.15),
+    assentamento:  type === 'balsa' ? 10 : Math.ceil(distance * 0.10),
+    sinalizacao:   Math.ceil(distance * 0.03),
+    explosivos:    needsExplosivos ? Math.max(5, Math.ceil(distance * 0.02)) : 0,
+    manutencao:    0,
   };
 }
 
