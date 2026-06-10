@@ -380,6 +380,12 @@ export function calculateRailwayDistancesFromYards(
   return distances;
 }
 
+export function getMonthlyRevenue(edges: Edge[]): number {
+  return edges
+    .filter(e => e.status !== 'building')
+    .reduce((sum, e) => sum + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000)), 0);
+}
+
 export function getYearInflationMultiplier(gameYear: number): number {
   if (gameYear <= 2035) return 1.0;
   if (gameYear <= 2045) return 1.15;

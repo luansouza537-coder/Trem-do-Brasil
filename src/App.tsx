@@ -20,7 +20,8 @@ import {
   getConstructionMonths,
   WORKER_SALARIES,
   WORKER_NAMES,
-  getYearInflationMultiplier
+  getYearInflationMultiplier,
+  getMonthlyRevenue
 } from './utils/gameRules';
 import { 
   Train, 
@@ -43,7 +44,7 @@ import {
   Check,
   Layers
 } from 'lucide-react';
-import { saveGame, loadGame, deleteSave, hasSave, getSaveDate } from './utils/persistence';
+import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates } from './utils/persistence';
 
 interface Toast {
   id: string;
@@ -59,8 +60,12 @@ const HISTORIC_FACTS = [
   "Construída no coração de Rondônia, a lendária Estrada de Ferro Madeira-Mamoré ficou tragicamente conhecida como a 'Ferrovia do Diabo', devido às milhares de vidas cobradas por malária e febre amarela durante o ciclo da borracha."
 ];
 
+const MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 export default function App() {
   const lastPaidMonthRef = React.useRef('');
+  const lowBudgetAlertedRef = React.useRef(false);
+  const edgesRef = React.useRef<Edge[]>([]);
 
   // Game States
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -98,6 +103,9 @@ export default function App() {
   });
   const [spentOnWorkers, setSpentOnWorkers] = useState(0);
   const [constructionQueue, setConstructionQueue] = useState<ConstructionProject[]>([]);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [saveSlot, setSaveSlot] = useState(1);
+  const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
 
   const [activeEvents, setActiveEvents] = useState<GameEvent[]>([]);
   const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
@@ -123,6 +131,9 @@ export default function App() {
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
+  // Keep edgesRef in sync for use inside non-edges-dependent effects
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
   // Load sound setting preference
   useEffect(() => {
     sound.setMute(isMuted);
@@ -136,10 +147,11 @@ export default function App() {
       saveGame({
         edges, upgradedHubs, maintenanceYards, constructionType,
         resources, spentOnResources, workers, spentOnWorkers,
-        activeEvents, gameYear, monthIdx, constructionQueue,
-      });
+        activeEvents, gameYear, monthIdx, constructionQueue, totalRevenue,
+      }, saveSlot);
       setHasSaveGame(true);
-      setSaveDate(getSaveDate());
+      setSaveDate(getSaveDate(saveSlot));
+      setSlotDates(getAllSlotDates());
     }, 2000);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -195,8 +207,22 @@ export default function App() {
       const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
       if (monthlyPayroll > 0) {
         setSpentOnWorkers((prev) => prev + monthlyPayroll);
-        showToast(`🚚 Folha de Pagamento: R$ ${monthlyPayroll.toLocaleString('pt-BR')} pagos para ${totalWorkers.toLocaleString('pt-BR')} profissionais em campo.`, 'info');
       }
+
+      // Collect revenue from all completed routes
+      const monthlyRev = getMonthlyRevenue(edgesRef.current);
+      if (monthlyRev > 0) {
+        setTotalRevenue(prev => prev + monthlyRev);
+      }
+
+      // Monthly summary toast
+      const net = monthlyRev - monthlyPayroll;
+      const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(2)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
+      showToast(
+        `📊 ${MONTHS_PT[monthIdx]}/${gameYear} — Receita: +R$ ${fmt(monthlyRev)} | Folha: -R$ ${fmt(monthlyPayroll)} | Saldo: ${net >= 0 ? '+' : ''}R$ ${fmt(net)}`,
+        net >= 0 ? 'success' : 'info'
+      );
+
       // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
 
       // Advance construction queue
@@ -363,6 +389,7 @@ export default function App() {
     });
     setSpentOnWorkers(0);
     setConstructionQueue([]);
+    setTotalRevenue(0);
 
     setActiveEvents([]);
     setCurrentEvent(null);
@@ -373,8 +400,8 @@ export default function App() {
   };
 
   // Load saved game state from localStorage
-  const handleLoadGame = () => {
-    const save = loadGame();
+  const handleLoadGame = (slot = saveSlot) => {
+    const save = loadGame(slot);
     if (!save) return;
     setEdges(save.edges);
     setUpgradedHubs(save.upgradedHubs);
@@ -388,9 +415,55 @@ export default function App() {
     setGameYear(save.gameYear);
     setMonthIdx(save.monthIdx);
     setConstructionQueue(save.constructionQueue ?? []);
+    setTotalRevenue(save.totalRevenue ?? 0);
+    setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
-    showToast(`Partida carregada! Ano ${save.gameYear}.`, 'success');
+    showToast(`Partida carregada! Slot ${slot} — Ano ${save.gameYear}.`, 'success');
+  };
+
+  // Advance one game month manually
+  const handleAdvanceMonth = () => {
+    if (victoryOpen || gameOverOpen) return;
+    setMonthIdx(prev => {
+      if (prev === 11) {
+        setGameYear(py => {
+          if (py >= 2077) { setGameOverOpen(true); return 2077; }
+          return py + 1;
+        });
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
+
+  // Export game statistics as JSON
+  const handleExportStats = () => {
+    const completedEdges = edges.filter(e => e.status !== 'building');
+    const stats = {
+      exportedAt: new Date().toISOString(),
+      gameYear,
+      month: monthIdx + 1,
+      budgetCurrent: budgetState.currentBudget,
+      budgetSpent: budgetState.totalSpent,
+      totalRevenue,
+      monthlyRevenue: budgetState.monthlyRevenue,
+      connectionsComplete: completedEdges.length,
+      connectionsBuilding: edges.filter(e => e.status === 'building').length,
+      totalDistanceKm: Math.round(edges.reduce((s, e) => s + e.distance, 0)),
+      workers,
+      upgradedHubs: upgradedHubs.length,
+      maintenanceYards: maintenanceYards.length,
+      activeEvents: activeEvents.map(e => ({ title: e.title, monthsLeft: e.monthsLeft })),
+    };
+    const blob = new Blob([JSON.stringify(stats, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renif-stats-${gameYear}-${String(monthIdx + 1).padStart(2, '0')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📊 Estatísticas exportadas com sucesso!', 'success');
   };
 
   // Hire workforce handler
@@ -430,7 +503,9 @@ export default function App() {
     }
 
     const actualAmount = Math.min(amount, currentQty);
+    const severanceCost = actualAmount * 500000; // R$ 500.000 por trabalhador
 
+    setSpentOnWorkers(prev => prev + severanceCost);
     setWorkers(prev => ({
       ...prev,
       [role]: Math.max(0, (prev[role] ?? 0) - actualAmount)
@@ -444,7 +519,7 @@ export default function App() {
       explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
 
-    showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s) desligados da equipe de obras!`, 'info');
+    showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s) desligados. Indenização: R$ ${severanceCost.toLocaleString('pt-BR')}`, 'info');
   };
 
   // Manual resource purchasing handler
@@ -509,7 +584,8 @@ export default function App() {
       .reduce((sum, g) => sum + g.value, 0);
 
     const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
-    const currentBudget = startingBudget - totalSpent + grantIncome;
+    const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
+    const monthlyRevenue = getMonthlyRevenue(edges);
 
     return {
       totalSpent,
@@ -522,8 +598,10 @@ export default function App() {
       unlockedGrants: intermodalGrants,
       spentOnWorkers,
       spentOnResources,
+      totalRevenue,
+      monthlyRevenue,
     };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants]);
+  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue]);
 
   // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
   useEffect(() => {
@@ -533,6 +611,20 @@ export default function App() {
     ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [budgetState.currentBudget]);
+
+  // Budget critically low alert
+  useEffect(() => {
+    if (welcomeOpen) return;
+    const pct = budgetState.currentBudget / startingBudget;
+    if (pct < 0.08 && budgetState.currentBudget > 0 && !lowBudgetAlertedRef.current) {
+      lowBudgetAlertedRef.current = true;
+      showToast('🚨 ALERTA CRÍTICO: Caixa abaixo de 8% do orçamento inicial! Reduza gastos urgentemente.', 'error');
+      sound.playError();
+    } else if (pct >= 0.15) {
+      lowBudgetAlertedRef.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.currentBudget, welcomeOpen]);
 
   // Dijkstra nearest yard distance
   const nearestYardDistances = useMemo(() => {
@@ -911,6 +1003,13 @@ export default function App() {
         onFireWorker={handleFireWorker}
         budgetHistory={budgetHistory}
         constructionQueue={constructionQueue}
+
+        // New feature props
+        onAdvanceMonth={handleAdvanceMonth}
+        onExportStats={handleExportStats}
+        saveSlot={saveSlot}
+        onSaveSlotChange={setSaveSlot}
+        slotDates={slotDates}
       />
 
       {/* 3. Primary Leaflet Map Container */}
@@ -1118,25 +1217,43 @@ export default function App() {
 
               {/* Action */}
               <div className="mt-8 flex flex-col gap-3">
-                {hasSaveGame && (
-                  <button
-                    onClick={handleLoadGame}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-display font-extrabold uppercase py-3.5 px-6 rounded-xl transition-all shadow-lg text-xs tracking-widest cursor-pointer active:scale-95"
-                  >
-                    Continuar Partida 💾 {saveDate ? `(${saveDate})` : ''}
-                  </button>
-                )}
+                {/* Save slot selector */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Slot de Jogo:</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 2, 3].map(slot => {
+                      const date = slotDates[slot - 1];
+                      return (
+                        <button
+                          key={slot}
+                          onClick={() => { setSaveSlot(slot); if (date) handleLoadGame(slot); }}
+                          className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                            saveSlot === slot
+                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                          }`}
+                        >
+                          <div className="text-[10px] font-black uppercase">Slot {slot}</div>
+                          <div className="text-[9px] mt-0.5 truncate">{date ? `💾 ${date}` : 'Vazio'}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <button
                   onClick={() => {
-                    if (hasSaveGame && !window.confirm('Iniciar uma nova partida apagará seu progresso salvo. Continuar?')) return;
-                    deleteSave();
+                    const date = slotDates[saveSlot - 1];
+                    if (date && !window.confirm(`Iniciar nova partida no Slot ${saveSlot} apagará o progresso salvo. Continuar?`)) return;
+                    deleteSave(saveSlot);
                     setHasSaveGame(false);
+                    setSlotDates(getAllSlotDates());
                     setWelcomeOpen(false);
                     sound.playSelect();
                   }}
                   className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-display font-extrabold uppercase py-3.5 px-6 rounded-xl transition-all shadow-lg text-xs tracking-widest cursor-pointer active:scale-95"
                 >
-                  {hasSaveGame ? 'Nova Partida 🆕' : 'Iniciar Jornada 🚂'}
+                  {slotDates[saveSlot - 1] ? `Nova Partida no Slot ${saveSlot} 🆕` : 'Iniciar Jornada 🚂'}
                 </button>
               </div>
             </div>

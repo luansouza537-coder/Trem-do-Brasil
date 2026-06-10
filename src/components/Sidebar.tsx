@@ -63,6 +63,8 @@ interface SidebarProps {
     unlockedGrants: FundGrant[];
     spentOnWorkers?: number;
     spentOnResources?: number;
+    totalRevenue?: number;
+    monthlyRevenue?: number;
   };
   unmaintainedEdgesCount?: number;
   nearestYardDistances?: Record<string, number>;
@@ -84,6 +86,13 @@ interface SidebarProps {
   onFireWorker?: (role: keyof GameWorkers, count: number) => void;
   budgetHistory?: { label: string; budget: number }[];
   constructionQueue?: ConstructionProject[];
+
+  // New feature props
+  onAdvanceMonth?: () => void;
+  onExportStats?: () => void;
+  saveSlot?: number;
+  onSaveSlotChange?: (slot: number) => void;
+  slotDates?: (string | null)[];
 }
 
 export default function Sidebar({
@@ -141,12 +150,19 @@ export default function Sidebar({
   onFireWorker = () => {},
   budgetHistory = [],
   constructionQueue = [],
+  onAdvanceMonth = () => {},
+  onExportStats = () => {},
+  saveSlot = 1,
+  onSaveSlotChange = () => {},
+  slotDates = [null, null, null],
 }: SidebarProps) {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'cities' | 'operations'>('cities');
   const [typeFilter, setTypeFilter] = useState<'all' | 'capital' | 'cidade' | 'portos'>('all');
   const [connsFilter, setConnsFilter] = useState<'all' | '0' | '1' | '2'>('all');
   const [showHowToPlay, setShowHowToPlay] = useState(true);
+  const [showLegend, setShowLegend] = useState(false);
+  const [showStateGrid, setShowStateGrid] = useState(false);
 
   // Calculate connections per city
   const cityConnections = useMemo(() => {
@@ -224,19 +240,26 @@ export default function Sidebar({
         </div>
         
         {/* Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onAdvanceMonth}
+            className="p-1.5 rounded-lg border border-sky-900/40 bg-sky-950/20 text-sky-400 hover:bg-sky-900/40 hover:text-sky-200 transition text-[9px] font-black uppercase tracking-wider"
+            title="Avançar 1 mês manualmente"
+          >
+            ⏭+1M
+          </button>
           <button
             onClick={onToggleMute}
             className={`p-2 rounded-lg border transition ${
-              isMuted 
-                ? 'border-slate-800 bg-slate-950/40 text-slate-500 hover:text-slate-300' 
+              isMuted
+                ? 'border-slate-800 bg-slate-950/40 text-slate-500 hover:text-slate-300'
                 : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
             }`}
             title={isMuted ? "Ativar som" : "Desativar som"}
           >
             {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
-          
+
           <button
             onClick={onReset}
             className="p-2 rounded-lg border border-red-900/30 bg-red-950/20 text-red-400 hover:bg-red-900/40 hover:text-red-300 transition"
@@ -287,15 +310,39 @@ export default function Sidebar({
         <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-xs">
           <div>
             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Caixa</span>
-            <span className={`text-[12.5px] font-black ${budgetState.currentBudget >= 0 ? 'text-emerald-400' : 'text-rose-500'} font-sans`}>
+            <span className={`text-[12.5px] font-black font-sans flex items-center gap-1 ${
+              budgetState.currentBudget < 0 ? 'text-rose-500' :
+              budgetState.currentBudget < 100000000000 ? 'text-rose-400' :
+              budgetState.currentBudget < 250000000000 ? 'text-amber-400' : 'text-emerald-400'
+            }`}>
+              {budgetState.currentBudget < 100000000000 && <span title="Caixa crítico!">⚠️</span>}
               R$ {budgetState.currentBudget.toLocaleString('pt-BR')}
             </span>
           </div>
-          <div className="text-right">
+          <div className="text-right flex flex-col items-end gap-0.5">
             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Conexões</span>
             <span className="text-[11px] font-black text-amber-400">
               {activeConns} / {maxConnsCount} ({pctComplete}%)
             </span>
+            {/* Save slot selector */}
+            <div className="flex gap-0.5 mt-0.5">
+              {[1, 2, 3].map(s => (
+                <button
+                  key={s}
+                  onClick={() => onSaveSlotChange(s)}
+                  title={`Slot ${s}: ${slotDates[s - 1] ?? 'Vazio'}`}
+                  className={`w-5 h-5 rounded text-[8px] font-black border transition cursor-pointer ${
+                    saveSlot === s
+                      ? 'bg-amber-500 text-slate-950 border-amber-400'
+                      : slotDates[s - 1]
+                        ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/40 hover:bg-emerald-800/60'
+                        : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -355,6 +402,14 @@ export default function Sidebar({
               <div className="col-span-2 border-t border-slate-805 pt-1 mt-1 flex justify-between">
                  <span className="text-emerald-500 font-medium">Subsídios Regionais:</span>
                  <span className="text-emerald-400 font-bold font-sans">+R$ {budgetState.grantIncome.toLocaleString('pt-BR')}</span>
+              </div>
+              <div className="col-span-2 border-t border-slate-850 pt-1 mt-1 flex justify-between text-[9.5px]">
+                <span className="text-sky-400 font-semibold">Receita Mensal (Transporte):</span>
+                <span className="text-sky-300 font-bold font-mono">+R$ {(budgetState.monthlyRevenue ?? 0).toLocaleString('pt-BR')}/mês</span>
+              </div>
+              <div className="col-span-2 flex justify-between text-[9.5px]">
+                <span className="text-sky-500 font-medium">Receita Total Acumulada:</span>
+                <span className="text-sky-400 font-bold font-mono">+R$ {(budgetState.totalRevenue ?? 0).toLocaleString('pt-BR')}</span>
               </div>
             </div>
           </div>
@@ -690,6 +745,69 @@ export default function Sidebar({
             );
           })()}
 
+          {/* Map Legend */}
+          <div className="p-2.5 bg-slate-950/50 border-b border-slate-850 shrink-0">
+            <button
+              onClick={() => setShowLegend(v => !v)}
+              className="w-full flex items-center justify-between text-[10px] text-slate-400 font-semibold tracking-wider uppercase"
+            >
+              <span>🗺️ Legenda do Mapa</span>
+              <span className="text-slate-500">{showLegend ? '▲' : '▼'}</span>
+            </button>
+            {showLegend && (
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[9px] text-slate-400">
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-500 inline-block shrink-0"></span>Não conectada</div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block shrink-0"></span>1 conexão</div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block shrink-0"></span>2 conexões (ok)</div>
+                <div className="flex items-center gap-1.5"><span className="font-bold text-amber-400">★</span><span className="ml-1">Terminal Central</span></div>
+                <div className="flex items-center gap-1.5"><span>🔧</span><span className="ml-1">Pátio de Manutenção</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-6 h-1.5 bg-red-500 inline-block rounded"></span>Ferrovia</div>
+                <div className="flex items-center gap-1.5"><span className="w-6 h-1.5 bg-sky-400 inline-block rounded" style={{borderTop:'2px dashed #38bdf8', background:'transparent', height:'0px'}}></span><span>Hidrovia</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-dashed border-orange-500 inline-block"></span>Em construção</div>
+              </div>
+            )}
+          </div>
+
+          {/* State connection grid */}
+          <div className="p-2.5 bg-slate-950/50 border-b border-slate-850 shrink-0">
+            <button
+              onClick={() => setShowStateGrid(v => !v)}
+              className="w-full flex items-center justify-between text-[10px] text-slate-400 font-semibold tracking-wider uppercase"
+            >
+              <span>📍 Conexões por Estado</span>
+              <span className="text-slate-500">{showStateGrid ? '▲' : '▼'}</span>
+            </button>
+            {showStateGrid && (() => {
+              const stateCities: Record<string, string[]> = {};
+              cities.forEach(c => {
+                if (!stateCities[c.state]) stateCities[c.state] = [];
+                stateCities[c.state].push(c.id);
+              });
+              return (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {Object.entries(stateCities).sort(([a],[b]) => a.localeCompare(b)).map(([state, ids]) => {
+                    const connected = ids.filter(id => (cityConnections[id] ?? 0) > 0).length;
+                    const full = connected === ids.length;
+                    const partial = connected > 0;
+                    return (
+                      <div
+                        key={state}
+                        title={`${state}: ${connected}/${ids.length} cidades conectadas`}
+                        className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded border ${
+                          full ? 'bg-emerald-900/40 border-emerald-600/40 text-emerald-300'
+                               : partial ? 'bg-amber-900/30 border-amber-600/30 text-amber-400'
+                               : 'bg-slate-900/40 border-slate-700 text-slate-500'
+                        }`}
+                      >
+                        {state} {connected}/{ids.length}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Construction Mode Selector */}
           <div className="bg-slate-900/95 border-b border-slate-850 p-3 flex flex-col gap-2 shrink-0">
             <div className="flex items-center justify-between text-xs">
@@ -1004,9 +1122,15 @@ export default function Sidebar({
       )}
 
       {/* Footer Branding */}
-      <div className="p-3 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between tracking-wide shrink-0 font-mono">
-        <span>© 2026 TRILHO REAL</span>
-        <span>BR-RAILWAYS V1.0</span>
+      <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
+        <span>© 2026 TRILHO REAL · BR-RAILWAYS V1.0</span>
+        <button
+          onClick={onExportStats}
+          className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
+          title="Exportar estatísticas como JSON"
+        >
+          📊 Export
+        </button>
       </div>
     </div>
   );
