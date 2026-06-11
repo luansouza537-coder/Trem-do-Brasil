@@ -4,7 +4,7 @@ export interface City {
   state: string;
   lat: number;
   lng: number;
-  type: 'capital' | 'cidade';
+  type: 'capital' | 'cidade' | 'mineracao' | 'fronteira' | 'polo_agricola' | 'polo_industrial';
   portType?: 'maritime' | 'fluvial';
 }
 

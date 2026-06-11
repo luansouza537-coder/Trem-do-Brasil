@@ -163,7 +163,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'capital' | 'cidade' | 'portos'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'capital' | 'cidade' | 'portos' | 'mineracao' | 'polo_agricola' | 'polo_industrial' | 'fronteira'>('all');
   const [connsFilter, setConnsFilter] = useState<'all' | '0' | '1' | '2'>('all');
   const [showHowToPlay, setShowHowToPlay] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
@@ -217,7 +217,7 @@ export default function Sidebar({
       const nameMatch = city.name.toLowerCase().includes(search.toLowerCase()) || 
                         city.state.toLowerCase().includes(search.toLowerCase());
       
-      const typeMatch = typeFilter === 'all' || 
+      const typeMatch = typeFilter === 'all' ||
                         (typeFilter === 'portos' ? !!city.portType : city.type === typeFilter);
       
       const conns = cityConnections[city.id] || 0;
@@ -472,8 +472,18 @@ export default function Sidebar({
                              key === 'sinalizacao'   ? 'Cabos de cobre, sinaleiros e controle de tráfego' :
                              key === 'explosivos'    ? 'Perfuração e detonação em serras e montanhas' :
                                                       'Inspeção e reparo de trilhos em operação';
+
+                // Maintenance-specific effect indicator
+                const maintEffect = key === 'manutencao' ? (
+                  qty === 0
+                    ? { label: '⚠️ Sem manutenção: -15% receita', cls: 'text-red-400' }
+                    : qty >= 100
+                      ? { label: `✅ Bônus: +${Math.min(20, Math.floor((qty - 100) / 50) * 5)}% receita`, cls: 'text-emerald-400' }
+                      : { label: '— Sem bônus (≥100 para +receita)', cls: 'text-slate-500' }
+                ) : null;
+
                 return (
-                  <div key={key} className="bg-slate-950/75 border border-slate-850 p-2 rounded-lg flex flex-col gap-1">
+                  <div key={key} className={`bg-slate-950/75 border p-2 rounded-lg flex flex-col gap-1 ${key === 'manutencao' ? (qty === 0 ? 'border-red-900/60' : qty >= 100 ? 'border-emerald-900/60' : 'border-slate-850') : 'border-slate-850'}`}>
                     <div className="flex items-center justify-between gap-1.5">
                       <div className="min-w-0">
                         <span className="text-[10px] font-black text-slate-200 block truncate leading-tight">
@@ -483,6 +493,9 @@ export default function Sidebar({
                         <span className="text-[8px] text-slate-500 font-bold font-sans">
                           R$ {salary.toLocaleString('pt-BR')}/pessoa/mês
                         </span>
+                        {maintEffect && (
+                          <span className={`text-[8px] font-bold block mt-0.5 ${maintEffect.cls}`}>{maintEffect.label}</span>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-[14px] font-black text-amber-400 font-sans block">
@@ -837,8 +850,13 @@ export default function Sidebar({
                 <div className="flex items-center gap-1.5"><span className="font-bold text-amber-400">★</span><span className="ml-1">Terminal Central</span></div>
                 <div className="flex items-center gap-1.5"><span>🔧</span><span className="ml-1">Pátio de Manutenção</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-6 h-1.5 bg-red-500 inline-block rounded"></span>Ferrovia</div>
-                <div className="flex items-center gap-1.5"><span className="w-6 h-1.5 bg-sky-400 inline-block rounded" style={{borderTop:'2px dashed #38bdf8', background:'transparent', height:'0px'}}></span><span>Hidrovia</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-dashed border-sky-400 inline-block"></span>Hidrovia</div>
                 <div className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-dashed border-orange-500 inline-block"></span>Em construção</div>
+                <div className="col-span-2 border-t border-slate-800 pt-1 mt-0.5 text-[8.5px] text-slate-500 font-semibold uppercase tracking-wider">Tipos especiais</div>
+                <div className="flex items-center gap-1.5"><span>⛏️</span><span className="text-orange-400">Mineração +40% receita</span></div>
+                <div className="flex items-center gap-1.5"><span>🌾</span><span className="text-lime-400">Polo Agrícola +20%</span></div>
+                <div className="flex items-center gap-1.5"><span>🏭</span><span className="text-violet-400">Polo Industrial +25%</span></div>
+                <div className="flex items-center gap-1.5"><span>🌐</span><span className="text-pink-400">Fronteira +15%</span></div>
               </div>
             )}
           </div>
@@ -1042,6 +1060,24 @@ export default function Sidebar({
                     Portos
                   </button>
                 </div>
+                <div className="flex bg-slate-900/60 p-0.5 rounded-lg border border-slate-800/80 mt-1 w-full justify-between">
+                  {([
+                    { key: 'mineracao', label: '⛏️ Mineração', cls: 'bg-orange-950/50 text-orange-400' },
+                    { key: 'polo_agricola', label: '🌾 Agro', cls: 'bg-lime-950/50 text-lime-400' },
+                    { key: 'polo_industrial', label: '🏭 Industria', cls: 'bg-violet-950/50 text-violet-400' },
+                    { key: 'fronteira', label: '🌐 Fronteira', cls: 'bg-pink-950/50 text-pink-400' },
+                  ] as const).map(f => (
+                    <button
+                      key={f.key}
+                      onClick={() => setTypeFilter(typeFilter === f.key ? 'all' : f.key)}
+                      className={`flex-1 text-center py-0.5 text-[9px] rounded transition font-medium cursor-pointer ${
+                        typeFilter === f.key ? f.cls + ' font-semibold' : 'text-slate-500 hover:text-slate-350'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Filter Connections */}
@@ -1138,7 +1174,12 @@ export default function Sidebar({
                             {city.type === 'capital' && <span className="text-slate-600">• Cap</span>}
                           </>
                         ) : (
-                          city.type === 'capital' ? 'Capital Estadual' : 'Cidade Central'
+                          city.type === 'capital' ? 'Capital Estadual' :
+                          city.type === 'mineracao' ? <span className="text-orange-400">⛏️ Mineração</span> :
+                          city.type === 'polo_agricola' ? <span className="text-lime-400">🌾 Polo Agrícola</span> :
+                          city.type === 'polo_industrial' ? <span className="text-violet-400">🏭 Polo Industrial</span> :
+                          city.type === 'fronteira' ? <span className="text-pink-400">🌐 Fronteira</span> :
+                          'Cidade'
                         )}
                       </span>
                     </div>

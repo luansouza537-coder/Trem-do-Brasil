@@ -25,7 +25,8 @@ import {
   WORKER_SEVERANCE,
   WORKER_NAMES,
   getYearInflationMultiplier,
-  getMonthlyRevenue
+  getMonthlyRevenue,
+  getCityTypeRevenueMultiplier
 } from './utils/gameRules';
 import { 
   Train, 
@@ -219,7 +220,7 @@ export default function App() {
       // Collect revenue from all completed routes
       const activeEffects = activeEvents.map(e => e.statusEffect);
       const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
-      const monthlyRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects);
+      const monthlyRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
       }
@@ -694,7 +695,7 @@ export default function App() {
 
     const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
     const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
-    const monthlyRevenue = getMonthlyRevenue(edges, workers, []);
+    const monthlyRevenue = getMonthlyRevenue(edges, workers, [], CITIES);
 
     return {
       totalSpent,
@@ -1215,7 +1216,14 @@ export default function App() {
           const isUpgraded = upgradedHubs.includes(selectedCity.id);
           const hasYard = maintenanceYards.includes(selectedCity.id);
           const cityEdges = edges.filter(e => (e.from === selectedCity.id || e.to === selectedCity.id) && e.status !== 'building');
-          const cityMonthlyRevenue = cityEdges.reduce((s, e) => s + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000)), 0);
+          const cityMonthlyRevenue = cityEdges.reduce((s, e) => {
+            const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+            const otherCityId = e.from === selectedCity.id ? e.to : e.from;
+            const otherCity = CITIES.find(c => c.id === otherCityId);
+            const multA = getCityTypeRevenueMultiplier(selectedCity.type);
+            const multB = otherCity ? getCityTypeRevenueMultiplier(otherCity.type) : 1.0;
+            return s + Math.round(base * (multA + multB) / 2);
+          }, 0);
           const mDist = nearestYardDistances[selectedCity.id];
           const maintOk = mDist !== undefined && mDist !== Infinity && mDist <= 800;
           const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
@@ -1229,7 +1237,7 @@ export default function App() {
                   <div>
                     <p className="text-xs font-extrabold text-amber-400">{selectedCity.name} — {selectedCity.state}</p>
                     <p className="text-[10px] text-slate-400">
-                      {selectedCity.portType === 'maritime' ? '⚓ Porto Marítimo' : selectedCity.portType === 'fluvial' ? '🚢 Porto Fluvial' : selectedCity.type === 'capital' ? '★ Capital Estadual' : '● Cidade Central'}
+                      {selectedCity.portType === 'maritime' ? '⚓ Porto Marítimo' : selectedCity.portType === 'fluvial' ? '🚢 Porto Fluvial' : selectedCity.type === 'capital' ? '★ Capital Estadual' : selectedCity.type === 'mineracao' ? '⛏️ Polo de Mineração (+40% receita)' : selectedCity.type === 'polo_industrial' ? '🏭 Polo Industrial (+25% receita)' : selectedCity.type === 'polo_agricola' ? '🌾 Polo Agrícola (+20% receita)' : selectedCity.type === 'fronteira' ? '🌐 Cidade de Fronteira (+15% receita)' : '● Cidade Central'}
                     </p>
                   </div>
                 </div>

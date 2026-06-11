@@ -135,14 +135,20 @@ export function getConstructionMonths(
   type: 'rail' | 'balsa',
   workers: GameWorkers
 ): number {
+  if (type === 'balsa') {
+    // Waterways: fixed base of 6 months + 1 month per 400km of surveying/dredging
+    // Worker count on assentamento speeds it up slightly
+    const baseBalsaMonths = 6 + Math.ceil(distance / 400);
+    const workerBonus = workers.assentamento >= 200 ? 0.75 : workers.assentamento >= 50 ? 0.9 : 1.0;
+    return Math.max(4, Math.ceil(baseBalsaMonths * workerBonus));
+  }
+
   const isNorth = (s: string) => ['AM','PA','RO','RR','AP','AC','TO'].includes(s);
   const isMountain = (s: string) => ['SC','RS','RJ','ES','MG'].includes(s);
 
-  let kmPerMonth = type === 'balsa' ? 400 : 200;
-  if (type !== 'balsa') {
-    if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 120;
-    else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 100;
-  }
+  let kmPerMonth = 200;
+  if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 120;
+  else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 100;
 
   const coreWorkers = workers.terraplanagem + workers.assentamento;
   let workerMod = 1.0;
@@ -423,16 +429,34 @@ export function calculateRailwayDistancesFromYards(
   return distances;
 }
 
+export function getCityTypeRevenueMultiplier(type: City['type']): number {
+  switch (type) {
+    case 'mineracao':     return 1.4;
+    case 'polo_industrial': return 1.25;
+    case 'polo_agricola': return 1.2;
+    case 'fronteira':     return 1.15;
+    default:              return 1.0;
+  }
+}
+
 export function getMonthlyRevenue(
   edges: Edge[],
   workers: { manutencao: number },
-  activeEffects: string[] = []
+  activeEffects: string[] = [],
+  cities: City[] = []
 ): number {
   const completedEdges = edges.filter(e => e.status !== 'building');
   const balsaFrozen = activeEffects.includes('SECA_TOCANTINS');
   const base = completedEdges.reduce((sum, e) => {
     if (e.type === 'balsa' && balsaFrozen) return sum;
-    return sum + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+    const baseKm = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+    // Apply city type multiplier (average of both endpoints, if available)
+    const cityA = cities.find(c => c.id === e.from);
+    const cityB = cities.find(c => c.id === e.to);
+    const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
+    const multB = cityB ? getCityTypeRevenueMultiplier(cityB.type) : 1.0;
+    const avgMult = (multA + multB) / 2;
+    return sum + Math.round(baseKm * avgMult);
   }, 0);
   // Without any maintenance workers revenue decays by 15%
   const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;

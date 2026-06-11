@@ -75,9 +75,13 @@ export default function GameMap({
 
   // Keep track of previous connections to animate newly built lines
   const prevEdgesRef = useRef<Edge[]>(edges);
+  // Always-current edges ref to avoid stale closures in shuttle animations
+  const edgesRef = useRef<Edge[]>(edges);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
 
   const activeBgTrainsRef = React.useRef(0);
-  const MAX_BG_TRAINS = 3;
+  const MAX_BG_TRAINS = 4;
+  const activeRouteTrainsRef = React.useRef<Set<string>>(new Set());
 
   // Yard radius circles layer
   const yardRadiiGroupRef = useRef<L.LayerGroup | null>(null);
@@ -102,7 +106,7 @@ export default function GameMap({
   }, [selectedCityId, onSelectCity, onConnectCities, onHoverCity, cities]);
 
   // Train animation helper
-  const animateTrainPath = (fromCity: City, toCity: City) => {
+  const animateTrainPath = (fromCity: City, toCity: City, edgeType: 'rail' | 'balsa' = 'rail', durationMs = 2500) => {
     if (!mapRef.current) return;
     const map = mapRef.current;
 
@@ -131,23 +135,46 @@ export default function GameMap({
       </div>
     `;
 
+    const boatSvg = `
+      <div style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 26px; height: 26px; filter: drop-shadow(0px 3px 4px rgba(0,0,0,0.55));">
+          <circle cx="12" cy="12" r="11" fill="#0c4a6e" stroke="#38bdf8" stroke-width="1.8"/>
+          <!-- Hull -->
+          <path d="M4 14 Q12 17 20 14 L19 16 Q12 20 5 16 Z" fill="#0ea5e9"/>
+          <!-- Cabin -->
+          <rect x="9" y="9" width="7" height="5" rx="1" fill="#38bdf8"/>
+          <!-- Window -->
+          <rect x="10.5" y="10" width="2" height="2.5" rx="0.3" fill="#0c4a6e"/>
+          <rect x="13.5" y="10" width="2" height="2.5" rx="0.3" fill="#0c4a6e"/>
+          <!-- Chimney -->
+          <rect x="14" y="6" width="1.5" height="3" fill="#7dd3fc"/>
+          <!-- Wave front -->
+          <path d="M19 15 Q21 14 22 15" stroke="#bae6fd" stroke-width="0.8" fill="none"/>
+        </svg>
+      </div>
+    `;
+
+    const iconSvg = edgeType === 'balsa' ? boatSvg : trainSvg;
+    const iconSize: [number, number] = edgeType === 'balsa' ? [30, 30] : [28, 28];
+    const iconAnchor: [number, number] = edgeType === 'balsa' ? [15, 15] : [14, 14];
+
     // Angle of movement for rotation
     const dLat = toCity.lat - fromCity.lat;
     const dLng = toCity.lng - fromCity.lng;
     const angle = Math.atan2(dLat, dLng) * (180 / Math.PI);
     // Since geographic maps have positive Y pointing North, but pixel grids have positive Y pointing South:
-    const rotationAngle = -angle; 
+    const rotationAngle = -angle;
 
     // Create Marker that transforms rotatively
     const trainIcon = L.divIcon({
       html: `
-        <div style="transform: rotate(${rotationAngle}deg); transform-origin: center; width: 28px; height: 28px;">
-          ${trainSvg}
+        <div style="transform: rotate(${rotationAngle}deg); transform-origin: center; width: ${iconSize[0]}px; height: ${iconSize[1]}px;">
+          ${iconSvg}
         </div>
       `,
       className: 'leaflet-train-icon-marker',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14]
+      iconSize: iconSize,
+      iconAnchor: iconAnchor
     });
 
     const trainMarker = L.marker([fromCity.lat, fromCity.lng], {
@@ -156,15 +183,15 @@ export default function GameMap({
     }).addTo(map);
 
     const startTime = performance.now();
-    const duration = 2500; // 2.5 seconds transit time
+    const duration = durationMs;
 
     const updateFrame = (now: number) => {
       const elapsed = now - startTime;
       const pct = Math.min(elapsed / duration, 1);
 
       // Smooth Ease-In-Out
-      const ease = pct < 0.5 
-        ? 2 * pct * pct 
+      const ease = pct < 0.5
+        ? 2 * pct * pct
         : 1 - Math.pow(-2 * pct + 2, 2) / 2;
 
       const currentLat = fromCity.lat + (toCity.lat - fromCity.lat) * ease;
@@ -199,7 +226,7 @@ export default function GameMap({
     requestAnimationFrame(updateFrame);
   };
 
-  // 1. Detect and Animate new track validations immediately
+  // 1. Detect and Animate new track validations immediately, and start continuous shuttles
   useEffect(() => {
     const prevEdges = prevEdgesRef.current;
     if (prevEdges && edges.length > prevEdges.length) {
@@ -209,30 +236,78 @@ export default function GameMap({
         const fromCity = cities.find(c => c.id === edge.from);
         const toCity = cities.find(c => c.id === edge.to);
         if (fromCity && toCity) {
-          // Play train traveling from origin to destination
-          animateTrainPath(fromCity, toCity);
+          const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
+          // Play train traveling from origin to destination on first build
+          animateTrainPath(fromCity, toCity, eType);
+          // Start continuous shuttle if edge is already complete
+          if (edge.status !== 'building' && !activeRouteTrainsRef.current.has(edge.id)) {
+            const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
+            activeRouteTrainsRef.current.add(edge.id);
+            const shuttle = (from: City, to: City) => {
+              if (!edgesRef.current.find(e => e.id === edge.id)) {
+                activeRouteTrainsRef.current.delete(edge.id);
+                return;
+              }
+              animateTrainPath(from, to, eType, tripDuration);
+              setTimeout(() => {
+                if (!edgesRef.current.find(e => e.id === edge.id)) {
+                  activeRouteTrainsRef.current.delete(edge.id);
+                  return;
+                }
+                shuttle(to, from);
+              }, tripDuration + 500);
+            };
+            shuttle(fromCity, toCity);
+          }
         }
       });
     }
     prevEdgesRef.current = edges;
   }, [edges, cities]);
 
-  // 2. Play casual passive backing trains over randomly connected paths to increase realism
+  // 2. Continuous back-and-forth shuttle on completed routes (picks up to 3 idle completed edges every 8s)
   useEffect(() => {
     const timer = setInterval(() => {
-      if (edges.length === 0 || !mapRef.current) return;
-      // Spawn random train along an existing edge
-      const randomEdge = edges[Math.floor(Math.random() * edges.length)];
-      const fromCity = cities.find(c => c.id === randomEdge.from);
-      const toCity = cities.find(c => c.id === randomEdge.to);
-      if (fromCity && toCity && activeBgTrainsRef.current < MAX_BG_TRAINS) {
+      if (!mapRef.current) return;
+      const completedEdges = edgesRef.current.filter(e => e.status !== 'building');
+      if (completedEdges.length === 0) return;
+
+      const idleEdges = completedEdges.filter(e => !activeRouteTrainsRef.current.has(e.id));
+      const toStart = idleEdges.slice(0, 3);
+
+      toStart.forEach(edge => {
+        if (activeBgTrainsRef.current >= MAX_BG_TRAINS) return;
+        const fromCity = cities.find(c => c.id === edge.from);
+        const toCity = cities.find(c => c.id === edge.to);
+        if (!fromCity || !toCity) return;
+
+        const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
+        const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
+
+        activeRouteTrainsRef.current.add(edge.id);
         activeBgTrainsRef.current += 1;
+
+        const shuttle = (from: City, to: City) => {
+          if (!edgesRef.current.find(e => e.id === edge.id)) {
+            activeRouteTrainsRef.current.delete(edge.id);
+            activeBgTrainsRef.current = Math.max(0, activeBgTrainsRef.current - 1);
+            return;
+          }
+          animateTrainPath(from, to, eType, tripDuration);
+          setTimeout(() => {
+            if (!edgesRef.current.find(e => e.id === edge.id)) {
+              activeRouteTrainsRef.current.delete(edge.id);
+              activeBgTrainsRef.current = Math.max(0, activeBgTrainsRef.current - 1);
+              return;
+            }
+            shuttle(to, from);
+          }, tripDuration + 500);
+        };
+
         const reverse = Math.random() > 0.5;
-        const [a, b] = reverse ? [toCity, fromCity] : [fromCity, toCity];
-        animateTrainPath(a, b);
-        setTimeout(() => { activeBgTrainsRef.current -= 1; }, 3000);
-      }
-    }, 14000); // Trigger a lively train elsewhere every 14 seconds
+        shuttle(reverse ? toCity : fromCity, reverse ? fromCity : toCity);
+      });
+    }, 8000);
 
     return () => clearInterval(timer);
   }, [edges, cities]);
@@ -248,8 +323,8 @@ export default function GameMap({
   ) => {
     const isCapital = city.type === 'capital';
     const maxConns = isUpgradedHub ? 3 : 2;
-    
-    // Choose theme colors depending on the connection saturation
+
+    // Choose theme colors depending on city type and connection state
     let statusClass = 'border-slate-400 bg-slate-900 text-slate-300';
     let coreDotClass = 'bg-slate-400';
     if (conns >= maxConns) {
@@ -261,19 +336,45 @@ export default function GameMap({
     } else if (isCapital) {
       statusClass = 'border-amber-400 bg-slate-900 text-amber-300';
       coreDotClass = 'bg-amber-400';
+    } else if (city.type === 'mineracao') {
+      statusClass = 'border-orange-400 bg-orange-950 text-orange-300';
+      coreDotClass = 'bg-orange-400';
+    } else if (city.type === 'polo_agricola') {
+      statusClass = 'border-lime-400 bg-lime-950 text-lime-300';
+      coreDotClass = 'bg-lime-400';
+    } else if (city.type === 'polo_industrial') {
+      statusClass = 'border-violet-400 bg-violet-950 text-violet-300';
+      coreDotClass = 'bg-violet-400';
+    } else if (city.type === 'fronteira') {
+      statusClass = 'border-pink-400 bg-pink-950 text-pink-300';
+      coreDotClass = 'bg-pink-400';
     } else {
       statusClass = 'border-sky-500 bg-slate-900 text-sky-300';
       coreDotClass = 'bg-sky-400';
     }
 
-    const scaleClass = isSelected 
-      ? 'scale-125 ring-4 ring-amber-500/40 z-50' 
-      : isHovered 
-        ? 'scale-110 ring-2 ring-slate-200 z-40' 
+    const cityIcon = city.portType === 'maritime'
+      ? '<span class="text-amber-400 font-bold select-none leading-none">⚓</span>'
+      : city.portType === 'fluvial'
+        ? '<span class="text-teal-300 font-bold select-none leading-none">🚢</span>'
+        : city.type === 'mineracao'
+          ? '<span class="select-none leading-none" style="font-size:12px">⛏️</span>'
+          : city.type === 'polo_agricola'
+            ? '<span class="select-none leading-none" style="font-size:12px">🌾</span>'
+            : city.type === 'polo_industrial'
+              ? '<span class="select-none leading-none" style="font-size:12px">🏭</span>'
+              : city.type === 'fronteira'
+                ? '<span class="select-none leading-none" style="font-size:12px">🌐</span>'
+                : `<div class="w-3.5 h-3.5 rounded-full flex items-center justify-center ${isCapital ? 'animate-pulse' : ''}"><div class="w-2 h-2 rounded-full ${coreDotClass}"></div></div>`;
+
+    const scaleClass = isSelected
+      ? 'scale-125 ring-4 ring-amber-500/40 z-50'
+      : isHovered
+        ? 'scale-110 ring-2 ring-slate-200 z-40'
         : 'hover:scale-105 z-30';
 
     // Advanced dynamic central hubs and maintenance badges
-    const hubBadge = isUpgradedHub 
+    const hubBadge = isUpgradedHub
       ? `<span class="absolute -top-1.5 -left-1.5 text-[9px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-amber-500 border border-slate-950 text-slate-950 font-black shadow-md z-[60]" title="Terminal Central Integrador">★</span>`
       : '';
 
@@ -283,27 +384,12 @@ export default function GameMap({
 
     return `
       <div class="relative flex items-center justify-center transition-all duration-350 ${scaleClass}">
-        <!-- Selected halo effect -->
         ${isSelected ? '<span class="absolute inline-flex h-9 w-9 rounded-full bg-amber-500/30 animate-pulse"></span>' : ''}
         ${isHovered && !isSelected ? '<span class="absolute inline-flex h-8 w-8 rounded-full bg-slate-300/20"></span>' : ''}
-
-        <!-- Upgrades and Status Badges Overlay -->
         ${hubBadge}
         ${yardBadge}
-
-        <!-- Main Pin node -->
         <div class="w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 bg-slate-900 ${statusClass} transition-all" style="font-size: 11px;">
-          <!-- Outer core ring depending on type -->
-          ${city.portType === 'maritime' 
-            ? '<span class="text-amber-400 font-bold select-none leading-none">⚓</span>' 
-            : city.portType === 'fluvial' 
-              ? '<span class="text-teal-300 font-bold select-none leading-none">🚢</span>' 
-              : `
-              <div class="w-3.5 h-3.5 rounded-full flex items-center justify-center ${isCapital ? 'animate-pulse' : ''}">
-                <div class="w-2 h-2 rounded-full ${coreDotClass}"></div>
-              </div>
-              `
-          }
+          ${cityIcon}
         </div>
 
         <!-- Connection Badge indicator -->
