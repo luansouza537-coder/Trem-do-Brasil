@@ -66,9 +66,11 @@ export interface GameEvent {
   id: string;
   title: string;
   description: string;
-  type: 'strike' | 'env_delay' | 'politics' | 'crisis' | 'natural';
+  type: 'strike' | 'env_delay' | 'politics' | 'crisis' | 'natural' | 'cyber' | 'accident';
   statusEffect: string;
   costToResolve?: number;
+  costPerMonth?: number;
+  workerLoss?: { role: keyof GameWorkers; amount: number };
   durationMonths: number;
   monthsLeft: number;
   resolved?: boolean;

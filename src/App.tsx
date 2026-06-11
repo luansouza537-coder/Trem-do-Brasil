@@ -21,6 +21,8 @@ import {
   getTrackWorkersRequired,
   getConstructionMonths,
   WORKER_SALARIES,
+  WORKER_HIRE_COST,
+  WORKER_SEVERANCE,
   WORKER_NAMES,
   getYearInflationMultiplier,
   getMonthlyRevenue
@@ -215,7 +217,12 @@ export default function App() {
       }
 
       // Collect revenue from all completed routes
-      const monthlyRev = getMonthlyRevenue(edgesRef.current);
+      const activeEffects = activeEvents.map(e => e.statusEffect);
+      const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
+      const monthlyRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects);
+      if (cyberAttack) {
+        showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
+      }
       if (monthlyRev > 0) {
         setTotalRevenue(prev => prev + monthlyRev);
       }
@@ -262,14 +269,25 @@ export default function App() {
       });
     }
 
-    // 1. Durations Tick
+    // 1. Durations Tick + monthly fine deductions
     setActiveEvents((prev) => {
       const updated = prev.map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }));
       const expired = updated.filter(e => e.monthsLeft <= 0);
       const active = updated.filter(e => e.monthsLeft > 0);
 
+      // Deduct monthly crisis fines
+      let totalFines = 0;
+      prev.forEach(e => {
+        if (e.costPerMonth && e.monthsLeft > 0) totalFines += e.costPerMonth;
+      });
+      if (totalFines > 0) {
+        setSpentOnResources(p => p + totalFines);
+        const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+        showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
+      }
+
       expired.forEach(e => {
-        showToast(`Crise resolvida: os efeitos da crise "${e.title}" terminaram!`, 'success');
+        showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');
       });
 
       return active;
@@ -284,51 +302,129 @@ export default function App() {
         {
           id: 'greve_' + Date.now(),
           title: 'Greve Geral Ferroviária 🚧',
-          description: 'Sindicatos paralisaram parcialmente as obras reivindicando melhorias nas frentes de trabalho e adicionais salariais de campo. Custos adicionais serão aplicados!',
+          description: 'Sindicatos paralisaram parcialmente as obras. Os trabalhadores exigem aumento salarial e melhores condições de campo. Trilhos ficam 25% mais caros e a RENIF paga R$3B/mês em horas extras até a resolução.',
           type: 'strike',
           statusEffect: 'GREVE_GERAL',
-          costToResolve: 35000000000, // R$ 35 B
+          costToResolve: 35_000_000_000,
+          costPerMonth: 3_000_000_000,
           durationMonths: 12,
           monthsLeft: 12
         },
         {
           id: 'licenca_' + Date.now(),
           title: 'Impasse de Licença na Amazônia 🌳',
-          description: 'Estudos de impacto ambiental no trecho Norte foram travados provisoriamente pelo IBAMA para preservação de mananciais de igarapé. O custo de metal/cimento dispara em 50% na Região Norte.',
+          description: 'O IBAMA suspendeu licenças de obras na Região Norte para revisão de estudos ambientais. Custo de aço/cimento +50% no Norte. Multa regulatória de R$2B/mês até resolução.',
           type: 'env_delay',
           statusEffect: 'ATRASO_AMBIENTAL_AMAZONIA',
-          costToResolve: 25000000000, // R$ 25 B
+          costToResolve: 25_000_000_000,
+          costPerMonth: 2_000_000_000,
           durationMonths: 18,
           monthsLeft: 18
         },
         {
-          id: 'crise_' + Date.now(),
+          id: 'inflacao_' + Date.now(),
           title: 'Super Inflação de Insumos 📈',
-          description: 'Uma escalada geopolítica internacional travou frotas de cargueiros de minério, dobrando instantaneamente o preço de aquisição de Aço e Cobre.',
+          description: 'Escalada geopolítica travou cargueiros de minério: Aço e Cobre dobram de preço no mercado. Resolução antecipada: abrir linha de crédito emergencial (R$30B).',
           type: 'crisis',
           statusEffect: 'INFLACAO_GLOBAL',
+          costToResolve: 30_000_000_000,
           durationMonths: 10,
           monthsLeft: 10
         },
         {
-          id: 'natural_' + Date.now(),
+          id: 'cheia_' + Date.now(),
           title: 'Grande Cheia no Pantanal 🌧️',
-          description: 'Chuvas torrenciais inundaram as bacias estuarinas de MS/MT. Dormentes e sapatas de madeira foram totalmente levados pelas corredeiras, exigindo 1.8x mais consumo de Madeira.',
+          description: 'Chuvas torrenciais inundaram MS/MT. Dormentes levados pelas corredeiras: consumo de Madeira 1.8×. Custo de contenção: R$1.5B/mês.',
           type: 'natural',
           statusEffect: 'ESCASSES_MADEIRA',
-          costToResolve: 15000000000, // R$ 15 B
+          costToResolve: 15_000_000_000,
+          costPerMonth: 1_500_000_000,
           durationMonths: 14,
           monthsLeft: 14
         },
         {
-          id: 'politics_' + Date.now(),
+          id: 'lobby_' + Date.now(),
           title: 'Multas e Emendas Legislativas 🏛️',
-          description: 'Bancadas parlamentares congelaram temporariamente autorizações e emendas de escoamento marítimo regional por pressões políticas locais.',
+          description: 'Bancadas bloquearam autorizações de novas construções ferroviárias. Nenhuma obra pode ser iniciada enquanto a crise perdurar. Multa parlamentar: R$2B/mês.',
           type: 'politics',
           statusEffect: 'LOBBY_REGIONAL',
-          costToResolve: 20000000000, // R$ 20 B
+          costToResolve: 20_000_000_000,
+          costPerMonth: 2_000_000_000,
           durationMonths: 8,
           monthsLeft: 8
+        },
+        {
+          id: 'cgu_' + Date.now(),
+          title: 'Auditoria da CGU 🔍',
+          description: 'A Controladoria-Geral da União abriu auditoria emergencial nos contratos da RENIF. R$5B/mês são descontados do caixa durante o processo. Resolução antecipada: R$40B em consultoria jurídica.',
+          type: 'politics',
+          statusEffect: 'AUDITORIA_CGU',
+          costToResolve: 40_000_000_000,
+          costPerMonth: 5_000_000_000,
+          durationMonths: 6,
+          monthsLeft: 6
+        },
+        {
+          id: 'acidente_' + Date.now(),
+          title: 'Acidente Grave em Frente de Obra ⚠️',
+          description: 'Uma explosão descontrolada em canteiro de túnel causou baixas na equipe. 80 especialistas em Explosivos foram afastados compulsoriamente. A RENIF paga R$8B em indenizações imediatas.',
+          type: 'accident',
+          statusEffect: 'ACIDENTE_OBRA',
+          costToResolve: 0,
+          workerLoss: { role: 'explosivos', amount: 80 },
+          durationMonths: 1,
+          monthsLeft: 1
+        },
+        {
+          id: 'seca_' + Date.now(),
+          title: 'Seca Severa no Tocantins 🏜️',
+          description: 'Nível histórico baixo do Rio Tocantins e afluentes paralisou totalmente o transporte hidroviário. Receita de balsas = R$0 por 8 meses. Resolução antecipada: R$12B em obras de dragagem emergencial.',
+          type: 'natural',
+          statusEffect: 'SECA_TOCANTINS',
+          costToResolve: 12_000_000_000,
+          durationMonths: 8,
+          monthsLeft: 8
+        },
+        {
+          id: 'cyber_' + Date.now(),
+          title: 'Ataque Cibernético aos Sistemas 💻',
+          description: 'Hackers paralisaram os sistemas de bilhetagem e monitoramento de carga da RENIF. Toda receita mensal fica zerada por 3 meses enquanto os sistemas são restaurados. Resolução urgente: R$20B.',
+          type: 'cyber',
+          statusEffect: 'CYBER_ATAQUE',
+          costToResolve: 20_000_000_000,
+          durationMonths: 3,
+          monthsLeft: 3
+        },
+        {
+          id: 'geopolitico_' + Date.now(),
+          title: 'Tensão Geopolítica com Argentina 🇦🇷',
+          description: 'Disputa comercial no Mercosul encarece cobre minerado e eletrodutos: preço do Cobre +80% no mercado internacional por 6 meses.',
+          type: 'crisis',
+          statusEffect: 'TENSAO_GEOPOLITICA',
+          costToResolve: 18_000_000_000,
+          durationMonths: 6,
+          monthsLeft: 6
+        },
+        {
+          id: 'cimento_' + Date.now(),
+          title: 'Escassez Nacional de Cimento 🏗️',
+          description: 'Crise no setor de construção civil drenou os estoques nacionais. Todas as obras avançam 50% mais devagar por 4 meses. Resolução: R$15B em importação emergencial.',
+          type: 'crisis',
+          statusEffect: 'ESCASSEZ_CIMENTO',
+          costToResolve: 15_000_000_000,
+          durationMonths: 4,
+          monthsLeft: 4
+        },
+        {
+          id: 'fundiario_' + Date.now(),
+          title: 'Conflito Fundiário no Cerrado 🌾',
+          description: 'Movimentos rurais e indígenas bloquearam obras em MT e GO judicialmente. Nenhuma ferrovia pode ser iniciada nestes estados. R$1.5B/mês em custas processuais.',
+          type: 'politics',
+          statusEffect: 'CONFLITO_FUNDIARIO',
+          costToResolve: 22_000_000_000,
+          costPerMonth: 1_500_000_000,
+          durationMonths: 10,
+          monthsLeft: 10
         }
       ];
 
@@ -485,67 +581,63 @@ export default function App() {
 
   // Hire workforce handler
   const handleHireWorker = (role: keyof GameWorkers, amount: number) => {
-    const onboardingFeePerWorker = 1500000; // R$ 1.500.000 por trabalhador
-    const totalCost = amount * onboardingFeePerWorker;
+    const costPerWorker = WORKER_HIRE_COST[role];
+    const totalCost = amount * costPerWorker;
 
     if (budgetState.currentBudget < totalCost) {
       sound.playError();
-      showToast(`Orçamento insuficiente para qualificar e admitir ${amount} profissionais! (Investimento de admissão: R$ ${totalCost.toLocaleString('pt-BR')})`, 'error');
+      showToast(`Orçamento insuficiente para contratar ${amount} profissionais! (R$ ${totalCost.toLocaleString('pt-BR')} — 3× salário/pessoa de onboarding)`, 'error');
       return;
     }
 
     setSpentOnWorkers(prev => prev + totalCost);
-    setWorkers(prev => ({
-      ...prev,
-      [role]: (prev[role] ?? 0) + amount
-    }));
+    setWorkers(prev => ({ ...prev, [role]: (prev[role] ?? 0) + amount }));
     sound.playConnect();
 
     const nameMap: Record<keyof GameWorkers, string> = {
-      terraplanagem: 'Terraplanagem',
-      assentamento: 'Assentamento',
-      sinalizacao: 'Sinalização',
-      explosivos: 'Explosivos', manutencao: 'Manutenção'
+      terraplanagem: 'Terraplanagem', assentamento: 'Assentamento',
+      sinalizacao: 'Sinalização', explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
-
-    showToast(`Admissão: +${amount} ${nameMap[role]}(s) contratado(s). Taxa paga: R$ ${totalCost.toLocaleString('pt-BR')}.`, 'success');
+    showToast(`Admissão: +${amount} ${nameMap[role]}(s). Taxa de integração: R$ ${totalCost.toLocaleString('pt-BR')}.`, 'success');
   };
 
-  // Fire/Dispense workforce handler
   const handleFireWorker = (role: keyof GameWorkers, amount: number) => {
     const currentQty = workers[role] ?? 0;
     if (currentQty <= 0) {
       showToast("Não há trabalhadores deste tipo contratados!", "error");
       return;
     }
-
     const actualAmount = Math.min(amount, currentQty);
-    const severanceCost = actualAmount * 500000; // R$ 500.000 por trabalhador
+    const severanceCost = actualAmount * WORKER_SEVERANCE[role];
 
-    setSpentOnWorkers(prev => prev + severanceCost);
-    setWorkers(prev => ({
-      ...prev,
-      [role]: Math.max(0, (prev[role] ?? 0) - actualAmount)
-    }));
+    // Mass layoff penalty: demitting >30 at once adds R$2B fine
+    const massLayoffPenalty = actualAmount > 30 ? 2_000_000_000 : 0;
+    const totalCost = severanceCost + massLayoffPenalty;
+
+    setSpentOnWorkers(prev => prev + totalCost);
+    setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - actualAmount) }));
     sound.playDisconnect();
 
     const nameMap: Record<keyof GameWorkers, string> = {
-      terraplanagem: 'Terraplanagem',
-      assentamento: 'Assentamento',
-      sinalizacao: 'Sinalização',
-      explosivos: 'Explosivos', manutencao: 'Manutenção'
+      terraplanagem: 'Terraplanagem', assentamento: 'Assentamento',
+      sinalizacao: 'Sinalização', explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
-
-    showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s) desligados. Indenização: R$ ${severanceCost.toLocaleString('pt-BR')}`, 'info');
+    if (massLayoffPenalty > 0) {
+      showToast(`Demissão em massa: ${actualAmount} ${nameMap[role]}(s). Rescisão: R$ ${severanceCost.toLocaleString('pt-BR')} + Multa R$ 2B por instabilidade no canteiro!`, 'error');
+    } else {
+      showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s). Indenização: R$ ${severanceCost.toLocaleString('pt-BR')}`, 'info');
+    }
   };
 
   // Manual resource purchasing handler
   const handleBuyResource = (resKey: keyof GameResources, amount: number) => {
-    const isHighInflation = activeEvents.some(e => 
-      (resKey === 'aco' && e.statusEffect === 'INFLACAO_GLOBAL') || 
-      (resKey === 'cobre' && e.statusEffect === 'INFLACAO_GLOBAL')
-    );
-    const unitPrice = RESOURCE_BUY_PRICES[resKey] * (isHighInflation ? 2.0 : 1.0);
+    const buyActiveEffects = activeEvents.map(e => e.statusEffect);
+    const isHighInflation = buyActiveEffects.includes('INFLACAO_GLOBAL');
+    const isGeopoliticTension = buyActiveEffects.includes('TENSAO_GEOPOLITICA');
+    let unitPrice = RESOURCE_BUY_PRICES[resKey];
+    if (resKey === 'aco' && isHighInflation) unitPrice *= 2.0;
+    if (resKey === 'cobre' && isHighInflation) unitPrice *= 2.0;
+    if (resKey === 'cobre' && isGeopoliticTension) unitPrice *= 1.8;
     const totalCost = amount * unitPrice;
 
     if (budgetState.currentBudget < totalCost) {
@@ -602,7 +694,7 @@ export default function App() {
 
     const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
     const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
-    const monthlyRevenue = getMonthlyRevenue(edges);
+    const monthlyRevenue = getMonthlyRevenue(edges, workers, []);
 
     return {
       totalSpent,
@@ -829,6 +921,23 @@ export default function App() {
       }
     }
 
+    // Block construction during political crises
+    const activeEffectsList = activeEvents.map(e => e.statusEffect);
+    if (activeEffectsList.includes('LOBBY_REGIONAL')) {
+      sound.playError();
+      showToast('🏛️ Crise: Emendas Legislativas bloqueiam novas construções! Resolva a crise primeiro.', 'error');
+      setSelectedCityId(null);
+      return;
+    }
+    const isMT = (s: string) => s === 'MT';
+    const isGO = (s: string) => s === 'GO';
+    if (activeEffectsList.includes('CONFLITO_FUNDIARIO') && (isMT(cityA.state) || isMT(cityB.state) || isGO(cityA.state) || isGO(cityB.state))) {
+      sound.playError();
+      showToast('🌾 Conflito Fundiário: obras em MT e GO estão bloqueadas judicialmente!', 'error');
+      setSelectedCityId(null);
+      return;
+    }
+
     // Checking construction type & budgets
     const distanceVal = getHaversineDistance(cityA.lat, cityA.lng, cityB.lat, cityB.lng);
     const inflationMultiplier = getYearInflationMultiplier(gameYear);
@@ -877,6 +986,7 @@ export default function App() {
     }
     let buyCost = 0;
     const isHighInflation = activeEffects.includes('INFLACAO_GLOBAL');
+    const isTensaoGeo = activeEffects.includes('TENSAO_GEOPOLITICA');
     const shortages: Partial<GameResources> = {};
     let hasShortage = false;
 
@@ -886,7 +996,10 @@ export default function App() {
       if (short > 0) {
         shortages[key] = short;
         hasShortage = true;
-        const unitPrice = RESOURCE_BUY_PRICES[key] * (isHighInflation ? 2.0 : 1.0);
+        let unitPrice = RESOURCE_BUY_PRICES[key];
+        if (key === 'aco' && isHighInflation) unitPrice *= 2.0;
+        if (key === 'cobre' && isHighInflation) unitPrice *= 2.0;
+        if (key === 'cobre' && isTensaoGeo) unitPrice *= 1.8;
         buyCost += short * unitPrice;
       }
     });
@@ -926,7 +1039,10 @@ export default function App() {
     });
 
     // Start construction — edge enters queue as 'building'
-    const months = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
+    const cimentoShortage = activeEffectsList.includes('ESCASSEZ_CIMENTO');
+    const rawMonths = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
+    const months = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
+    if (cimentoShortage) showToast('🏗️ Escassez de cimento: obra terá duração +50% mais longa!', 'info');
     const project: ConstructionProject = {
       edgeId: `${idA}-${idB}`,
       from: idA,
@@ -1462,18 +1578,30 @@ export default function App() {
                 <div>
                   <p className="font-extrabold text-[10px] text-red-400 uppercase tracking-widest mb-1">Impactos sobre frentes ferroviárias:</p>
                   <p className="text-[11px] text-slate-400">
-                    {currentEvent.statusEffect === 'GREVE_GERAL' && 'Todos os trilhos custam +25% mais caro por greve de operários.'}
-                    {currentEvent.statusEffect === 'ATRASO_AMBIENTAL_AMAZONIA' && 'Tranchas metálicas na Região Norte consumirão +50% extra de aço/cimento.'}
-                    {currentEvent.statusEffect === 'INFLACAO_GLOBAL' && 'Insumos do mercado duplicam custo de compra voluntária de Aço e Cobre.'}
-                    {currentEvent.statusEffect === 'ESCASSES_MADEIRA' && 'A sapataria de madeira de todos os trilhos exige 1.8x mais cota unitária.'}
-                    {currentEvent.statusEffect === 'LOBBY_REGIONAL' && 'Investimentos travados até resolução jurídica ou pagamento.'}
+                    {currentEvent.statusEffect === 'GREVE_GERAL' && 'Trilhos +25% mais caros. Multa mensal de R$3B até resolução.'}
+                    {currentEvent.statusEffect === 'ATRASO_AMBIENTAL_AMAZONIA' && 'Obras no Norte: +50% em aço/cimento. Multa mensal R$2B.'}
+                    {currentEvent.statusEffect === 'INFLACAO_GLOBAL' && 'Aço e Cobre dobram de preço no mercado. Resolução antecipada disponível.'}
+                    {currentEvent.statusEffect === 'ESCASSES_MADEIRA' && 'Consumo de Madeira ×1.8 em toda a malha. Multa mensal R$1.5B.'}
+                    {currentEvent.statusEffect === 'LOBBY_REGIONAL' && '🚫 TODAS as novas obras bloqueadas! Multa mensal R$2B.'}
+                    {currentEvent.statusEffect === 'AUDITORIA_CGU' && 'R$5B descontados do caixa a cada mês durante a auditoria.'}
+                    {currentEvent.statusEffect === 'ACIDENTE_OBRA' && '80 especialistas em Explosivos afastados + R$8B de indenização automática.'}
+                    {currentEvent.statusEffect === 'SECA_TOCANTINS' && 'Receita de TODAS as rotas de balsa = R$0 durante a seca.'}
+                    {currentEvent.statusEffect === 'CYBER_ATAQUE' && '💻 Receita mensal ZERADA enquanto os sistemas estiverem offline.'}
+                    {currentEvent.statusEffect === 'TENSAO_GEOPOLITICA' && 'Preço do Cobre +80% no mercado internacional.'}
+                    {currentEvent.statusEffect === 'ESCASSEZ_CIMENTO' && 'Duração de todas as obras +50% (menos cimento disponível por mês).'}
+                    {currentEvent.statusEffect === 'CONFLITO_FUNDIARIO' && '🚫 Obras em MT e GO bloqueadas judicialmente. Multa mensal R$1.5B.'}
                   </p>
+                  {currentEvent.costPerMonth && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1.5">
+                      💸 Multa automática: R$ {(currentEvent.costPerMonth / 1_000_000_000).toFixed(1)}B/mês debitados do caixa
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Actions */}
               <div className="flex flex-col gap-2">
-                {currentEvent.costToResolve && (
+                {currentEvent.costToResolve != null && currentEvent.costToResolve > 0 && (
                   <button
                     onClick={() => {
                       if (budgetState.currentBudget < currentEvent.costToResolve!) {
@@ -1489,18 +1617,26 @@ export default function App() {
                     }}
                     className="w-full bg-slate-800 hover:bg-slate-750 text-slate-100 font-display font-bold py-2.5 px-4 rounded-xl transition text-xs uppercase tracking-wide flex justify-between items-center border border-slate-750 cursor-pointer"
                   >
-                    <span>💸 Pagar Mitigação</span>
-                    <span className="text-emerald-400 font-black">R$ {(currentEvent.costToResolve / 1000000000).toFixed(0)} Bilhões</span>
+                    <span>💸 Pagar Mitigação Imediata</span>
+                    <span className="text-emerald-400 font-black">R$ {(currentEvent.costToResolve! / 1_000_000_000).toFixed(0)}B</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => {
                     // Accept and absorb the crisis
-                    setActiveEvents(prev => [...prev, currentEvent]);
-                    showToast(`Medida emergencial aceita: ${currentEvent.title} ativo por ${currentEvent.durationMonths} meses!`, 'info');
+                    const ev = currentEvent;
+                    setActiveEvents(prev => [...prev, ev]);
+                    // Accident: immediately remove workers
+                    if (ev.workerLoss) {
+                      const { role, amount } = ev.workerLoss;
+                      setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - amount) }));
+                      setSpentOnWorkers(prev => prev + 8_000_000_000); // R$8B indenização automática
+                      showToast(`☠️ Acidente: ${amount} trabalhadores de ${WORKER_NAMES[role]} afastados + R$8B de indenização debitados!`, 'error');
+                    }
+                    showToast(`Crise absorvida: ${ev.title} ativo por ${ev.durationMonths} meses!`, 'info');
                     const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-                    setNewsItems(prev => [newsCrisis(currentEvent, ym), ...prev].slice(0, 40));
+                    setNewsItems(prev => [newsCrisis(ev, ym), ...prev].slice(0, 40));
                     setCurrentEvent(null);
                     sound.playSelect();
                   }}

@@ -95,11 +95,29 @@ export function getTrackResourcesRequired(
 }
 
 export const WORKER_SALARIES: Record<keyof GameWorkers, number> = {
-  terraplanagem: 4_500_000,    // R$ 4.500.000/pessoa/mês
-  assentamento:  5_500_000,    // R$ 5.500.000/pessoa/mês
-  sinalizacao:   7_000_000,    // R$ 7.000.000/pessoa/mês
-  explosivos:    12_000_000,   // R$ 12.000.000/pessoa/mês
-  manutencao:    4_000_000,    // R$ 4.000.000/pessoa/mês
+  terraplanagem: 4_500_000,
+  assentamento:  5_500_000,
+  sinalizacao:   7_000_000,
+  explosivos:    12_000_000,
+  manutencao:    4_000_000,
+};
+
+// Onboarding cost = 3× monthly salary per worker type
+export const WORKER_HIRE_COST: Record<keyof GameWorkers, number> = {
+  terraplanagem: 4_500_000 * 3,
+  assentamento:  5_500_000 * 3,
+  sinalizacao:   7_000_000 * 3,
+  explosivos:    12_000_000 * 3,
+  manutencao:    4_000_000 * 3,
+};
+
+// Severance = 2× monthly salary per worker type
+export const WORKER_SEVERANCE: Record<keyof GameWorkers, number> = {
+  terraplanagem: 4_500_000 * 2,
+  assentamento:  5_500_000 * 2,
+  sinalizacao:   7_000_000 * 2,
+  explosivos:    12_000_000 * 2,
+  manutencao:    4_000_000 * 2,
 };
 
 export const WORKER_NAMES: Record<keyof GameWorkers, string> = {
@@ -405,10 +423,24 @@ export function calculateRailwayDistancesFromYards(
   return distances;
 }
 
-export function getMonthlyRevenue(edges: Edge[]): number {
-  return edges
-    .filter(e => e.status !== 'building')
-    .reduce((sum, e) => sum + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000)), 0);
+export function getMonthlyRevenue(
+  edges: Edge[],
+  workers: { manutencao: number },
+  activeEffects: string[] = []
+): number {
+  const completedEdges = edges.filter(e => e.status !== 'building');
+  const balsaFrozen = activeEffects.includes('SECA_TOCANTINS');
+  const base = completedEdges.reduce((sum, e) => {
+    if (e.type === 'balsa' && balsaFrozen) return sum;
+    return sum + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+  }, 0);
+  // Without any maintenance workers revenue decays by 15%
+  const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;
+  // Big maintenance team bonus: +5% revenue per 50 workers above 100 (max +20%)
+  const maintBonus = workers.manutencao >= 100
+    ? Math.min(1.20, 1.0 + Math.floor((workers.manutencao - 100) / 50) * 0.05)
+    : 1.0;
+  return Math.round(base * maintPenalty * maintBonus);
 }
 
 export function getYearInflationMultiplier(gameYear: number): number {
