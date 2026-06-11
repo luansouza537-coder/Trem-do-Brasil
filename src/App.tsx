@@ -256,10 +256,32 @@ export default function App() {
             const done = completed.find(p => p.edgeId === e.id);
             return done ? { ...e, status: 'complete' as const } : e;
           }));
+          // Return allocated workers to the free pool
+          const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
+          completed.forEach(p => {
+            if (p.workersAllocated) {
+              (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
+                totalReturned[k] += p.workersAllocated[k];
+              });
+            }
+          });
+          const anyReturned = Object.values(totalReturned).some(v => v > 0);
+          if (anyReturned) {
+            setWorkers(prev => ({
+              terraplanagem: prev.terraplanagem + totalReturned.terraplanagem,
+              assentamento:  prev.assentamento  + totalReturned.assentamento,
+              sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
+              explosivos:    prev.explosivos    + totalReturned.explosivos,
+              manutencao:    prev.manutencao,
+            }));
+          }
           completed.forEach(p => {
             const cityA = CITIES.find(c => c.id === p.from);
             const cityB = CITIES.find(c => c.id === p.to);
-            showToast(`✅ Construção concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)`, 'success');
+            const workerReturn = p.workersAllocated
+              ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
+              : '';
+            showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
             sound.playConnect();
             if (cityA && cityB) {
               setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 40));
@@ -686,8 +708,9 @@ export default function App() {
       }
     });
 
-    const spentYards = maintenanceYards.length * 15000000000;
-    const spentHubs = upgradedHubs.length * 30000000000;
+    // Yards and hubs are debited directly via spentOnResources — no separate tracking needed
+    const spentYards = 0;
+    const spentHubs = 0;
 
     const grantIncome = intermodalGrants
       .filter(g => g.unlocked)
@@ -787,37 +810,46 @@ export default function App() {
   }, [edges, nearestYardDistances]);
 
   // Toggle upgraded hub status (Central Hub with up to 3 links)
+  const HUB_COST = 30_000_000_000;
   const handleToggleUpgradeHub = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
     if (upgradedHubs.includes(cityId)) {
       setUpgradedHubs(prev => prev.filter(id => id !== cityId));
-      showToast("Upgrade de Terminal Central removido. R$ 30.000.000.000 reembolsados!", "info");
+      setSpentOnResources(prev => Math.max(0, prev - HUB_COST));
+      showToast(`★ Terminal Central em ${city?.name} removido. R$ 30B reembolsados.`, 'info');
       sound.playDisconnect();
     } else {
-      if (budgetState.currentBudget < 30000000000) {
-        showToast("Orçamento insuficiente para expandir este Terminal Central (necessário R$ 30.000.000.000)!", "error");
+      if (budgetState.currentBudget < HUB_COST) {
+        showToast('Orçamento insuficiente para expandir este Terminal Central (R$ 30B)!', 'error');
         sound.playError();
         return;
       }
+      setSpentOnResources(prev => prev + HUB_COST);
       setUpgradedHubs(prev => [...prev, cityId]);
-      showToast("Upgrade de Alta Conectividade! Esta cidade agora suporta até 3 conexões de linhas.", "success");
+      showToast(`★ ${city?.name} virou Terminal Central! Suporta até 3 conexões.`, 'success');
       sound.playConnect();
     }
   };
 
   // Toggle Maintenance Yard construction
+  const YARD_COST = 15_000_000_000;
   const handleToggleMaintenanceYard = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
     if (maintenanceYards.includes(cityId)) {
       setMaintenanceYards(prev => prev.filter(id => id !== cityId));
-      showToast("Pátio de manutenção demolido. R$ 15.000.000.000 reembolsados!", "info");
+      // Reembolso: subtrai do spentOnResources (aumenta orçamento disponível)
+      setSpentOnResources(prev => Math.max(0, prev - YARD_COST));
+      showToast(`🔧 Pátio de ${city?.name ?? 'cidade'} demolido. R$ 15B reembolsados.`, 'info');
       sound.playDisconnect();
     } else {
-      if (budgetState.currentBudget < 15000000000) {
-        showToast("Orçamento insuficiente para construir pátio de manutenção (necessário R$ 15.000.000.000)!", "error");
+      if (budgetState.currentBudget < YARD_COST) {
+        showToast('Orçamento insuficiente para construir pátio de manutenção (R$ 15B)!', 'error');
         sound.playError();
         return;
       }
+      setSpentOnResources(prev => prev + YARD_COST);
       setMaintenanceYards(prev => [...prev, cityId]);
-      showToast("Pátio de Manutenção Ativado! Rotas férreas em um raio de até 800 km serão cobertas.", "success");
+      showToast(`🔧 Pátio de Manutenção em ${city?.name} ativado! Cobertura de 800 km.`, 'success');
       sound.playConnect();
     }
   };
@@ -852,6 +884,17 @@ export default function App() {
 
       const isBuilding = existingEdge.status === 'building';
       if (isBuilding) {
+        // Return allocated workers when cancelling a build
+        const cancelledProject = constructionQueue.find(p => p.edgeId === existingEdge.id);
+        if (cancelledProject?.workersAllocated) {
+          setWorkers(prev => ({
+            terraplanagem: prev.terraplanagem + cancelledProject.workersAllocated.terraplanagem,
+            assentamento:  prev.assentamento  + cancelledProject.workersAllocated.assentamento,
+            sinalizacao:   prev.sinalizacao   + cancelledProject.workersAllocated.sinalizacao,
+            explosivos:    prev.explosivos    + cancelledProject.workersAllocated.explosivos,
+            manutencao:    prev.manutencao,
+          }));
+        }
         setConstructionQueue(prev => prev.filter(p => p.edgeId !== existingEdge.id));
       }
 
@@ -1044,6 +1087,25 @@ export default function App() {
     const rawMonths = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
     const months = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
     if (cimentoShortage) showToast('🏗️ Escassez de cimento: obra terá duração +50% mais longa!', 'info');
+
+    // Allocate workers to the project — they stay dedicated until completion
+    const allocated: GameWorkers = {
+      terraplanagem: reqWorkers.terraplanagem,
+      assentamento:  reqWorkers.assentamento,
+      sinalizacao:   reqWorkers.sinalizacao,
+      explosivos:    reqWorkers.explosivos,
+      manutencao:    0,
+    };
+
+    // Deduct allocated workers from the free pool
+    setWorkers(prev => ({
+      terraplanagem: Math.max(0, prev.terraplanagem - allocated.terraplanagem),
+      assentamento:  Math.max(0, prev.assentamento  - allocated.assentamento),
+      sinalizacao:   Math.max(0, prev.sinalizacao   - allocated.sinalizacao),
+      explosivos:    Math.max(0, prev.explosivos    - allocated.explosivos),
+      manutencao:    prev.manutencao,
+    }));
+
     const project: ConstructionProject = {
       edgeId: `${idA}-${idB}`,
       from: idA,
@@ -1051,12 +1113,20 @@ export default function App() {
       distance: distanceVal,
       type: constructionType,
       resourcesConsumed: reqs,
+      workersAllocated: allocated,
       totalMonths: months,
       monthsRemaining: months,
       startedYear: gameYear,
       startedMonth: monthIdx,
     };
     setConstructionQueue(prev => [...prev, project]);
+
+    // Show allocation summary
+    const workerSummary = Object.entries(allocated)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`)
+      .join(', ');
+    showToast(`👷 ${workerSummary} alocados na obra — ficarão indisponíveis por ${months} ${months === 1 ? 'mês' : 'meses'}.`, 'info');
 
     const buildingEdge: Edge = {
       id: `${idA}-${idB}`,

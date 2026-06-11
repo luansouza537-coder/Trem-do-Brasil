@@ -146,21 +146,27 @@ export function getConstructionMonths(
   const isNorth = (s: string) => ['AM','PA','RO','RR','AP','AC','TO'].includes(s);
   const isMountain = (s: string) => ['SC','RS','RJ','ES','MG'].includes(s);
 
-  let kmPerMonth = 200;
-  if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 120;
-  else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 100;
+  // Base pace in km/month before worker scaling
+  // A realistic major railway builds ~30-60 km/month with full crews
+  let kmPerMonth = 50;
+  if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 30;
+  else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 25;
 
+  // Worker scaling: each worker type has diminishing returns
+  // Minimum viable crew = 50; optimal = 300-500; beyond 1000 = no extra gain
   const coreWorkers = workers.terraplanagem + workers.assentamento;
-  let workerMod = 1.0;
-  if (coreWorkers < 100) workerMod = 0.4;
-  else if (coreWorkers < 300) workerMod = 0.7;
-  else if (coreWorkers < 600) workerMod = 1.0;
-  else if (coreWorkers < 1000) workerMod = 1.4;
-  else workerMod = 1.8;
+  let workerMod = 0.3; // skeleton crew
+  if (coreWorkers >= 50)  workerMod = 0.5;
+  if (coreWorkers >= 150) workerMod = 0.75;
+  if (coreWorkers >= 300) workerMod = 1.0;
+  if (coreWorkers >= 500) workerMod = 1.2;
+  if (coreWorkers >= 800) workerMod = 1.35;
+  if (coreWorkers >= 1200) workerMod = 1.5; // hard cap
 
-  const sigMod = Math.min(1.3, 1.0 + workers.sinalizacao * 0.001);
+  // Sinalização crew adds up to +20% speed (logistics coordination)
+  const sigMod = Math.min(1.2, 1.0 + workers.sinalizacao * 0.0008);
   const effectiveKmPerMonth = kmPerMonth * workerMod * sigMod;
-  return Math.max(1, Math.ceil(distance / effectiveKmPerMonth));
+  return Math.max(2, Math.ceil(distance / effectiveKmPerMonth));
 }
 
 export function getTrackWorkersRequired(

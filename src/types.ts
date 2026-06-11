@@ -49,6 +49,7 @@ export interface ConstructionProject {
   distance: number;
   type: 'rail' | 'balsa';
   resourcesConsumed: GameResources;
+  workersAllocated: GameWorkers;
   totalMonths: number;
   monthsRemaining: number;
   startedYear: number;

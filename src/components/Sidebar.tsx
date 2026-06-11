@@ -563,7 +563,14 @@ export default function Sidebar({
                       <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
                         <div className="h-full bg-orange-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="text-[8px] text-slate-500">{p.distance.toFixed(0)} km · {pct}% concluído</span>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[8px] text-slate-500">{p.distance.toFixed(0)} km · {pct}% concluído</span>
+                        {p.workersAllocated && (
+                          <span className="text-[7.5px] text-orange-400/80 font-mono">
+                            👷 {Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${k.slice(0,4)}.`).join(' ')}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
