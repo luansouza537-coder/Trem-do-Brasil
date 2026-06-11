@@ -1,4 +1,4 @@
-import { Edge, GameResources, GameEvent, GameWorkers, ConstructionProject } from '../types';
+import { Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem } from '../types';
 
 export interface SaveGame {
   version: number;
@@ -16,6 +16,8 @@ export interface SaveGame {
   monthIdx: number;
   constructionQueue: ConstructionProject[];
   totalRevenue: number;
+  completedMissions: string[];
+  newsItems: NewsItem[];
 }
 
 const getSaveKey = (slot: number) =>

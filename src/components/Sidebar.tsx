@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject } from '../types';
+import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem } from '../types';
+import { MissionDef } from '../utils/missions';
 import { formatDistance } from '../utils/geo';
 import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant } from '../utils/gameRules';
 import { 
@@ -93,6 +94,8 @@ interface SidebarProps {
   saveSlot?: number;
   onSaveSlotChange?: (slot: number) => void;
   slotDates?: (string | null)[];
+  missionResults?: (MissionDef & { completed: boolean; current: number; target: number })[];
+  newsItems?: NewsItem[];
 }
 
 export default function Sidebar({
@@ -155,9 +158,11 @@ export default function Sidebar({
   saveSlot = 1,
   onSaveSlotChange = () => {},
   slotDates = [null, null, null],
+  missionResults = [],
+  newsItems = [],
 }: SidebarProps) {
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'cities' | 'operations'>('cities');
+  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
   const [typeFilter, setTypeFilter] = useState<'all' | 'capital' | 'cidade' | 'portos'>('all');
   const [connsFilter, setConnsFilter] = useState<'all' | '0' | '1' | '2'>('all');
   const [showHowToPlay, setShowHowToPlay] = useState(true);
@@ -348,33 +353,30 @@ export default function Sidebar({
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-1 shrink-0">
-        <button
-          onClick={() => setActiveTab('cities')}
-          className={`flex-1 text-center py-2 rounded-lg text-[10.5px] font-black tracking-wide transition flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeTab === 'cities'
-              ? 'bg-amber-505 text-slate-950 shadow-md font-extrabold bg-amber-500'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-          }`}
-        >
-          🗺️ Rotas e Cidades
-        </button>
-        <button
-          onClick={() => setActiveTab('operations')}
-          className={`flex-1 text-center py-2 rounded-lg text-[10.5px] font-black tracking-wide transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
-            activeTab === 'operations'
-              ? 'bg-amber-505 text-slate-950 shadow-md font-extrabold bg-amber-500'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-          }`}
-        >
-          👷 Equipe e Insumos
-          {activeEvents.length > 0 && (
-            <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-            </span>
-          )}
-        </button>
+      <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-0.5 shrink-0">
+        {([
+          { id: 'cities', label: '🗺️ Rotas', badge: false },
+          { id: 'operations', label: '👷 Equipe', badge: activeEvents.length > 0 },
+          { id: 'missions', label: '🎯 Objetivos', badge: missionResults.some(m => m.completed) && newsItems.length > 0 },
+        ] as const).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 text-center py-2 rounded-lg text-[9.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
+              activeTab === tab.id
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            {tab.label}
+            {tab.badge && (
+              <span className="absolute top-1 right-1 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Tab: Operations & Management */}
@@ -707,6 +709,79 @@ export default function Sidebar({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Missions & News */}
+      {activeTab === 'missions' && (
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60 bg-slate-950/10 custom-scrollbar">
+
+          {/* Missions list */}
+          <div className="p-3.5 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">🎯 Missões e Recompensas:</span>
+              <span className="text-[9px] text-emerald-400 font-bold bg-emerald-950/50 border border-emerald-800 px-1.5 py-0.5 rounded">
+                {missionResults.filter(m => m.completed).length}/{missionResults.length} concluídas
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 mt-1">
+              {missionResults.map(m => {
+                const pct = Math.min(100, Math.round((m.current / m.target) * 100));
+                const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(0)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+                return (
+                  <div key={m.id} className={`p-2.5 rounded-lg border flex flex-col gap-1.5 ${
+                    m.completed ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-slate-950/60 border-slate-800'
+                  }`}>
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="min-w-0">
+                        <span className={`text-[10px] font-black block leading-tight ${m.completed ? 'text-emerald-300' : 'text-slate-200'}`}>
+                          {m.title}
+                        </span>
+                        <span className="text-[8.5px] text-slate-400 leading-tight">{m.description}</span>
+                      </div>
+                      <span className={`text-[9px] font-black shrink-0 ml-1 ${m.completed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {m.completed ? '✓' : fmt(m.reward)}
+                      </span>
+                    </div>
+                    {!m.completed && (
+                      <>
+                        <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                          <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-[8px] text-slate-500">{m.current.toLocaleString('pt-BR')} / {m.target.toLocaleString('pt-BR')} — {pct}%</span>
+                      </>
+                    )}
+                    {m.completed && (
+                      <span className="text-[8px] text-emerald-500 font-bold">✅ Prêmio {fmt(m.reward)} recebido!</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* News feed */}
+          <div className="p-3.5 flex flex-col gap-2">
+            <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">📰 Feed de Notícias:</span>
+            {newsItems.length === 0 ? (
+              <p className="text-[9.5px] text-slate-500 italic">Nenhuma notícia ainda. Continue construindo a malha!</p>
+            ) : (
+              <div className="flex flex-col gap-1.5 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                {newsItems.map(item => (
+                  <div key={item.id} className={`p-2 rounded-lg border text-[9px] leading-snug ${
+                    item.category === 'infra'    ? 'bg-slate-900/60 border-slate-800 text-slate-300' :
+                    item.category === 'crisis'   ? 'bg-rose-950/20 border-rose-800/30 text-rose-300' :
+                    item.category === 'grant'    ? 'bg-emerald-950/20 border-emerald-800/30 text-emerald-300' :
+                    item.category === 'mission'  ? 'bg-amber-950/20 border-amber-700/30 text-amber-200' :
+                    'bg-slate-950/40 border-slate-800/60 text-slate-400'
+                  }`}>
+                    <span className="block">{item.headline}</span>
+                    <span className="text-[8px] text-slate-500 mt-0.5 block">{item.yearMonth}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

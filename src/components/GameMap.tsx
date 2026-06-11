@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { City, Edge } from '../types';
+import { City, Edge, ConstructionProject } from '../types';
 import { getSuggestedConnections } from '../utils/geo';
+import { getTrackCostDetail, TERRAIN_COLORS } from '../utils/gameRules';
 
 interface GameMapProps {
   cities: City[];
@@ -17,6 +18,7 @@ interface GameMapProps {
   upgradedHubs: string[];
   maintenanceYards: string[];
   nearestYardDistances: Record<string, number>;
+  constructionQueue?: ConstructionProject[];
 }
 
 const TILE_LAYERS = {
@@ -52,6 +54,7 @@ export default function GameMap({
   upgradedHubs = [],
   maintenanceYards = [],
   nearestYardDistances = {},
+  constructionQueue = [],
 }: GameMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -647,21 +650,43 @@ export default function GameMap({
           [toCity.lat, toCity.lng]
         ];
 
-        // Render building edges as dashed orange construction lines
+        // Render building edges with progress animation
         if (edge.status === 'building') {
+          const project = constructionQueue.find(p => p.edgeId === edge.id);
+          const pct = project ? Math.max(0, 1 - project.monthsRemaining / project.totalMonths) : 0;
+          const monthsLeft = project?.monthsRemaining ?? '?';
+
           const glow = L.polyline(latlngs, { color: '#fbbf24', weight: 10, opacity: 0.18, lineCap: 'round' });
-          const line = L.polyline(latlngs, { color: '#f97316', weight: 3.5, opacity: 0.9, dashArray: '8, 6', lineCap: 'round' });
-          line.bindTooltip(`🚧 Em Construção: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance.toFixed(0)} km)<br/><span style="color:#fbbf24;font-size:10px">Clique para cancelar obra (reembolso 50%)</span>`, {
-            sticky: true, direction: 'auto',
-            className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
-          });
           const cancelHandler = (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e);
             onConnectCitiesRef.current(edge.from, edge.to);
           };
-          line.on('click', cancelHandler);
+
+          const tooltipHtml = `🚧 Em Construção: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance.toFixed(0)} km)<br/><span style="color:#fbbf24;font-size:10px">Progresso: ${Math.round(pct * 100)}% — ${monthsLeft} mes(es) restantes</span><br/><span style="color:#f87171;font-size:9px">Clique para cancelar (reembolso 50%)</span>`;
+
+          if (pct > 0.02) {
+            const midLat = fromCity.lat + (toCity.lat - fromCity.lat) * pct;
+            const midLng = fromCity.lng + (toCity.lng - fromCity.lng) * pct;
+            const completedLine = L.polyline([[fromCity.lat, fromCity.lng], [midLat, midLng]], {
+              color: '#fbbf24', weight: 4, opacity: 0.95, lineCap: 'round'
+            });
+            completedLine.on('click', cancelHandler);
+            trackGroupRef.current?.addLayer(completedLine);
+            const remainLine = L.polyline([[midLat, midLng], [toCity.lat, toCity.lng]], {
+              color: '#f97316', weight: 3.5, opacity: 0.85, dashArray: '8, 6', lineCap: 'round'
+            });
+            remainLine.bindTooltip(tooltipHtml, { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' });
+            remainLine.on('click', cancelHandler);
+            trackGroupRef.current?.addLayer(remainLine);
+          } else {
+            const line = L.polyline(latlngs, { color: '#f97316', weight: 3.5, opacity: 0.9, dashArray: '8, 6', lineCap: 'round' });
+            line.bindTooltip(tooltipHtml, { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' });
+            line.on('click', cancelHandler);
+            trackGroupRef.current?.addLayer(line);
+          }
+
+          glow.on('click', cancelHandler);
           trackGroupRef.current?.addLayer(glow);
-          trackGroupRef.current?.addLayer(line);
           return;
         }
 
@@ -742,47 +767,25 @@ export default function GameMap({
           trackGroupRef.current?.addLayer(interactiveLayer);
 
         } else {
-          // 1. Ballast base layer (Leito de brita cinza largo)
-          const ballastLayer = L.polyline(latlngs, {
-            color: '#334155', // slate-700
-            weight: 8,
-            opacity: 0.85,
-            lineCap: 'round'
-          });
+          // Terrain-based color coding
+          const detail = getTrackCostDetail(fromCity, toCity, edge.distance);
+          const railColor = TERRAIN_COLORS[detail.terrainKey];
 
-          // 2. Wooden Sleepers/Ties (Dormentes de madeira espaçados)
-          const tieLayer = L.polyline(latlngs, {
-            color: '#451a03', // canela escuro/mogno
-            weight: 6.5,
-            opacity: 1.0,
-            dashArray: '2, 5', // barras transversais realistas
-            lineCap: 'butt'
-          });
+          // 1. Ballast base layer
+          const ballastLayer = L.polyline(latlngs, { color: '#334155', weight: 8, opacity: 0.85, lineCap: 'round' });
 
-          // 3. Steel Rails Base (Banda metálica vermelha)
-          const railsBase = L.polyline(latlngs, {
-            color: '#ef4444', // vermelho vivo
-            weight: 4,
-            opacity: 1.0,
-            lineCap: 'round'
-          });
+          // 2. Wooden sleepers
+          const tieLayer = L.polyline(latlngs, { color: '#451a03', weight: 6.5, opacity: 1.0, dashArray: '2, 5', lineCap: 'butt' });
 
-          // 4. Steel Rails Center Split (Duplica o visual criando dois trilhos paralelos)
-          const railsSplit = L.polyline(latlngs, {
-            color: '#0f172a', // cor escura para cavar o meio
-            weight: 1.4,
-            opacity: 1.0,
-            lineCap: 'round'
-          });
+          // 3. Rails — terrain-colored
+          const railsBase = L.polyline(latlngs, { color: railColor, weight: 4, opacity: 1.0, lineCap: 'round' });
 
-          // 5. Interactive invisible hitbox (Excelente sensibilidade ao toque e mouse)
-          const interactiveLayer = L.polyline(latlngs, {
-            color: 'transparent',
-            weight: 15,
-            opacity: 0.0
-          });
+          // 4. Center split
+          const railsSplit = L.polyline(latlngs, { color: '#0f172a', weight: 1.4, opacity: 1.0, lineCap: 'round' });
 
-          // Click handler — requires double-click confirmation within 3s
+          // 5. Interactive hitbox
+          const interactiveLayer = L.polyline(latlngs, { color: 'transparent', weight: 15, opacity: 0.0 });
+
           const deleteHandler = (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e);
             if (pendingDeleteRef.current === edge.id) {
@@ -796,38 +799,58 @@ export default function GameMap({
               if (pendingDeleteTimerRef.current) clearTimeout(pendingDeleteTimerRef.current);
               pendingDeleteTimerRef.current = setTimeout(() => {
                 pendingDeleteRef.current = null;
-                railsBase.setStyle({ color: '#ef4444', weight: 4 });
+                railsBase.setStyle({ color: railColor, weight: 4 });
               }, 3000);
             }
           };
-
           interactiveLayer.on('click', deleteHandler);
 
-          // Hover effects on the interactive area
-          const hoverIn = () => {
-            railsBase.setStyle({ color: '#fbbf24', weight: 5 }); // brilha em ouro
+          interactiveLayer.on('mouseover', () => {
+            railsBase.setStyle({ color: '#fbbf24', weight: 5 });
             ballastLayer.setStyle({ color: '#475569', weight: 10 });
-          };
-          const hoverOut = () => {
-            railsBase.setStyle({ color: '#ef4444', weight: 4 });
-            ballastLayer.setStyle({ color: '#334155', weight: 8 });
-          };
-
-          interactiveLayer.on('mouseover', hoverIn);
-          interactiveLayer.on('mouseout', hoverOut);
-
-          // Bind delete confirmation tooltip to the interactive area
-          interactiveLayer.bindTooltip(`Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-red-400 font-bold">Clique para remover trilho</span>`, {
-            sticky: true,
-            direction: 'auto',
-            className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
           });
+          interactiveLayer.on('mouseout', () => {
+            railsBase.setStyle({ color: railColor, weight: 4 });
+            ballastLayer.setStyle({ color: '#334155', weight: 8 });
+          });
+
+          // Tooltip shows terrain + structures
+          const structInfo = detail.bridgesCount > 0
+            ? ` • 🌉 ${detail.bridgesCount} ponte(s)`
+            : detail.tunnelsCount > 0
+              ? ` • ⛰️ ${detail.tunnelsCount} túnel/túneis`
+              : '';
+          interactiveLayer.bindTooltip(
+            `Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance.toFixed(0)} km)<br/><span style="color:${railColor};font-size:10px">${detail.terrainName}${structInfo}</span><br/><span class="text-red-400 font-bold text-xs">Clique para remover</span>`,
+            { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' }
+          );
 
           trackGroupRef.current?.addLayer(ballastLayer);
           trackGroupRef.current?.addLayer(tieLayer);
           trackGroupRef.current?.addLayer(railsBase);
           trackGroupRef.current?.addLayer(railsSplit);
           trackGroupRef.current?.addLayer(interactiveLayer);
+
+          // Structure icon at midpoint (bridges/tunnels)
+          if (detail.bridgesCount > 0 || detail.tunnelsCount > 0) {
+            const midLat = (fromCity.lat + toCity.lat) / 2;
+            const midLng = (fromCity.lng + toCity.lng) / 2;
+            const icon = detail.tunnelsCount > 0 ? '⛰️' : detail.terrainKey === 'pantanal' ? '🌊' : '🌉';
+            const label = detail.tunnelsCount > 0
+              ? `${detail.tunnelsCount} túnel(is)`
+              : `${detail.bridgesCount} ponte(s)`;
+            const structMarker = L.marker([midLat, midLng], {
+              icon: L.divIcon({
+                html: `<div title="${label}" style="font-size:13px;line-height:1;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.8))">${icon}</div>`,
+                className: 'railway-structure-icon',
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              }),
+              interactive: false,
+              zIndexOffset: -50,
+            });
+            trackGroupRef.current?.addLayer(structMarker);
+          }
         }
       }
     });

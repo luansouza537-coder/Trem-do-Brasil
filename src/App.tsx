@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CITIES } from './data/cities';
-import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject } from './types';
+import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem } from './types';
+import { MISSIONS } from './utils/missions';
+import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } from './utils/news';
 import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
 import { sound } from './services/sound';
@@ -106,6 +108,8 @@ export default function App() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [saveSlot, setSaveSlot] = useState(1);
   const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
+  const [completedMissions, setCompletedMissions] = useState<string[]>([]);
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
 
   const [activeEvents, setActiveEvents] = useState<GameEvent[]>([]);
   const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
@@ -148,6 +152,7 @@ export default function App() {
         edges, upgradedHubs, maintenanceYards, constructionType,
         resources, spentOnResources, workers, spentOnWorkers,
         activeEvents, gameYear, monthIdx, constructionQueue, totalRevenue,
+        completedMissions, newsItems,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -223,6 +228,10 @@ export default function App() {
         net >= 0 ? 'success' : 'info'
       );
 
+      // Random monthly news
+      const rnd = newsRandom(gameYear, monthIdx);
+      if (rnd) setNewsItems(prev => [rnd, ...prev].slice(0, 40));
+
       // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
 
       // Advance construction queue
@@ -234,6 +243,7 @@ export default function App() {
           else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
         });
         if (completed.length > 0) {
+          const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
           setEdges(prevEdges => prevEdges.map(e => {
             const done = completed.find(p => p.edgeId === e.id);
             return done ? { ...e, status: 'complete' as const } : e;
@@ -243,6 +253,9 @@ export default function App() {
             const cityB = CITIES.find(c => c.id === p.to);
             showToast(`✅ Construção concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)`, 'success');
             sound.playConnect();
+            if (cityA && cityB) {
+              setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 40));
+            }
           });
         }
         return stillBuilding;
@@ -390,6 +403,8 @@ export default function App() {
     setSpentOnWorkers(0);
     setConstructionQueue([]);
     setTotalRevenue(0);
+    setCompletedMissions([]);
+    setNewsItems([]);
 
     setActiveEvents([]);
     setCurrentEvent(null);
@@ -416,6 +431,8 @@ export default function App() {
     setMonthIdx(save.monthIdx);
     setConstructionQueue(save.constructionQueue ?? []);
     setTotalRevenue(save.totalRevenue ?? 0);
+    setCompletedMissions(save.completedMissions ?? []);
+    setNewsItems(save.newsItems ?? []);
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -630,6 +647,41 @@ export default function App() {
   const nearestYardDistances = useMemo(() => {
     return calculateRailwayDistancesFromYards(CITIES, edges, maintenanceYards);
   }, [edges, maintenanceYards]);
+
+  // Evaluate missions reactively
+  const missionResults = useMemo(() => {
+    return MISSIONS.map(m => ({ ...m, ...m.check(CITIES, edges, maintenanceYards) }));
+  }, [edges, maintenanceYards]);
+
+  // News when a grant is newly unlocked
+  const prevGrantsRef = React.useRef<string[]>([]);
+  useEffect(() => {
+    if (welcomeOpen) return;
+    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+    budgetState.unlockedGrants.filter(g => g.unlocked).forEach(g => {
+      if (!prevGrantsRef.current.includes(g.id)) {
+        setNewsItems(prev => [newsGrant(g.title, g.value, ym), ...prev].slice(0, 40));
+      }
+    });
+    prevGrantsRef.current = budgetState.unlockedGrants.filter(g => g.unlocked).map(g => g.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.unlockedGrants, welcomeOpen]);
+
+  // Grant rewards for newly completed missions
+  useEffect(() => {
+    if (welcomeOpen) return;
+    const yearMonth = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+    missionResults.forEach(m => {
+      if (m.completed && !completedMissions.includes(m.id)) {
+        setCompletedMissions(prev => [...prev, m.id]);
+        setTotalRevenue(prev => prev + m.reward);
+        showToast(`🎯 Missão concluída: "${m.title.replace(/^[^ ]+ /, '')}" — Prêmio: R$ ${(m.reward/1e9).toFixed(0)}B`, 'success');
+        sound.playConnect();
+        setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 40));
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missionResults, welcomeOpen]);
 
   // Counting edges with no active maintenance coverage (> 800 km or Infinity)
   const unmaintainedEdgesCount = useMemo(() => {
@@ -1010,6 +1062,8 @@ export default function App() {
         saveSlot={saveSlot}
         onSaveSlotChange={setSaveSlot}
         slotDates={slotDates}
+        missionResults={missionResults}
+        newsItems={newsItems}
       />
 
       {/* 3. Primary Leaflet Map Container */}
@@ -1038,52 +1092,75 @@ export default function App() {
           </div>
         </div>
 
-        {/* Helper overlay when a city is selected */}
+        {/* City stats popup when selected */}
         {selectedCityId && (() => {
           const selectedCity = CITIES.find(c => c.id === selectedCityId);
           if (!selectedCity) return null;
           const isUpgraded = upgradedHubs.includes(selectedCity.id);
           const hasYard = maintenanceYards.includes(selectedCity.id);
-          
+          const cityEdges = edges.filter(e => (e.from === selectedCity.id || e.to === selectedCity.id) && e.status !== 'building');
+          const cityMonthlyRevenue = cityEdges.reduce((s, e) => s + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000)), 0);
+          const mDist = nearestYardDistances[selectedCity.id];
+          const maintOk = mDist !== undefined && mDist !== Infinity && mDist <= 800;
+          const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
+
           return (
-            <div className="absolute top-4 left-4 right-4 md:right-auto md:w-[450px] bg-slate-900/95 backdrop-blur-md border border-slate-800 px-4 py-3.5 rounded-xl shadow-2xl z-50 transition-all flex flex-col gap-3">
-              <div className="flex items-start gap-2.5">
-                <Train className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-slate-100">
-                    Estação Selecionada: <span className="text-amber-400 font-extrabold">{selectedCity.name}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5 leading-normal">
-                    Assente trilhos ou rotas selecionando outra cidade no mapa ou na lista. Clique em qualquer área limpa do mapa para cancelar.
-                  </p>
+            <div className="absolute top-4 left-4 right-4 md:right-auto md:w-[480px] bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 rounded-xl shadow-2xl z-50 flex flex-col gap-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Train className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-xs font-extrabold text-amber-400">{selectedCity.name} — {selectedCity.state}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {selectedCity.portType === 'maritime' ? '⚓ Porto Marítimo' : selectedCity.portType === 'fluvial' ? '🚢 Porto Fluvial' : selectedCity.type === 'capital' ? '★ Capital Estadual' : '● Cidade Central'}
+                    </p>
+                  </div>
                 </div>
+                <span className="text-[9px] text-slate-500 font-mono">Clique no mapa para cancelar</span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2.5">
+              {/* Stats grid — only if connected */}
+              {cityEdges.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center">
+                  <div>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wide">Conexões</p>
+                    <p className="text-[14px] font-black text-amber-400">{cityEdges.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wide">Receita/Mês</p>
+                    <p className="text-[13px] font-black text-sky-400">R$ {fmt(cityMonthlyRevenue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wide">Manutenção</p>
+                    <p className={`text-[11px] font-black ${maintOk ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {maintOk ? `✓ ${mDist?.toFixed(0)} km` : '⚠️ Sem cobertura'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2">
                 <button
                   onClick={() => handleToggleUpgradeHub(selectedCity.id)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
-                    isUpgraded
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                      : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                    isUpgraded ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
                   }`}
-                  title="Grandes Terminais Integradores suportam até 3 conexões ferroviárias"
                 >
                   <Star className={`w-3 h-3 ${isUpgraded ? 'fill-amber-400 text-amber-400' : ''}`} />
-                  <span>{isUpgraded ? '★ Central Hub Ativo' : '★ Terminal Central (R$ 300k)'}</span>
+                  {isUpgraded ? '★ Central Hub Ativo' : '★ Terminal Central (R$ 30B)'}
                 </button>
-
                 <button
                   onClick={() => handleToggleMaintenanceYard(selectedCity.id)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
-                    hasYard
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                      : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                    hasYard ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                    : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
                   }`}
-                  title="Pátios de manutenção dão cobertura contra quebras em rotas"
                 >
                   <Wrench className="w-3 h-3 text-emerald-400" />
-                  <span>{hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 150k)'}</span>
+                  {hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 15B)'}
                 </button>
               </div>
             </div>
@@ -1113,6 +1190,7 @@ export default function App() {
           upgradedHubs={upgradedHubs}
           maintenanceYards={maintenanceYards}
           nearestYardDistances={nearestYardDistances}
+          constructionQueue={constructionQueue}
         />
       </main>
 
@@ -1421,6 +1499,8 @@ export default function App() {
                     // Accept and absorb the crisis
                     setActiveEvents(prev => [...prev, currentEvent]);
                     showToast(`Medida emergencial aceita: ${currentEvent.title} ativo por ${currentEvent.durationMonths} meses!`, 'info');
+                    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+                    setNewsItems(prev => [newsCrisis(currentEvent, ym), ...prev].slice(0, 40));
                     setCurrentEvent(null);
                     sound.playSelect();
                   }}

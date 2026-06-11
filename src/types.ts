@@ -55,6 +55,13 @@ export interface ConstructionProject {
   startedMonth: number;
 }
 
+export interface NewsItem {
+  id: string;
+  headline: string;
+  yearMonth: string;
+  category: 'infra' | 'economy' | 'crisis' | 'grant' | 'mission';
+}
+
 export interface GameEvent {
   id: string;
   title: string;

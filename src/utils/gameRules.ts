@@ -169,39 +169,64 @@ export interface FundGrant {
 /**
  * Calculates detail costs for standard rail connection based on geographical factors and terrain.
  */
+export type TerrainKey = 'cerrado' | 'amazon' | 'pantanal' | 'mountain' | 'valley';
+
+export const TERRAIN_COLORS: Record<TerrainKey, string> = {
+  cerrado:  '#ef4444',
+  amazon:   '#22c55e',
+  pantanal: '#06b6d4',
+  mountain: '#a855f7',
+  valley:   '#3b82f6',
+};
+
 export function getTrackCostDetail(cityA: City, cityB: City, distance: number) {
   const isNorth = (state: string) => ['AM', 'PA', 'RO', 'RR', 'AP', 'AC', 'TO'].includes(state);
   const isPantanal = (state: string) => ['MS', 'MT'].includes(state);
 
   let terrainName = 'Planalto / Cerrado (Custo Regular)';
   let multiplier = 1.0;
+  let terrainKey: TerrainKey = 'cerrado';
 
   if (isNorth(cityA.state) || isNorth(cityB.state)) {
     terrainName = 'Floresta Amazônica (Preservação e Travessia de Rios)';
     multiplier = 2.0;
+    terrainKey = 'amazon';
   } else if (isPantanal(cityA.state) || isPantanal(cityB.state)) {
     terrainName = 'Pantanal Wetlands (Pontes em Áreas Inundadas)';
     multiplier = 1.8;
+    terrainKey = 'pantanal';
   } else if (
     (cityA.portType === 'maritime' && cityB.portType !== 'maritime') ||
     (cityB.portType === 'maritime' && cityA.portType !== 'maritime')
   ) {
     terrainName = 'Serras e Chapadas (Subidas e Declives Íngremes)';
     multiplier = 2.2;
+    terrainKey = 'mountain';
   } else if (cityA.portType === 'fluvial' && cityB.portType === 'fluvial') {
     terrainName = 'Vales de Rios (Solos de Várzea Instável)';
     multiplier = 1.3;
+    terrainKey = 'valley';
   }
 
-  const baseCostPerKm = 40000000; // R$ 40.000.000 / km
+  const baseCostPerKm = 40000000;
   const unitCost = baseCostPerKm * multiplier;
   const totalCost = Math.round(distance * unitCost);
 
+  // Infrastructure structures count
+  const bridgesCount = terrainKey === 'amazon'   ? Math.ceil(distance / 90)
+                     : terrainKey === 'pantanal' ? Math.ceil(distance / 55)
+                     : terrainKey === 'valley'   ? Math.ceil(distance / 120)
+                     : 0;
+  const tunnelsCount = terrainKey === 'mountain' ? Math.ceil(distance / 100) : 0;
+
   return {
     terrainName,
+    terrainKey,
     multiplier,
     unitCost,
     totalCost,
+    bridgesCount,
+    tunnelsCount,
   };
 }
 
