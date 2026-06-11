@@ -686,6 +686,18 @@ export default function App() {
     );
   };
 
+  // Returns the native maximum connections for a city based on its size tier
+  const getCityNativeMaxConns = (cityId: string): number => {
+    // Metropoles (4 native connections): SP, RJ, BH, Curitiba, Salvador, Recife, Fortaleza, Belém, Manaus, Goiânia, Brasília, Porto Alegre
+    const METROPOLE_IDS = new Set(['1','2','3','7','8','11','14','17','20','24','25','5']);
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return 2;
+    if (METROPOLE_IDS.has(cityId)) return 4;
+    if (city.type === 'capital') return 3;
+    if (city.type === 'polo_industrial' || city.type === 'mineracao') return 3;
+    return 2;
+  };
+
   // Dynamic cost & grant budget state (calculated reactively to avoid state bugs)
   const startingBudget = 1250000000000; // R$ 1.250.000.000.000,00 starting cash
 
@@ -867,6 +879,21 @@ export default function App() {
       return;
     }
 
+    // 1b. City pairs where rail is physically impossible (separated by wide rivers/sea)
+    const BALSA_ONLY_PAIRS = new Set([
+      '17-18', // Belém–Macapá (foz do Amazonas)
+      '17-74', // Belém–Santana AP
+      '18-74', // Macapá–Santana
+      '16-18', // São Luís–Macapá
+    ]);
+    const routeKey = [idA, idB].sort().join('-');
+    if (BALSA_ONLY_PAIRS.has(routeKey) && constructionType !== 'balsa') {
+      sound.playError();
+      showToast('🚢 Esta rota cruza a Foz do Amazonas — impossível por ferrovia. Selecione modo Hidrovia (balsa)!', 'error');
+      setSelectedCityId(null);
+      return;
+    }
+
     // 2. Locate cities
     const cityA = CITIES.find((c) => c.id === idA);
     const cityB = CITIES.find((c) => c.id === idB);
@@ -937,18 +964,18 @@ export default function App() {
     const degA = getCityDegree(idA);
     const degB = getCityDegree(idB);
 
-    const maxDegA = upgradedHubs.includes(idA) ? 3 : 2;
-    const maxDegB = upgradedHubs.includes(idB) ? 3 : 2;
+    const maxDegA = getCityNativeMaxConns(idA) + (upgradedHubs.includes(idA) ? 1 : 0);
+    const maxDegB = getCityNativeMaxConns(idB) + (upgradedHubs.includes(idB) ? 1 : 0);
 
     if (degA >= maxDegA) {
       sound.playError();
-      showToast(`A cidade ${cityA.name} atingiu seu limite máximo de ${maxDegA} conexões! Upgrades podem ser feitos no painel lateral.`, 'error');
+      showToast(`A cidade ${cityA.name} já possui ${degA} conexões (limite desta cidade). Upgrades de Terminal Central adicionam +1 slot.`, 'error');
       setSelectedCityId(null);
       return;
     }
     if (degB >= maxDegB) {
       sound.playError();
-      showToast(`A cidade ${cityB.name} atingiu seu limite máximo de ${maxDegB} conexões! Upgrades podem ser feitos no painel lateral.`, 'error');
+      showToast(`A cidade ${cityB.name} já possui ${degB} conexões (limite desta cidade). Upgrades de Terminal Central adicionam +1 slot.`, 'error');
       setSelectedCityId(null);
       return;
     }
@@ -1311,7 +1338,17 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <span className="text-[9px] text-slate-500 font-mono">Clique no mapa para cancelar</span>
+                <div className="text-right">
+                  <span className="text-[9px] text-slate-500 font-mono block">Clique no mapa para cancelar</span>
+                  <span className="text-[8.5px] text-slate-600">
+                    {(() => {
+                      const nat = getCityNativeMaxConns(selectedCity.id);
+                      const tot = nat + (isUpgraded ? 1 : 0);
+                      const cur = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
+                      return `${cur}/${tot} conexões${isUpgraded ? ' (hub)' : ''}`;
+                    })()}
+                  </span>
+                </div>
               </div>
 
               {/* Stats grid — only if connected */}
@@ -1333,6 +1370,62 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* Routes list — only if connected */}
+              {cityEdges.length > 0 && (
+                <div className="bg-slate-950/50 rounded-lg border border-slate-800 overflow-hidden">
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest px-2.5 pt-2 pb-1">Rotas Ativas</p>
+                  <div className="divide-y divide-slate-900 max-h-32 overflow-y-auto">
+                    {cityEdges.map(e => {
+                      const otherId = e.from === selectedCity.id ? e.to : e.from;
+                      const other = CITIES.find(c => c.id === otherId);
+                      const edgeRevenue = (() => {
+                        const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+                        const multA = getCityTypeRevenueMultiplier(selectedCity.type);
+                        const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
+                        return Math.round(base * (multA + multB) / 2);
+                      })();
+                      return (
+                        <div key={e.id} className="flex items-center justify-between px-2.5 py-1.5 text-[9px]">
+                          <span className="text-slate-300 font-medium">{e.type === 'balsa' ? '🚢' : '🚂'} {other?.name ?? otherId} <span className="text-slate-600">({e.distance.toFixed(0)} km)</span></span>
+                          <span className="text-sky-400 font-bold">+R$ {fmt(edgeRevenue)}/mês</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Nearest unconnected cities suggestion */}
+              {(() => {
+                const nativeMax = getCityNativeMaxConns(selectedCity.id);
+                const maxConnsTotal = nativeMax + (isUpgraded ? 1 : 0);
+                const currentConns = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
+                if (currentConns >= maxConnsTotal) return null;
+                const connectedIds = new Set([selectedCity.id, ...edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).map(e => e.from === selectedCity.id ? e.to : e.from)]);
+                const unconnected = CITIES
+                  .filter(c => !connectedIds.has(c.id))
+                  .map(c => ({ city: c, dist: Math.sqrt((c.lat - selectedCity.lat)**2 + (c.lng - selectedCity.lng)**2) }))
+                  .sort((a,b) => a.dist - b.dist)
+                  .slice(0, 3);
+                if (unconnected.length === 0) return null;
+                return (
+                  <div className="bg-slate-950/40 rounded-lg border border-slate-800/60 p-2">
+                    <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest mb-1.5">Conexões Sugeridas ({currentConns}/{maxConnsTotal})</p>
+                    <div className="flex flex-col gap-1">
+                      {unconnected.map(({ city: c, dist }) => {
+                        const approxKm = Math.round(dist * 111);
+                        return (
+                          <div key={c.id} className="flex items-center justify-between text-[9px]">
+                            <span className="text-slate-400">{c.name} ({c.state})</span>
+                            <span className="text-slate-600">~{approxKm} km</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2">
