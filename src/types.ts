@@ -67,7 +67,7 @@ export interface GameEvent {
   id: string;
   title: string;
   description: string;
-  type: 'strike' | 'env_delay' | 'politics' | 'crisis' | 'natural' | 'cyber' | 'accident';
+  type: 'strike' | 'env_delay' | 'politics' | 'crisis' | 'natural' | 'cyber' | 'accident' | 'positive' | 'neutral';
   statusEffect: string;
   costToResolve?: number;
   costPerMonth?: number;
@@ -75,4 +75,13 @@ export interface GameEvent {
   durationMonths: number;
   monthsLeft: number;
   resolved?: boolean;
+  revenueMultiplier?: number;
+  monthlyBonus?: number;
+  resourceMultipliers?: Partial<Record<keyof GameResources, number>>;
+  constructionSlowFactor?: number;
+  balsaFrozen?: boolean;
+  blockConstruction?: boolean;
+  payrollMultiplier?: number;
 }
+
+export type PoliticalParty = 'PL' | 'PS' | 'PB';

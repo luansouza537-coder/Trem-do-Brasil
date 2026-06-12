@@ -18,6 +18,8 @@ export interface SaveGame {
   totalRevenue: number;
   completedMissions: string[];
   newsItems: NewsItem[];
+  triggeredEventIds: string[];
+  currentPartyStatusEffect: string | null;
 }
 
 const getSaveKey = (slot: number) =>
@@ -40,6 +42,9 @@ export function loadGame(slot = 1): SaveGame | null {
     if (!raw) return null;
     const save: SaveGame = JSON.parse(raw);
     if (save.version !== SAVE_VERSION) return null;
+    // Backwards compatibility defaults
+    if (!save.triggeredEventIds) save.triggeredEventIds = [];
+    if (save.currentPartyStatusEffect === undefined) save.currentPartyStatusEffect = null;
     return save;
   } catch {
     return null;

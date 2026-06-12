@@ -449,10 +449,11 @@ export function getMonthlyRevenue(
   edges: Edge[],
   workers: { manutencao: number },
   activeEffects: string[] = [],
-  cities: City[] = []
+  cities: City[] = [],
+  balsaFrozenOverride?: boolean
 ): number {
   const completedEdges = edges.filter(e => e.status !== 'building');
-  const balsaFrozen = activeEffects.includes('SECA_TOCANTINS');
+  const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
   const base = completedEdges.reduce((sum, e) => {
     if (e.type === 'balsa' && balsaFrozen) return sum;
     const baseKm = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));

@@ -50,6 +50,7 @@ import {
   Layers
 } from 'lucide-react';
 import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates } from './utils/persistence';
+import { SCHEDULED_EVENTS } from './data/scheduledEvents';
 
 interface Toast {
   id: string;
@@ -136,10 +137,15 @@ export default function App() {
   const [hasSaveGame, setHasSaveGame] = useState(() => hasSave());
   const [saveDate, setSaveDate] = useState<string | null>(() => getSaveDate());
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggeredEventIdsRef = React.useRef<string[]>([]);
+  const currentEventRef = React.useRef<GameEvent | null>(null);
+  const [triggeredEventIds, setTriggeredEventIds] = useState<string[]>([]);
   const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
   // Keep edgesRef in sync for use inside non-edges-dependent effects
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { triggeredEventIdsRef.current = triggeredEventIds; }, [triggeredEventIds]);
+  useEffect(() => { currentEventRef.current = currentEvent; }, [currentEvent]);
 
   // Load sound setting preference
   useEffect(() => {
@@ -156,6 +162,8 @@ export default function App() {
         resources, spentOnResources, workers, spentOnWorkers,
         activeEvents, gameYear, monthIdx, constructionQueue, totalRevenue,
         completedMissions, newsItems,
+        triggeredEventIds,
+        currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -165,7 +173,7 @@ export default function App() {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
-      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen]);
+      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -213,14 +221,21 @@ export default function App() {
                              (workers.manutencao    * WORKER_SALARIES.manutencao);
 
       const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
-      if (monthlyPayroll > 0) {
-        setSpentOnWorkers((prev) => prev + monthlyPayroll);
+      const payrollMultiplier = activeEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
+      const adjustedPayroll = Math.round(monthlyPayroll * payrollMultiplier);
+      if (adjustedPayroll > 0) {
+        setSpentOnWorkers((prev) => prev + adjustedPayroll);
       }
 
       // Collect revenue from all completed routes
       const activeEffects = activeEvents.map(e => e.statusEffect);
       const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
-      const monthlyRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES);
+      let compoundRevMult = activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
+      if (compoundRevMult > 1.0) compoundRevMult = Math.min(1.35, compoundRevMult);
+      const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
+      const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0);
+      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent);
+      const monthlyRev = cyberAttack ? 0 : (Math.round(baseRev * compoundRevMult) + monthlyBonusTotal);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
       }
@@ -229,10 +244,10 @@ export default function App() {
       }
 
       // Monthly summary toast
-      const net = monthlyRev - monthlyPayroll;
+      const net = monthlyRev - adjustedPayroll;
       const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(2)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
       showToast(
-        `📊 ${MONTHS_PT[monthIdx]}/${gameYear} — Receita: +R$ ${fmt(monthlyRev)} | Folha: -R$ ${fmt(monthlyPayroll)} | Saldo: ${net >= 0 ? '+' : ''}R$ ${fmt(net)}`,
+        `📊 ${MONTHS_PT[monthIdx]}/${gameYear} — Receita: +R$ ${fmt(monthlyRev)} | Folha: -R$ ${fmt(adjustedPayroll)} | Saldo: ${net >= 0 ? '+' : ''}R$ ${fmt(net)}`,
         net >= 0 ? 'success' : 'info'
       );
 
@@ -316,150 +331,128 @@ export default function App() {
       return active;
     });
 
-    // 2. Random Event Trigger Roll (e.g. 15% probability of checking, max 2 concurrent events)
-    // Avoid triggering in the first 4 months of 2027 to let the user get acclimated
-    if (gameYear === 2027 && monthIdx < 4) return;
+    // 2. Calendar-based scheduled event trigger
+    const triggerMonth = monthIdx + 1; // monthIdx is 0-based; triggerMonth is 1-based
+    const yearMonth = `${gameYear}/${String(triggerMonth).padStart(2, '0')}`;
 
-    if (Math.random() < 0.15 && activeEvents.length < 2 && !currentEvent) {
-      const candidateEvents: GameEvent[] = [
-        {
-          id: 'greve_' + Date.now(),
-          title: 'Greve Geral Ferroviária 🚧',
-          description: 'Sindicatos paralisaram parcialmente as obras. Os trabalhadores exigem aumento salarial e melhores condições de campo. Trilhos ficam 25% mais caros e a RENIF paga R$3B/mês em horas extras até a resolução.',
-          type: 'strike',
-          statusEffect: 'GREVE_GERAL',
-          costToResolve: 35_000_000_000,
-          costPerMonth: 3_000_000_000,
-          durationMonths: 12,
-          monthsLeft: 12
-        },
-        {
-          id: 'licenca_' + Date.now(),
-          title: 'Impasse de Licença na Amazônia 🌳',
-          description: 'O IBAMA suspendeu licenças de obras na Região Norte para revisão de estudos ambientais. Custo de aço/cimento +50% no Norte. Multa regulatória de R$2B/mês até resolução.',
-          type: 'env_delay',
-          statusEffect: 'ATRASO_AMBIENTAL_AMAZONIA',
-          costToResolve: 25_000_000_000,
-          costPerMonth: 2_000_000_000,
-          durationMonths: 18,
-          monthsLeft: 18
-        },
-        {
-          id: 'inflacao_' + Date.now(),
-          title: 'Super Inflação de Insumos 📈',
-          description: 'Escalada geopolítica travou cargueiros de minério: Aço e Cobre dobram de preço no mercado. Resolução antecipada: abrir linha de crédito emergencial (R$30B).',
-          type: 'crisis',
-          statusEffect: 'INFLACAO_GLOBAL',
-          costToResolve: 30_000_000_000,
-          durationMonths: 10,
-          monthsLeft: 10
-        },
-        {
-          id: 'cheia_' + Date.now(),
-          title: 'Grande Cheia no Pantanal 🌧️',
-          description: 'Chuvas torrenciais inundaram MS/MT. Dormentes levados pelas corredeiras: consumo de Madeira 1.8×. Custo de contenção: R$1.5B/mês.',
-          type: 'natural',
-          statusEffect: 'ESCASSES_MADEIRA',
-          costToResolve: 15_000_000_000,
-          costPerMonth: 1_500_000_000,
-          durationMonths: 14,
-          monthsLeft: 14
-        },
-        {
-          id: 'lobby_' + Date.now(),
-          title: 'Multas e Emendas Legislativas 🏛️',
-          description: 'Bancadas bloquearam autorizações de novas construções ferroviárias. Nenhuma obra pode ser iniciada enquanto a crise perdurar. Multa parlamentar: R$2B/mês.',
+    const due = SCHEDULED_EVENTS.filter(
+      ev => ev.triggerYear === gameYear &&
+            ev.triggerMonth === triggerMonth &&
+            !triggeredEventIdsRef.current.includes(ev.id)
+    );
+
+    for (const ev of due) {
+      // Mark as triggered immediately to avoid double-fire
+      setTriggeredEventIds(prev => {
+        const next = [...prev, ev.id];
+        triggeredEventIdsRef.current = next;
+        return next;
+      });
+
+      // Party / political election event
+      if (ev.category === 'POL' && ev.party) {
+        const partyEffect = `PARTIDO_${ev.party}`;
+        const partyEvent: GameEvent = {
+          id: `pol_${ev.id}`,
+          title: ev.title,
+          description: ev.description,
           type: 'politics',
-          statusEffect: 'LOBBY_REGIONAL',
-          costToResolve: 20_000_000_000,
-          costPerMonth: 2_000_000_000,
-          durationMonths: 8,
-          monthsLeft: 8
-        },
-        {
-          id: 'cgu_' + Date.now(),
-          title: 'Auditoria da CGU 🔍',
-          description: 'A Controladoria-Geral da União abriu auditoria emergencial nos contratos da RENIF. R$5B/mês são descontados do caixa durante o processo. Resolução antecipada: R$40B em consultoria jurídica.',
-          type: 'politics',
-          statusEffect: 'AUDITORIA_CGU',
-          costToResolve: 40_000_000_000,
-          costPerMonth: 5_000_000_000,
-          durationMonths: 6,
-          monthsLeft: 6
-        },
-        {
-          id: 'acidente_' + Date.now(),
-          title: 'Acidente Grave em Frente de Obra ⚠️',
-          description: 'Uma explosão descontrolada em canteiro de túnel causou baixas na equipe. 80 especialistas em Explosivos foram afastados compulsoriamente. A RENIF paga R$8B em indenizações imediatas.',
-          type: 'accident',
-          statusEffect: 'ACIDENTE_OBRA',
-          costToResolve: 0,
-          workerLoss: { role: 'explosivos', amount: 80 },
-          durationMonths: 1,
-          monthsLeft: 1
-        },
-        {
-          id: 'seca_' + Date.now(),
-          title: 'Seca Severa no Tocantins 🏜️',
-          description: 'Nível histórico baixo do Rio Tocantins e afluentes paralisou totalmente o transporte hidroviário. Receita de balsas = R$0 por 8 meses. Resolução antecipada: R$12B em obras de dragagem emergencial.',
-          type: 'natural',
-          statusEffect: 'SECA_TOCANTINS',
-          costToResolve: 12_000_000_000,
-          durationMonths: 8,
-          monthsLeft: 8
-        },
-        {
-          id: 'cyber_' + Date.now(),
-          title: 'Ataque Cibernético aos Sistemas 💻',
-          description: 'Hackers paralisaram os sistemas de bilhetagem e monitoramento de carga da RENIF. Toda receita mensal fica zerada por 3 meses enquanto os sistemas são restaurados. Resolução urgente: R$20B.',
-          type: 'cyber',
-          statusEffect: 'CYBER_ATAQUE',
-          costToResolve: 20_000_000_000,
-          durationMonths: 3,
-          monthsLeft: 3
-        },
-        {
-          id: 'geopolitico_' + Date.now(),
-          title: 'Tensão Geopolítica com Argentina 🇦🇷',
-          description: 'Disputa comercial no Mercosul encarece cobre minerado e eletrodutos: preço do Cobre +80% no mercado internacional por 6 meses.',
-          type: 'crisis',
-          statusEffect: 'TENSAO_GEOPOLITICA',
-          costToResolve: 18_000_000_000,
-          durationMonths: 6,
-          monthsLeft: 6
-        },
-        {
-          id: 'cimento_' + Date.now(),
-          title: 'Escassez Nacional de Cimento 🏗️',
-          description: 'Crise no setor de construção civil drenou os estoques nacionais. Todas as obras avançam 50% mais devagar por 4 meses. Resolução: R$15B em importação emergencial.',
-          type: 'crisis',
-          statusEffect: 'ESCASSEZ_CIMENTO',
-          costToResolve: 15_000_000_000,
-          durationMonths: 4,
-          monthsLeft: 4
-        },
-        {
-          id: 'fundiario_' + Date.now(),
-          title: 'Conflito Fundiário no Cerrado 🌾',
-          description: 'Movimentos rurais e indígenas bloquearam obras em MT e GO judicialmente. Nenhuma ferrovia pode ser iniciada nestes estados. R$1.5B/mês em custas processuais.',
-          type: 'politics',
-          statusEffect: 'CONFLITO_FUNDIARIO',
-          costToResolve: 22_000_000_000,
-          costPerMonth: 1_500_000_000,
-          durationMonths: 10,
-          monthsLeft: 10
+          statusEffect: partyEffect,
+          durationMonths: 48,
+          monthsLeft: 48,
+          ...(ev.party === 'PL' ? { revenueMultiplier: 0.85 } : {}),
+          ...(ev.party === 'PS' ? { monthlyBonus: 2_000_000_000 } : {}),
+        };
+        // Remove previous party effect and add new one
+        setActiveEvents(prev => [
+          ...prev.filter(e => !e.statusEffect.startsWith('PARTIDO_')),
+          partyEvent,
+        ]);
+        setNewsItems(prev => [{
+          id: `news_${ev.id}`,
+          headline: `🗳️ ${ev.title} — ${ev.description.slice(0, 80)}`,
+          yearMonth,
+          category: 'crisis',
+        }, ...prev].slice(0, 40));
+        showToast(`🗳️ ${ev.title}`, 'info');
+        continue;
+      }
+
+      // Immediate cash bonus/penalty
+      if (ev.immediateCash) {
+        if (ev.immediateCash > 0) {
+          setTotalRevenue(prev => prev + ev.immediateCash!);
+          showToast(`💰 ${ev.title}: +R$ ${(ev.immediateCash! / 1e9).toFixed(0)}B creditados`, 'success');
+        } else {
+          setSpentOnResources(prev => prev + Math.abs(ev.immediateCash!));
+          showToast(`💸 ${ev.title}: -R$ ${(Math.abs(ev.immediateCash!) / 1e9).toFixed(0)}B debitados`, 'error');
         }
-      ];
+        setNewsItems(prev => [{
+          id: `news_${ev.id}`,
+          headline: `${ev.immediateCash! > 0 ? '💰' : '💸'} ${ev.title}`,
+          yearMonth,
+          category: ev.immediateCash! > 0 ? 'grant' : 'crisis',
+        }, ...prev].slice(0, 40));
+      }
 
-      // Exclude events already active
-      const available = candidateEvents.filter(
-        cand => !activeEvents.some(act => act.statusEffect === cand.statusEffect)
-      );
+      // Apply game event effect
+      if (ev.gameEvent) {
+        const ge = ev.gameEvent;
+        const gameEventObj: GameEvent = {
+          id: `ge_${ev.id}`,
+          title: ev.title,
+          description: ev.description,
+          type: ge.type,
+          statusEffect: ge.statusEffect,
+          durationMonths: ge.durationMonths,
+          monthsLeft: ge.durationMonths,
+          ...(ge.costPerMonth !== undefined ? { costPerMonth: ge.costPerMonth } : {}),
+          ...(ge.costToResolve !== undefined ? { costToResolve: ge.costToResolve } : {}),
+          ...(ge.workerLoss !== undefined ? { workerLoss: ge.workerLoss } : {}),
+          ...(ge.revenueMultiplier !== undefined ? { revenueMultiplier: ge.revenueMultiplier } : {}),
+          ...(ge.monthlyBonus !== undefined ? { monthlyBonus: ge.monthlyBonus } : {}),
+          ...(ge.resourceMultipliers !== undefined ? { resourceMultipliers: ge.resourceMultipliers } : {}),
+          ...(ge.constructionSlowFactor !== undefined ? { constructionSlowFactor: ge.constructionSlowFactor } : {}),
+          ...(ge.balsaFrozen !== undefined ? { balsaFrozen: ge.balsaFrozen } : {}),
+          ...(ge.blockConstruction !== undefined ? { blockConstruction: ge.blockConstruction } : {}),
+          ...(ge.payrollMultiplier !== undefined ? { payrollMultiplier: ge.payrollMultiplier } : {}),
+        };
 
-      if (available.length > 0) {
-        const selected = available[Math.floor(Math.random() * available.length)];
-        setCurrentEvent(selected);
-        sound.playError();
+        // Worker loss events apply immediately
+        if (ge.workerLoss) {
+          setWorkers(prev => ({
+            ...prev,
+            [ge.workerLoss!.role]: Math.max(0, prev[ge.workerLoss!.role] - ge.workerLoss!.amount),
+          }));
+        }
+
+        if (ev.category === 'CRI') {
+          // Crisis events: show popup for player acknowledgement
+          if (!currentEventRef.current) {
+            setCurrentEvent(gameEventObj);
+            sound.playError();
+          } else {
+            // If there's already a popup open, add directly to active
+            setActiveEvents(prev => [...prev, gameEventObj]);
+            setNewsItems(prev => [{
+              id: `news_${ev.id}`,
+              headline: `⚠️ ${ev.title}`,
+              yearMonth,
+              category: 'crisis',
+            }, ...prev].slice(0, 40));
+          }
+        } else {
+          // POS/NEU events apply automatically, no popup
+          setActiveEvents(prev => [...prev, gameEventObj]);
+          const icon = ev.category === 'POS' ? '✅' : 'ℹ️';
+          showToast(`${icon} ${ev.title}`, ev.category === 'POS' ? 'success' : 'info');
+          setNewsItems(prev => [{
+            id: `news_${ev.id}`,
+            headline: `${icon} ${ev.title}`,
+            yearMonth,
+            category: ev.category === 'POS' ? 'grant' : 'economy',
+          }, ...prev].slice(0, 40));
+        }
       }
     }
   }, [monthIdx, gameYear, workers]);
@@ -527,6 +520,8 @@ export default function App() {
 
     setActiveEvents([]);
     setCurrentEvent(null);
+    setTriggeredEventIds([]);
+    triggeredEventIdsRef.current = [];
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -552,6 +547,8 @@ export default function App() {
     setTotalRevenue(save.totalRevenue ?? 0);
     setCompletedMissions(save.completedMissions ?? []);
     setNewsItems(save.newsItems ?? []);
+    setTriggeredEventIds(save.triggeredEventIds ?? []);
+    triggeredEventIdsRef.current = save.triggeredEventIds ?? [];
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -661,6 +658,12 @@ export default function App() {
     if (resKey === 'aco' && isHighInflation) unitPrice *= 2.0;
     if (resKey === 'cobre' && isHighInflation) unitPrice *= 2.0;
     if (resKey === 'cobre' && isGeopoliticTension) unitPrice *= 1.8;
+    // Apply resource price multipliers from active events
+    activeEvents.forEach(e => {
+      if (e.resourceMultipliers && e.resourceMultipliers[resKey] !== undefined) {
+        unitPrice = Math.round(unitPrice * e.resourceMultipliers[resKey]!);
+      }
+    });
     const totalCost = amount * unitPrice;
 
     if (budgetState.currentBudget < totalCost) {
@@ -994,7 +997,7 @@ export default function App() {
 
     // Block construction during political crises
     const activeEffectsList = activeEvents.map(e => e.statusEffect);
-    if (activeEffectsList.includes('LOBBY_REGIONAL')) {
+    if (activeEffectsList.includes('LOBBY_REGIONAL') || activeEvents.some(e => e.blockConstruction)) {
       sound.playError();
       showToast('🏛️ Crise: Emendas Legislativas bloqueiam novas construções! Resolva a crise primeiro.', 'error');
       setSelectedCityId(null);
