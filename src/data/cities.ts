@@ -107,4 +107,38 @@ export const CITIES: City[] = [
   { id: '95', name: 'Presidente Epitácio', state: 'SP', lat: -21.7629, lng: -52.1153, type: 'cidade', portType: 'fluvial' },
   { id: '96', name: 'Altamira', state: 'PA', lat: -3.2014, lng: -52.2065, type: 'cidade', portType: 'fluvial' },
   { id: '97', name: 'Tucuruí', state: 'PA', lat: -3.7554, lng: -49.6738, type: 'cidade', portType: 'fluvial' },
+
+  // --- Cidades de Mineração ---
+  { id: '98',  name: 'Carajás', state: 'PA', lat: -6.0583, lng: -50.1619, type: 'mineracao' },
+  { id: '99',  name: 'Itabira', state: 'MG', lat: -19.6189, lng: -43.2269, type: 'mineracao' },
+  { id: '100', name: 'Sorriso', state: 'MT', lat: -12.5490, lng: -55.7212, type: 'polo_agricola' },
+  { id: '101', name: 'Sinop', state: 'MT', lat: -11.8617, lng: -55.5054, type: 'polo_agricola' },
+  { id: '102', name: 'Ji-Paraná', state: 'RO', lat: -10.8798, lng: -61.9461, type: 'cidade' },
+  { id: '103', name: 'Redenção', state: 'PA', lat: -8.0271, lng: -49.9793, type: 'cidade' },
+  { id: '104', name: 'Marabá (Porto)', state: 'PA', lat: -5.3574, lng: -49.0917, type: 'mineracao', portType: 'fluvial' },
+
+  // --- Polos Agrícolas ---
+  { id: '105', name: 'Barreiras', state: 'BA', lat: -12.1521, lng: -44.9990, type: 'polo_agricola' },
+  { id: '106', name: 'Luis Eduardo Magalhães', state: 'BA', lat: -12.0963, lng: -45.7874, type: 'polo_agricola' },
+  { id: '107', name: 'Santa Maria', state: 'RS', lat: -29.6908, lng: -53.8008, type: 'polo_agricola' },
+  { id: '108', name: 'Passo Fundo', state: 'RS', lat: -28.2626, lng: -52.4064, type: 'polo_agricola' },
+  { id: '109', name: 'Cascavel', state: 'PR', lat: -24.9578, lng: -53.4596, type: 'polo_agricola' },
+  { id: '110', name: 'Sete Lagoas', state: 'MG', lat: -19.4658, lng: -44.2463, type: 'polo_industrial' },
+
+  // --- Polos Industriais ---
+  { id: '111', name: 'São José dos Campos', state: 'SP', lat: -23.2237, lng: -45.9009, type: 'polo_industrial' },
+  { id: '112', name: 'Camaçari', state: 'BA', lat: -12.6939, lng: -38.3266, type: 'polo_industrial', portType: 'maritime' },
+  { id: '113', name: 'Sorocaba', state: 'SP', lat: -23.5015, lng: -47.4526, type: 'polo_industrial' },
+  { id: '114', name: 'Bauru', state: 'SP', lat: -22.3246, lng: -49.0607, type: 'polo_industrial' },
+  { id: '115', name: 'Mossoró', state: 'RN', lat: -5.1878, lng: -37.3442, type: 'cidade' },
+  { id: '116', name: 'Petrolina', state: 'PE', lat: -9.3891, lng: -40.5004, type: 'cidade', portType: 'fluvial' },
+  { id: '117', name: 'Juazeiro', state: 'BA', lat: -9.4317, lng: -40.5017, type: 'cidade', portType: 'fluvial' },
+
+  // --- Cidades de Fronteira (Rio São Francisco / Araguaia) ---
+  { id: '118', name: 'Pirapora', state: 'MG', lat: -17.3428, lng: -44.9427, type: 'fronteira', portType: 'fluvial' },
+  { id: '119', name: 'Ibotirama', state: 'BA', lat: -12.1822, lng: -43.2192, type: 'fronteira', portType: 'fluvial' },
+  { id: '120', name: 'Barra do Garças', state: 'MT', lat: -15.8863, lng: -52.2564, type: 'fronteira', portType: 'fluvial' },
+  { id: '121', name: 'Xambioá', state: 'TO', lat: -6.4131, lng: -48.5338, type: 'fronteira', portType: 'fluvial' },
+  { id: '122', name: 'Tabatinga', state: 'AM', lat: -4.2553, lng: -69.9355, type: 'fronteira', portType: 'fluvial' },
+  { id: '123', name: 'Foz do Iguaçu (porto)', state: 'PR', lat: -25.5478, lng: -54.5881, type: 'fronteira', portType: 'fluvial' },
 ];

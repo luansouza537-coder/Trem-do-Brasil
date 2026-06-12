@@ -17,6 +17,7 @@ interface GameMapProps {
   upgradedHubs: string[];
   maintenanceYards: string[];
   nearestYardDistances: Record<string, number>;
+  constructionQueue?: unknown[];
 }
 
 const TILE_LAYERS = {
