@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { City, Edge } from '../types';
+import { City, Edge, ConstructionProject } from '../types';
 import { getSuggestedConnections } from '../utils/geo';
+import { getTrackCostDetail, TERRAIN_COLORS } from '../utils/gameRules';
 
 interface GameMapProps {
   cities: City[];
@@ -53,6 +54,7 @@ export default function GameMap({
   upgradedHubs = [],
   maintenanceYards = [],
   nearestYardDistances = {},
+  constructionQueue = [],
 }: GameMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -73,6 +75,27 @@ export default function GameMap({
 
   // Keep track of previous connections to animate newly built lines
   const prevEdgesRef = useRef<Edge[]>(edges);
+  // Always-current edges ref to avoid stale closures in shuttle animations
+  const edgesRef = useRef<Edge[]>(edges);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  const activeBgTrainsRef = React.useRef(0);
+  const MAX_BG_TRAINS = 4;
+  const activeRouteTrainsRef = React.useRef<Set<string>>(new Set());
+
+  // Yard radius circles layer
+  const yardRadiiGroupRef = useRef<L.LayerGroup | null>(null);
+
+  // Double-click delete confirmation refs
+  const pendingDeleteRef = useRef<string | null>(null);
+  const pendingDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Marker diff optimization
+  const prevCityConnectionsRef = useRef<Record<string, number>>({});
+  const prevSelectedIdRef = useRef<string | null>(null);
+  const prevHoveredIdRef = useRef<string | null>(null);
+  const prevUpgradedHubsRef = useRef<string[]>([]);
+  const prevMaintenanceYardsRef = useRef<string[]>([]);
 
   useEffect(() => {
     selectedCityIdRef.current = selectedCityId;
@@ -83,7 +106,7 @@ export default function GameMap({
   }, [selectedCityId, onSelectCity, onConnectCities, onHoverCity, cities]);
 
   // Train animation helper
-  const animateTrainPath = (fromCity: City, toCity: City) => {
+  const animateTrainPath = (fromCity: City, toCity: City, edgeType: 'rail' | 'balsa' = 'rail', durationMs = 2500) => {
     if (!mapRef.current) return;
     const map = mapRef.current;
 
@@ -112,23 +135,46 @@ export default function GameMap({
       </div>
     `;
 
+    const boatSvg = `
+      <div style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 26px; height: 26px; filter: drop-shadow(0px 3px 4px rgba(0,0,0,0.55));">
+          <circle cx="12" cy="12" r="11" fill="#0c4a6e" stroke="#38bdf8" stroke-width="1.8"/>
+          <!-- Hull -->
+          <path d="M4 14 Q12 17 20 14 L19 16 Q12 20 5 16 Z" fill="#0ea5e9"/>
+          <!-- Cabin -->
+          <rect x="9" y="9" width="7" height="5" rx="1" fill="#38bdf8"/>
+          <!-- Window -->
+          <rect x="10.5" y="10" width="2" height="2.5" rx="0.3" fill="#0c4a6e"/>
+          <rect x="13.5" y="10" width="2" height="2.5" rx="0.3" fill="#0c4a6e"/>
+          <!-- Chimney -->
+          <rect x="14" y="6" width="1.5" height="3" fill="#7dd3fc"/>
+          <!-- Wave front -->
+          <path d="M19 15 Q21 14 22 15" stroke="#bae6fd" stroke-width="0.8" fill="none"/>
+        </svg>
+      </div>
+    `;
+
+    const iconSvg = edgeType === 'balsa' ? boatSvg : trainSvg;
+    const iconSize: [number, number] = edgeType === 'balsa' ? [30, 30] : [28, 28];
+    const iconAnchor: [number, number] = edgeType === 'balsa' ? [15, 15] : [14, 14];
+
     // Angle of movement for rotation
     const dLat = toCity.lat - fromCity.lat;
     const dLng = toCity.lng - fromCity.lng;
     const angle = Math.atan2(dLat, dLng) * (180 / Math.PI);
     // Since geographic maps have positive Y pointing North, but pixel grids have positive Y pointing South:
-    const rotationAngle = -angle; 
+    const rotationAngle = -angle;
 
     // Create Marker that transforms rotatively
     const trainIcon = L.divIcon({
       html: `
-        <div style="transform: rotate(${rotationAngle}deg); transform-origin: center; width: 28px; height: 28px;">
-          ${trainSvg}
+        <div style="transform: rotate(${rotationAngle}deg); transform-origin: center; width: ${iconSize[0]}px; height: ${iconSize[1]}px;">
+          ${iconSvg}
         </div>
       `,
       className: 'leaflet-train-icon-marker',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14]
+      iconSize: iconSize,
+      iconAnchor: iconAnchor
     });
 
     const trainMarker = L.marker([fromCity.lat, fromCity.lng], {
@@ -137,15 +183,15 @@ export default function GameMap({
     }).addTo(map);
 
     const startTime = performance.now();
-    const duration = 2500; // 2.5 seconds transit time
+    const duration = durationMs;
 
     const updateFrame = (now: number) => {
       const elapsed = now - startTime;
       const pct = Math.min(elapsed / duration, 1);
 
       // Smooth Ease-In-Out
-      const ease = pct < 0.5 
-        ? 2 * pct * pct 
+      const ease = pct < 0.5
+        ? 2 * pct * pct
         : 1 - Math.pow(-2 * pct + 2, 2) / 2;
 
       const currentLat = fromCity.lat + (toCity.lat - fromCity.lat) * ease;
@@ -180,7 +226,7 @@ export default function GameMap({
     requestAnimationFrame(updateFrame);
   };
 
-  // 1. Detect and Animate new track validations immediately
+  // 1. Detect and Animate new track validations immediately, and start continuous shuttles
   useEffect(() => {
     const prevEdges = prevEdgesRef.current;
     if (prevEdges && edges.length > prevEdges.length) {
@@ -190,32 +236,78 @@ export default function GameMap({
         const fromCity = cities.find(c => c.id === edge.from);
         const toCity = cities.find(c => c.id === edge.to);
         if (fromCity && toCity) {
-          // Play train traveling from origin to destination
-          animateTrainPath(fromCity, toCity);
+          const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
+          // Play train traveling from origin to destination on first build
+          animateTrainPath(fromCity, toCity, eType);
+          // Start continuous shuttle if edge is already complete
+          if (edge.status !== 'building' && !activeRouteTrainsRef.current.has(edge.id)) {
+            const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
+            activeRouteTrainsRef.current.add(edge.id);
+            const shuttle = (from: City, to: City) => {
+              if (!edgesRef.current.find(e => e.id === edge.id)) {
+                activeRouteTrainsRef.current.delete(edge.id);
+                return;
+              }
+              animateTrainPath(from, to, eType, tripDuration);
+              setTimeout(() => {
+                if (!edgesRef.current.find(e => e.id === edge.id)) {
+                  activeRouteTrainsRef.current.delete(edge.id);
+                  return;
+                }
+                shuttle(to, from);
+              }, tripDuration + 500);
+            };
+            shuttle(fromCity, toCity);
+          }
         }
       });
     }
     prevEdgesRef.current = edges;
   }, [edges, cities]);
 
-  // 2. Play casual passive backing trains over randomly connected paths to increase realism
+  // 2. Continuous back-and-forth shuttle on completed routes (picks up to 3 idle completed edges every 8s)
   useEffect(() => {
     const timer = setInterval(() => {
-      if (edges.length === 0 || !mapRef.current) return;
-      // Spawn random train along an existing edge
-      const randomEdge = edges[Math.floor(Math.random() * edges.length)];
-      const fromCity = cities.find(c => c.id === randomEdge.from);
-      const toCity = cities.find(c => c.id === randomEdge.to);
-      if (fromCity && toCity) {
-        // Toggle direction randomly for organic flow
+      if (!mapRef.current) return;
+      const completedEdges = edgesRef.current.filter(e => e.status !== 'building');
+      if (completedEdges.length === 0) return;
+
+      const idleEdges = completedEdges.filter(e => !activeRouteTrainsRef.current.has(e.id));
+      const toStart = idleEdges.slice(0, 3);
+
+      toStart.forEach(edge => {
+        if (activeBgTrainsRef.current >= MAX_BG_TRAINS) return;
+        const fromCity = cities.find(c => c.id === edge.from);
+        const toCity = cities.find(c => c.id === edge.to);
+        if (!fromCity || !toCity) return;
+
+        const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
+        const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
+
+        activeRouteTrainsRef.current.add(edge.id);
+        activeBgTrainsRef.current += 1;
+
+        const shuttle = (from: City, to: City) => {
+          if (!edgesRef.current.find(e => e.id === edge.id)) {
+            activeRouteTrainsRef.current.delete(edge.id);
+            activeBgTrainsRef.current = Math.max(0, activeBgTrainsRef.current - 1);
+            return;
+          }
+          animateTrainPath(from, to, eType, tripDuration);
+          setTimeout(() => {
+            if (!edgesRef.current.find(e => e.id === edge.id)) {
+              activeRouteTrainsRef.current.delete(edge.id);
+              activeBgTrainsRef.current = Math.max(0, activeBgTrainsRef.current - 1);
+              return;
+            }
+            shuttle(to, from);
+          }, tripDuration + 500);
+        };
+
         const reverse = Math.random() > 0.5;
-        if (reverse) {
-          animateTrainPath(toCity, fromCity);
-        } else {
-          animateTrainPath(fromCity, toCity);
-        }
-      }
-    }, 14000); // Trigger a lively train elsewhere every 14 seconds
+        shuttle(reverse ? toCity : fromCity, reverse ? fromCity : toCity);
+      });
+    }, 8000);
 
     return () => clearInterval(timer);
   }, [edges, cities]);
@@ -231,8 +323,8 @@ export default function GameMap({
   ) => {
     const isCapital = city.type === 'capital';
     const maxConns = isUpgradedHub ? 3 : 2;
-    
-    // Choose theme colors depending on the connection saturation
+
+    // Choose theme colors depending on city type and connection state
     let statusClass = 'border-slate-400 bg-slate-900 text-slate-300';
     let coreDotClass = 'bg-slate-400';
     if (conns >= maxConns) {
@@ -244,19 +336,45 @@ export default function GameMap({
     } else if (isCapital) {
       statusClass = 'border-amber-400 bg-slate-900 text-amber-300';
       coreDotClass = 'bg-amber-400';
+    } else if (city.type === 'mineracao') {
+      statusClass = 'border-orange-400 bg-orange-950 text-orange-300';
+      coreDotClass = 'bg-orange-400';
+    } else if (city.type === 'polo_agricola') {
+      statusClass = 'border-lime-400 bg-lime-950 text-lime-300';
+      coreDotClass = 'bg-lime-400';
+    } else if (city.type === 'polo_industrial') {
+      statusClass = 'border-violet-400 bg-violet-950 text-violet-300';
+      coreDotClass = 'bg-violet-400';
+    } else if (city.type === 'fronteira') {
+      statusClass = 'border-pink-400 bg-pink-950 text-pink-300';
+      coreDotClass = 'bg-pink-400';
     } else {
       statusClass = 'border-sky-500 bg-slate-900 text-sky-300';
       coreDotClass = 'bg-sky-400';
     }
 
-    const scaleClass = isSelected 
-      ? 'scale-125 ring-4 ring-amber-500/40 z-50' 
-      : isHovered 
-        ? 'scale-110 ring-2 ring-slate-200 z-40' 
+    const cityIcon = city.portType === 'maritime'
+      ? '<span class="text-amber-400 font-bold select-none leading-none">⚓</span>'
+      : city.portType === 'fluvial'
+        ? '<span class="text-teal-300 font-bold select-none leading-none">🚢</span>'
+        : city.type === 'mineracao'
+          ? '<span class="select-none leading-none" style="font-size:12px">⛏️</span>'
+          : city.type === 'polo_agricola'
+            ? '<span class="select-none leading-none" style="font-size:12px">🌾</span>'
+            : city.type === 'polo_industrial'
+              ? '<span class="select-none leading-none" style="font-size:12px">🏭</span>'
+              : city.type === 'fronteira'
+                ? '<span class="select-none leading-none" style="font-size:12px">🌐</span>'
+                : `<div class="w-3.5 h-3.5 rounded-full flex items-center justify-center ${isCapital ? 'animate-pulse' : ''}"><div class="w-2 h-2 rounded-full ${coreDotClass}"></div></div>`;
+
+    const scaleClass = isSelected
+      ? 'scale-125 ring-4 ring-amber-500/40 z-50'
+      : isHovered
+        ? 'scale-110 ring-2 ring-slate-200 z-40'
         : 'hover:scale-105 z-30';
 
     // Advanced dynamic central hubs and maintenance badges
-    const hubBadge = isUpgradedHub 
+    const hubBadge = isUpgradedHub
       ? `<span class="absolute -top-1.5 -left-1.5 text-[9px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-amber-500 border border-slate-950 text-slate-950 font-black shadow-md z-[60]" title="Terminal Central Integrador">★</span>`
       : '';
 
@@ -266,27 +384,12 @@ export default function GameMap({
 
     return `
       <div class="relative flex items-center justify-center transition-all duration-350 ${scaleClass}">
-        <!-- Selected halo effect -->
         ${isSelected ? '<span class="absolute inline-flex h-9 w-9 rounded-full bg-amber-500/30 animate-pulse"></span>' : ''}
         ${isHovered && !isSelected ? '<span class="absolute inline-flex h-8 w-8 rounded-full bg-slate-300/20"></span>' : ''}
-
-        <!-- Upgrades and Status Badges Overlay -->
         ${hubBadge}
         ${yardBadge}
-
-        <!-- Main Pin node -->
         <div class="w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 bg-slate-900 ${statusClass} transition-all" style="font-size: 11px;">
-          <!-- Outer core ring depending on type -->
-          ${city.portType === 'maritime' 
-            ? '<span class="text-amber-400 font-bold select-none leading-none">⚓</span>' 
-            : city.portType === 'fluvial' 
-              ? '<span class="text-teal-300 font-bold select-none leading-none">🚢</span>' 
-              : `
-              <div class="w-3.5 h-3.5 rounded-full flex items-center justify-center ${isCapital ? 'animate-pulse' : ''}">
-                <div class="w-2 h-2 rounded-full ${coreDotClass}"></div>
-              </div>
-              `
-          }
+          ${cityIcon}
         </div>
 
         <!-- Connection Badge indicator -->
@@ -324,6 +427,27 @@ export default function GameMap({
     }
   }, [flyToSignal]);
 
+  // Draw 800km coverage circles for maintenance yards
+  useEffect(() => {
+    if (!yardRadiiGroupRef.current) return;
+    yardRadiiGroupRef.current.clearLayers();
+    maintenanceYards.forEach(yardId => {
+      const city = cities.find(c => c.id === yardId);
+      if (city && yardRadiiGroupRef.current) {
+        L.circle([city.lat, city.lng], {
+          radius: 800000,
+          color: '#10b981',
+          fillColor: '#10b981',
+          fillOpacity: 0.06,
+          weight: 1.5,
+          opacity: 0.4,
+          dashArray: '4, 8',
+          interactive: false,
+        }).addTo(yardRadiiGroupRef.current);
+      }
+    });
+  }, [maintenanceYards, cities]);
+
   // 1. Map Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -351,6 +475,7 @@ export default function GameMap({
     // Track layers
     trackGroupRef.current = L.layerGroup().addTo(map);
     suggestedGroupRef.current = L.layerGroup().addTo(map);
+    yardRadiiGroupRef.current = L.layerGroup().addTo(map);
     
     // Create rubber-band path layer
     rubberBandRef.current = L.polyline([], {
@@ -509,65 +634,84 @@ export default function GameMap({
     }).addTo(mapRef.current);
   }, [tileLayerType]);
 
-  // Update city markers appearance dynamically based on app state
+  // Update city markers appearance dynamically — only for cities that actually changed
   useEffect(() => {
+    const prevConns = prevCityConnectionsRef.current;
+    const prevSel = prevSelectedIdRef.current;
+    const prevHov = prevHoveredIdRef.current;
+    const prevHubs = prevUpgradedHubsRef.current;
+    const prevYards = prevMaintenanceYardsRef.current;
+
     cities.forEach(city => {
       const marker = markersRef.current[city.id];
-      if (marker) {
-        const conns = cityConnectionsMap[city.id] || 0;
-        const isSel = selectedCityId === city.id;
-        const isGov = hoveredCityId === city.id;
-        const isUpgraded = upgradedHubs?.includes(city.id) || false;
-        const hasYard = maintenanceYards?.includes(city.id) || false;
+      if (!marker) return;
 
-        // Swap out icons completely without destroying spatial markers
-        marker.setIcon(L.divIcon({
-          html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard),
-          className: 'custom-city-marker',
-          iconSize: [28, 28],
-          iconAnchor: [14, 14]
-        }));
+      const conns = cityConnectionsMap[city.id] || 0;
+      const isSel = selectedCityId === city.id;
+      const isGov = hoveredCityId === city.id;
+      const isUpgraded = upgradedHubs?.includes(city.id) || false;
+      const hasYard = maintenanceYards?.includes(city.id) || false;
 
-        // Dynamically update the floating tooltips connection state live
-        const trackerType = city.portType === 'maritime' 
-          ? '⚓ Porto Marítimo' 
-          : city.portType === 'fluvial' 
-            ? '🚢 Porto Fluvial' 
-            : city.type === 'capital' 
-              ? '★ Capital' 
-              : '● Cidade';
+      const wasUpgraded = prevHubs.includes(city.id);
+      const hadYard = prevYards.includes(city.id);
+      const prevConn = prevConns[city.id] ?? -1;
+      const wasSel = prevSel === city.id;
+      const wasHov = prevHov === city.id;
 
-        const maxConns = isUpgraded ? 3 : 2;
+      const changed = conns !== prevConn || isSel !== wasSel || isGov !== wasHov
+        || isUpgraded !== wasUpgraded || hasYard !== hadYard;
 
-        let maintenanceText = '';
-        if (conns > 0) {
-          const mDist = nearestYardDistances[city.id];
-          if (mDist === undefined || mDist === Infinity) {
-            maintenanceText = `<p class="text-[10px] text-rose-600 font-bold mt-1 bg-rose-50/80 px-1 py-0.5 rounded border border-rose-200">⚠️ Risco de Falha! Sem Manutenção</p>`;
-          } else {
-            maintenanceText = `<p class="text-[10px] text-emerald-600 font-semibold mt-1 bg-emerald-50/80 px-1 py-0.5 rounded border border-emerald-200">🔧 Cobertura: ${mDist} km / 800 km</p>`;
-          }
+      if (!changed) return;
+
+      marker.setIcon(L.divIcon({
+        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard),
+        className: 'custom-city-marker',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      }));
+
+      const trackerType = city.portType === 'maritime'
+        ? '⚓ Porto Marítimo'
+        : city.portType === 'fluvial'
+          ? '🚢 Porto Fluvial'
+          : city.type === 'capital'
+            ? '★ Capital'
+            : '● Cidade';
+
+      const maxConns = isUpgraded ? 3 : 2;
+      let maintenanceText = '';
+      if (conns > 0) {
+        const mDist = nearestYardDistances[city.id];
+        if (mDist === undefined || mDist === Infinity) {
+          maintenanceText = `<p class="text-[10px] text-rose-600 font-bold mt-1 bg-rose-50/80 px-1 py-0.5 rounded border border-rose-200">⚠️ Risco de Falha! Sem Manutenção</p>`;
+        } else {
+          maintenanceText = `<p class="text-[10px] text-emerald-600 font-semibold mt-1 bg-emerald-50/80 px-1 py-0.5 rounded border border-emerald-200">🔧 Cobertura: ${mDist} km / 800 km</p>`;
         }
-
-        const tooltipContent = `
-          <div class="p-1.5 font-sans leading-tight">
-            <div class="flex items-center gap-1.5 mb-0.5">
-              <span class="font-bold text-slate-800 text-sm whitespace-nowrap">${city.name}</span>
-              <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1 rounded">${city.state}</span>
-            </div>
-            <p class="text-[10px] text-slate-400 font-medium">${trackerType}${isUpgraded ? ' (★ Central Hub)' : ''}${hasYard ? ' (🔧 Yard)' : ''}</p>
-            ${maintenanceText}
-            <div class="mt-1 flex items-center justify-between text-[10px] border-t border-slate-100 pt-1 text-slate-600">
-              <span class="mr-3 font-medium">Conexões:</span>
-              <span class="font-extrabold ${conns >= maxConns ? 'text-emerald-600' : 'text-amber-500'}">
-                ${conns} / ${maxConns}
-              </span>
-            </div>
-          </div>
-        `;
-        marker.setTooltipContent(tooltipContent);
       }
+
+      marker.setTooltipContent(`
+        <div class="p-1.5 font-sans leading-tight">
+          <div class="flex items-center gap-1.5 mb-0.5">
+            <span class="font-bold text-slate-800 text-sm whitespace-nowrap">${city.name}</span>
+            <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1 rounded">${city.state}</span>
+          </div>
+          <p class="text-[10px] text-slate-400 font-medium">${trackerType}${isUpgraded ? ' (★ Central Hub)' : ''}${hasYard ? ' (🔧 Yard)' : ''}</p>
+          ${maintenanceText}
+          <div class="mt-1 flex items-center justify-between text-[10px] border-t border-slate-100 pt-1 text-slate-600">
+            <span class="mr-3 font-medium">Conexões:</span>
+            <span class="font-extrabold ${conns >= maxConns ? 'text-emerald-600' : 'text-amber-500'}">
+              ${conns} / ${maxConns}
+            </span>
+          </div>
+        </div>
+      `);
     });
+
+    prevCityConnectionsRef.current = { ...cityConnectionsMap };
+    prevSelectedIdRef.current = selectedCityId;
+    prevHoveredIdRef.current = hoveredCityId;
+    prevUpgradedHubsRef.current = [...(upgradedHubs ?? [])];
+    prevMaintenanceYardsRef.current = [...(maintenanceYards ?? [])];
 
     // Clear rubber band if selectedCity is null
     if (!selectedCityId && rubberBandRef.current) {
@@ -591,6 +735,46 @@ export default function GameMap({
           [fromCity.lat, fromCity.lng],
           [toCity.lat, toCity.lng]
         ];
+
+        // Render building edges with progress animation
+        if (edge.status === 'building') {
+          const project = constructionQueue.find(p => p.edgeId === edge.id);
+          const pct = project ? Math.max(0, 1 - project.monthsRemaining / project.totalMonths) : 0;
+          const monthsLeft = project?.monthsRemaining ?? '?';
+
+          const glow = L.polyline(latlngs, { color: '#fbbf24', weight: 10, opacity: 0.18, lineCap: 'round' });
+          const cancelHandler = (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onConnectCitiesRef.current(edge.from, edge.to);
+          };
+
+          const tooltipHtml = `🚧 Em Construção: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance.toFixed(0)} km)<br/><span style="color:#fbbf24;font-size:10px">Progresso: ${Math.round(pct * 100)}% — ${monthsLeft} mes(es) restantes</span><br/><span style="color:#f87171;font-size:9px">Clique para cancelar (reembolso 50%)</span>`;
+
+          if (pct > 0.02) {
+            const midLat = fromCity.lat + (toCity.lat - fromCity.lat) * pct;
+            const midLng = fromCity.lng + (toCity.lng - fromCity.lng) * pct;
+            const completedLine = L.polyline([[fromCity.lat, fromCity.lng], [midLat, midLng]], {
+              color: '#fbbf24', weight: 4, opacity: 0.95, lineCap: 'round'
+            });
+            completedLine.on('click', cancelHandler);
+            trackGroupRef.current?.addLayer(completedLine);
+            const remainLine = L.polyline([[midLat, midLng], [toCity.lat, toCity.lng]], {
+              color: '#f97316', weight: 3.5, opacity: 0.85, dashArray: '8, 6', lineCap: 'round'
+            });
+            remainLine.bindTooltip(tooltipHtml, { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' });
+            remainLine.on('click', cancelHandler);
+            trackGroupRef.current?.addLayer(remainLine);
+          } else {
+            const line = L.polyline(latlngs, { color: '#f97316', weight: 3.5, opacity: 0.9, dashArray: '8, 6', lineCap: 'round' });
+            line.bindTooltip(tooltipHtml, { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' });
+            line.on('click', cancelHandler);
+            trackGroupRef.current?.addLayer(line);
+          }
+
+          glow.on('click', cancelHandler);
+          trackGroupRef.current?.addLayer(glow);
+          return;
+        }
 
         const isBalsa = edge.type === 'balsa';
 
@@ -630,7 +814,20 @@ export default function GameMap({
 
           const deleteHandler = (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e);
-            onConnectCitiesRef.current(edge.from, edge.to);
+            if (pendingDeleteRef.current === edge.id) {
+              clearTimeout(pendingDeleteTimerRef.current!);
+              pendingDeleteRef.current = null;
+              onConnectCitiesRef.current(edge.from, edge.to);
+            } else {
+              pendingDeleteRef.current = edge.id;
+              balsaLine.setStyle({ color: '#fbbf24', weight: 5 });
+              interactiveLayer.setTooltipContent(`Balsa: ${edge.from} ⇄ ${edge.to}<br/><span class="text-amber-400 font-bold">⚠️ Clique novamente para confirmar remoção</span>`);
+              if (pendingDeleteTimerRef.current) clearTimeout(pendingDeleteTimerRef.current);
+              pendingDeleteTimerRef.current = setTimeout(() => {
+                pendingDeleteRef.current = null;
+                balsaLine.setStyle({ color: '#0ea5e9', weight: 4.5 });
+              }, 3000);
+            }
           };
           interactiveLayer.on('click', deleteHandler);
 
@@ -656,79 +853,90 @@ export default function GameMap({
           trackGroupRef.current?.addLayer(interactiveLayer);
 
         } else {
-          // 1. Ballast base layer (Leito de brita cinza largo)
-          const ballastLayer = L.polyline(latlngs, {
-            color: '#334155', // slate-700
-            weight: 8,
-            opacity: 0.85,
-            lineCap: 'round'
-          });
+          // Terrain-based color coding
+          const detail = getTrackCostDetail(fromCity, toCity, edge.distance);
+          const railColor = TERRAIN_COLORS[detail.terrainKey];
 
-          // 2. Wooden Sleepers/Ties (Dormentes de madeira espaçados)
-          const tieLayer = L.polyline(latlngs, {
-            color: '#451a03', // canela escuro/mogno
-            weight: 6.5,
-            opacity: 1.0,
-            dashArray: '2, 5', // barras transversais realistas
-            lineCap: 'butt'
-          });
+          // 1. Ballast base layer
+          const ballastLayer = L.polyline(latlngs, { color: '#334155', weight: 8, opacity: 0.85, lineCap: 'round' });
 
-          // 3. Steel Rails Base (Banda metálica vermelha)
-          const railsBase = L.polyline(latlngs, {
-            color: '#ef4444', // vermelho vivo
-            weight: 4,
-            opacity: 1.0,
-            lineCap: 'round'
-          });
+          // 2. Wooden sleepers
+          const tieLayer = L.polyline(latlngs, { color: '#451a03', weight: 6.5, opacity: 1.0, dashArray: '2, 5', lineCap: 'butt' });
 
-          // 4. Steel Rails Center Split (Duplica o visual criando dois trilhos paralelos)
-          const railsSplit = L.polyline(latlngs, {
-            color: '#0f172a', // cor escura para cavar o meio
-            weight: 1.4,
-            opacity: 1.0,
-            lineCap: 'round'
-          });
+          // 3. Rails — terrain-colored
+          const railsBase = L.polyline(latlngs, { color: railColor, weight: 4, opacity: 1.0, lineCap: 'round' });
 
-          // 5. Interactive invisible hitbox (Excelente sensibilidade ao toque e mouse)
-          const interactiveLayer = L.polyline(latlngs, {
-            color: 'transparent',
-            weight: 15,
-            opacity: 0.0
-          });
+          // 4. Center split
+          const railsSplit = L.polyline(latlngs, { color: '#0f172a', weight: 1.4, opacity: 1.0, lineCap: 'round' });
 
-          // Click handler to remove track segments instantly
+          // 5. Interactive hitbox
+          const interactiveLayer = L.polyline(latlngs, { color: 'transparent', weight: 15, opacity: 0.0 });
+
           const deleteHandler = (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e);
-            onConnectCitiesRef.current(edge.from, edge.to);
+            if (pendingDeleteRef.current === edge.id) {
+              clearTimeout(pendingDeleteTimerRef.current!);
+              pendingDeleteRef.current = null;
+              onConnectCitiesRef.current(edge.from, edge.to);
+            } else {
+              pendingDeleteRef.current = edge.id;
+              railsBase.setStyle({ color: '#f97316', weight: 5 });
+              interactiveLayer.setTooltipContent(`Trilho: ${fromCity.name} ⇄ ${toCity.name}<br/><span class="text-amber-400 font-bold">⚠️ Clique novamente para confirmar remoção</span>`);
+              if (pendingDeleteTimerRef.current) clearTimeout(pendingDeleteTimerRef.current);
+              pendingDeleteTimerRef.current = setTimeout(() => {
+                pendingDeleteRef.current = null;
+                railsBase.setStyle({ color: railColor, weight: 4 });
+              }, 3000);
+            }
           };
-
           interactiveLayer.on('click', deleteHandler);
 
-          // Hover effects on the interactive area
-          const hoverIn = () => {
-            railsBase.setStyle({ color: '#fbbf24', weight: 5 }); // brilha em ouro
+          interactiveLayer.on('mouseover', () => {
+            railsBase.setStyle({ color: '#fbbf24', weight: 5 });
             ballastLayer.setStyle({ color: '#475569', weight: 10 });
-          };
-          const hoverOut = () => {
-            railsBase.setStyle({ color: '#ef4444', weight: 4 });
-            ballastLayer.setStyle({ color: '#334155', weight: 8 });
-          };
-
-          interactiveLayer.on('mouseover', hoverIn);
-          interactiveLayer.on('mouseout', hoverOut);
-
-          // Bind delete confirmation tooltip to the interactive area
-          interactiveLayer.bindTooltip(`Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance} km)<br/><span class="text-red-400 font-bold">Clique para remover trilho</span>`, {
-            sticky: true,
-            direction: 'auto',
-            className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5'
           });
+          interactiveLayer.on('mouseout', () => {
+            railsBase.setStyle({ color: railColor, weight: 4 });
+            ballastLayer.setStyle({ color: '#334155', weight: 8 });
+          });
+
+          // Tooltip shows terrain + structures
+          const structInfo = detail.bridgesCount > 0
+            ? ` • 🌉 ${detail.bridgesCount} ponte(s)`
+            : detail.tunnelsCount > 0
+              ? ` • ⛰️ ${detail.tunnelsCount} túnel/túneis`
+              : '';
+          interactiveLayer.bindTooltip(
+            `Trilho: ${fromCity.name} ⇄ ${toCity.name} (${edge.distance.toFixed(0)} km)<br/><span style="color:${railColor};font-size:10px">${detail.terrainName}${structInfo}</span><br/><span class="text-red-400 font-bold text-xs">Clique para remover</span>`,
+            { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' }
+          );
 
           trackGroupRef.current?.addLayer(ballastLayer);
           trackGroupRef.current?.addLayer(tieLayer);
           trackGroupRef.current?.addLayer(railsBase);
           trackGroupRef.current?.addLayer(railsSplit);
           trackGroupRef.current?.addLayer(interactiveLayer);
+
+          // Structure icon at midpoint (bridges/tunnels)
+          if (detail.bridgesCount > 0 || detail.tunnelsCount > 0) {
+            const midLat = (fromCity.lat + toCity.lat) / 2;
+            const midLng = (fromCity.lng + toCity.lng) / 2;
+            const icon = detail.tunnelsCount > 0 ? '⛰️' : detail.terrainKey === 'pantanal' ? '🌊' : '🌉';
+            const label = detail.tunnelsCount > 0
+              ? `${detail.tunnelsCount} túnel(is)`
+              : `${detail.bridgesCount} ponte(s)`;
+            const structMarker = L.marker([midLat, midLng], {
+              icon: L.divIcon({
+                html: `<div title="${label}" style="font-size:13px;line-height:1;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.8))">${icon}</div>`,
+                className: 'railway-structure-icon',
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              }),
+              interactive: false,
+              zIndexOffset: -50,
+            });
+            trackGroupRef.current?.addLayer(structMarker);
+          }
         }
       }
     });
