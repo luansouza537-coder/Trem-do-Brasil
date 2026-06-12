@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem } from '../types';
+import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { formatDistance } from '../utils/geo';
 import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant } from '../utils/gameRules';
@@ -48,9 +48,11 @@ interface SidebarProps {
 
   // Tycoon extensions
   upgradedHubs?: string[];
-  onToggleUpgradeHub?: (cityId: string) => void;
+  onBuildHub?: (cityId: string) => void;
   maintenanceYards?: string[];
-  onToggleMaintenanceYard?: (cityId: string) => void;
+  onBuildYard?: (cityId: string, level: 1|2|3) => void;
+  infraQueue?: InfraProject[];
+  yardLevels?: Record<string, number>;
   constructionType?: 'rail' | 'balsa';
   onConstructionTypeChange?: (type: 'rail' | 'balsa') => void;
   budgetState?: {
@@ -116,9 +118,11 @@ export default function Sidebar({
 
   // Tycoon extensions
   upgradedHubs = [],
-  onToggleUpgradeHub = () => {},
+  onBuildHub = () => {},
   maintenanceYards = [],
-  onToggleMaintenanceYard = () => {},
+  onBuildYard = () => {},
+  infraQueue = [],
+  yardLevels = {},
   constructionType = 'rail',
   onConstructionTypeChange = () => {},
   budgetState = {
