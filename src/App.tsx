@@ -1115,8 +1115,10 @@ export default function App() {
     // Start construction — edge enters queue as 'building'
     const cimentoShortage = activeEffectsList.includes('ESCASSEZ_CIMENTO');
     const rawMonths = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
-    const months = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
+    const baseMths = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
     if (cimentoShortage) showToast('🏗️ Escassez de cimento: obra terá duração +50% mais longa!', 'info');
+    const slowFactor = activeEvents.reduce((acc, e) => acc * (e.constructionSlowFactor ?? 1.0), 1.0);
+    const months = Math.ceil(baseMths * slowFactor);
 
     // Allocate workers to the project — they stay dedicated until completion
     const allocated: GameWorkers = {
@@ -1764,7 +1766,28 @@ export default function App() {
                     {currentEvent.statusEffect === 'TENSAO_GEOPOLITICA' && 'Preço do Cobre +80% no mercado internacional.'}
                     {currentEvent.statusEffect === 'ESCASSEZ_CIMENTO' && 'Duração de todas as obras +50% (menos cimento disponível por mês).'}
                     {currentEvent.statusEffect === 'CONFLITO_FUNDIARIO' && '🚫 Obras em MT e GO bloqueadas judicialmente. Multa mensal R$1.5B.'}
+                    {!['GREVE_GERAL','ATRASO_AMBIENTAL_AMAZONIA','INFLACAO_GLOBAL','ESCASSES_MADEIRA','LOBBY_REGIONAL','AUDITORIA_CGU','ACIDENTE_OBRA','SECA_TOCANTINS','CYBER_ATAQUE','TENSAO_GEOPOLITICA','ESCASSEZ_CIMENTO','CONFLITO_FUNDIARIO'].includes(currentEvent.statusEffect) && currentEvent.description}
                   </p>
+                  {currentEvent.revenueMultiplier !== undefined && currentEvent.revenueMultiplier < 1 && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      📉 Receita -{Math.round((1 - currentEvent.revenueMultiplier) * 100)}% durante a crise
+                    </p>
+                  )}
+                  {currentEvent.constructionSlowFactor !== undefined && currentEvent.constructionSlowFactor > 1 && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      🐢 Obras +{Math.round((currentEvent.constructionSlowFactor - 1) * 100)}% mais lentas
+                    </p>
+                  )}
+                  {currentEvent.balsaFrozen && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      ⛵ Receita de todas as balsas = R$0
+                    </p>
+                  )}
+                  {currentEvent.blockConstruction && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      🚫 Novas obras bloqueadas durante a crise
+                    </p>
+                  )}
                   {currentEvent.costPerMonth && (
                     <p className="text-[10px] text-red-400 font-bold mt-1.5">
                       💸 Multa automática: R$ {(currentEvent.costPerMonth / 1_000_000_000).toFixed(1)}B/mês debitados do caixa
