@@ -820,8 +820,8 @@ export default function App() {
   }, [budgetState.currentBudget, welcomeOpen]);
 
   // Dijkstra nearest yard distance
-  const nearestYardDistances = useMemo(() => {
-    return calculateRailwayDistancesFromYards(CITIES, edges, maintenanceYards).distances;
+  const { distances: nearestYardDistances, nearestYardIds } = useMemo(() => {
+    return calculateRailwayDistancesFromYards(CITIES, edges, maintenanceYards);
   }, [edges, maintenanceYards]);
 
   // Evaluate missions reactively
@@ -859,15 +859,20 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missionResults, welcomeOpen]);
 
-  // Counting edges with no active maintenance coverage (> 800 km or Infinity)
+  // Counting edges with no active maintenance coverage (level-aware)
   const unmaintainedEdgesCount = useMemo(() => {
     if (edges.length === 0) return 0;
     return edges.filter(edge => {
-      const dA = nearestYardDistances[edge.from] ?? Infinity;
-      const dB = nearestYardDistances[edge.to] ?? Infinity;
-      return Math.min(dA, dB) > 800;
+      const checkCovered = (cityId: string) => {
+        const dist = nearestYardDistances[cityId] ?? Infinity;
+        const yardId = nearestYardIds[cityId];
+        if (!yardId) return false;
+        const level = yardLevels[yardId] ?? 1;
+        return dist <= YARD_COVERAGE_KM[level as 1|2|3];
+      };
+      return !checkCovered(edge.from) && !checkCovered(edge.to);
     }).length;
-  }, [edges, nearestYardDistances]);
+  }, [edges, nearestYardDistances, nearestYardIds, yardLevels]);
 
   // Build Terminal Central (hub upgrade) - async construction system
   const handleBuildHub = (cityId: string) => {
