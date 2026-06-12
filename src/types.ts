@@ -85,3 +85,17 @@ export interface GameEvent {
 }
 
 export type PoliticalParty = 'PL' | 'PS' | 'PB';
+
+export interface InfraProject {
+  id: string;
+  cityId: string;
+  type: 'hub' | 'yard';
+  yardLevel?: 1 | 2 | 3;
+  monthsRemaining: number;
+  totalMonths: number;
+  workersAllocated: Partial<GameWorkers>;
+  resourcesConsumed: Partial<GameResources>;
+  startedYear: number;
+  startedMonth: number;
+  cost: number;
+}
