@@ -15,6 +15,7 @@ import {
 import {
   getTrackCostDetail,
   getIntermodalGrants,
+  RESOURCE_NAMES,
   calculateRailwayDistancesFromYards,
   getTrackResourcesRequired,
   RESOURCE_BUY_PRICES,
@@ -1098,9 +1099,23 @@ export default function App() {
       return;
     }
 
-    // 6. Safe to build: Deduct used materials and apply buying costs if autoBuy occurred
+    // 6. Safe to build: auto-buy missing resources, then consume all requirements
     if (buyCost > 0) {
       setSpentOnResources(prev => prev + buyCost);
+      // Add purchased units to stock first so the ledger is visible in the UI
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(shortages) as (keyof GameResources)[]).forEach(key => {
+          u[key] = (u[key] ?? 0) + (shortages[key] ?? 0);
+        });
+        return u;
+      });
+      const boughtLines = (Object.entries(shortages) as [keyof GameResources, number][])
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${v}t ${RESOURCE_NAMES[k]}`)
+        .join(', ');
+      const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+      showToast(`🛒 Auto-compra de insumos: ${boughtLines} — ${fmt(buyCost)}`, 'info');
     }
 
     setResources(prev => {

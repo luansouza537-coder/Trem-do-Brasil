@@ -781,27 +781,42 @@ export default function Sidebar({
           </div>
 
           {/* News feed */}
-          <div className="p-3.5 flex flex-col gap-2">
-            <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">📰 Feed de Notícias:</span>
-            {newsItems.length === 0 ? (
-              <p className="text-[9.5px] text-slate-500 italic">Nenhuma notícia ainda. Continue construindo a malha!</p>
-            ) : (
-              <div className="flex flex-col gap-1.5 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
-                {newsItems.map(item => (
-                  <div key={item.id} className={`p-2 rounded-lg border text-[9px] leading-snug ${
-                    item.category === 'infra'    ? 'bg-slate-900/60 border-slate-800 text-slate-300' :
-                    item.category === 'crisis'   ? 'bg-rose-950/20 border-rose-800/30 text-rose-300' :
-                    item.category === 'grant'    ? 'bg-emerald-950/20 border-emerald-800/30 text-emerald-300' :
-                    item.category === 'mission'  ? 'bg-amber-950/20 border-amber-700/30 text-amber-200' :
-                    'bg-slate-950/40 border-slate-800/60 text-slate-400'
-                  }`}>
-                    <span className="block">{item.headline}</span>
-                    <span className="text-[8px] text-slate-500 mt-0.5 block">{item.yearMonth}</span>
+          {(() => {
+            const [expandedNewsId, setExpandedNewsId] = React.useState<string | null>(null);
+            return (
+              <div className="p-3.5 flex flex-col gap-2">
+                <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">📰 Feed de Notícias:</span>
+                {newsItems.length === 0 ? (
+                  <p className="text-[9.5px] text-slate-500 italic">Nenhuma notícia ainda. Continue construindo a malha!</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                    {newsItems.map(item => {
+                      const isExpanded = expandedNewsId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => setExpandedNewsId(isExpanded ? null : item.id)}
+                          className={`p-2 rounded-lg border cursor-pointer transition-colors ${
+                            item.category === 'infra'    ? 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/60' :
+                            item.category === 'crisis'   ? 'bg-rose-950/20 border-rose-800/30 text-rose-300 hover:bg-rose-950/40' :
+                            item.category === 'grant'    ? 'bg-emerald-950/20 border-emerald-800/30 text-emerald-300 hover:bg-emerald-950/40' :
+                            item.category === 'mission'  ? 'bg-amber-950/20 border-amber-700/30 text-amber-200 hover:bg-amber-950/40' :
+                            'bg-slate-950/40 border-slate-800/60 text-slate-400 hover:bg-slate-900/60'
+                          }`}
+                        >
+                          <span className={`block text-[10px] leading-snug break-words ${isExpanded ? '' : 'line-clamp-2'}`}>{item.headline}</span>
+                          <span className="text-[8px] text-slate-500 mt-0.5 block">{item.yearMonth}</span>
+                          {!isExpanded && item.headline.length > 60 && (
+                            <span className="text-[8px] text-slate-600 mt-0.5 block">clique para ler mais</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
         </div>
       )}
 

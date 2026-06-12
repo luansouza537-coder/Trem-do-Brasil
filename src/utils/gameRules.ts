@@ -147,26 +147,27 @@ export function getConstructionMonths(
   const isMountain = (s: string) => ['SC','RS','RJ','ES','MG'].includes(s);
 
   // Base pace in km/month before worker scaling
-  // A realistic major railway builds ~30-60 km/month with full crews
-  let kmPerMonth = 50;
-  if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 30;
-  else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 25;
+  // Realistic pace: a well-staffed front manages ~15-25 km/month sustained
+  let kmPerMonth = 20;
+  if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 12;
+  else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 10;
 
   // Worker scaling: each worker type has diminishing returns
-  // Minimum viable crew = 50; optimal = 300-500; beyond 1000 = no extra gain
+  // Minimum viable crew = 50; optimal = 600-1000; beyond 2000 = no extra gain
   const coreWorkers = workers.terraplanagem + workers.assentamento;
-  let workerMod = 0.3; // skeleton crew
-  if (coreWorkers >= 50)  workerMod = 0.5;
-  if (coreWorkers >= 150) workerMod = 0.75;
-  if (coreWorkers >= 300) workerMod = 1.0;
-  if (coreWorkers >= 500) workerMod = 1.2;
-  if (coreWorkers >= 800) workerMod = 1.35;
-  if (coreWorkers >= 1200) workerMod = 1.5; // hard cap
+  let workerMod = 0.25; // skeleton crew
+  if (coreWorkers >= 50)   workerMod = 0.40;
+  if (coreWorkers >= 150)  workerMod = 0.60;
+  if (coreWorkers >= 300)  workerMod = 0.80;
+  if (coreWorkers >= 600)  workerMod = 1.00;
+  if (coreWorkers >= 1000) workerMod = 1.15;
+  if (coreWorkers >= 1500) workerMod = 1.25;
+  if (coreWorkers >= 2000) workerMod = 1.35; // hard cap
 
-  // Sinalização crew adds up to +20% speed (logistics coordination)
-  const sigMod = Math.min(1.2, 1.0 + workers.sinalizacao * 0.0008);
+  // Sinalização crew adds up to +15% speed (logistics coordination)
+  const sigMod = Math.min(1.15, 1.0 + workers.sinalizacao * 0.001);
   const effectiveKmPerMonth = kmPerMonth * workerMod * sigMod;
-  return Math.max(2, Math.ceil(distance / effectiveKmPerMonth));
+  return Math.max(4, Math.ceil(distance / effectiveKmPerMonth));
 }
 
 export function getTrackWorkersRequired(
@@ -177,10 +178,10 @@ export function getTrackWorkersRequired(
   needsExplosivos: boolean
 ): GameWorkers {
   return {
-    terraplanagem: type === 'balsa' ? 20 : Math.ceil(distance * 0.15),
-    assentamento:  type === 'balsa' ? 10 : Math.ceil(distance * 0.10),
-    sinalizacao:   Math.ceil(distance * 0.03),
-    explosivos:    needsExplosivos ? Math.max(5, Math.ceil(distance * 0.02)) : 0,
+    terraplanagem: type === 'balsa' ? 40 : Math.ceil(distance * 0.50),
+    assentamento:  type === 'balsa' ? 20 : Math.ceil(distance * 0.30),
+    sinalizacao:   Math.ceil(distance * 0.10),
+    explosivos:    needsExplosivos ? Math.max(10, Math.ceil(distance * 0.06)) : 0,
     manutencao:    0,
   };
 }
