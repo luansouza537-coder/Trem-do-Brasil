@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { formatDistance } from '../utils/geo';
-import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant } from '../utils/gameRules';
+import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, YARD_CONFIGS, HUB_CONFIG } from '../utils/gameRules';
 import { 
   Train, 
   Search, 
@@ -1226,29 +1226,68 @@ export default function Sidebar({
 
                 {/* Upgrades panel only displayed for selected entry drawer */}
                 {isSelected && (
-                  <div className="flex gap-1.5 border-t border-slate-900/50 pt-2" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => onToggleUpgradeHub(city.id)}
-                      className={`flex-1 text-center py-1 rounded text-[9.5px] font-bold transition flex items-center justify-center gap-1 ${
-                        isUpgraded 
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30' 
-                          : 'bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800'
-                      }`}
-                      title="Sobe de nível permitindo 3 trilhas na cidade"
-                    >
-                      <span>★ Central Hub (30B)</span>
-                    </button>
-                    <button
-                      onClick={() => onToggleMaintenanceYard(city.id)}
-                      className={`flex-1 text-center py-1 rounded text-[9.5px] font-bold transition flex items-center justify-center gap-1 ${
-                        hasYard 
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30' 
-                          : 'bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800'
-                      }`}
-                      title="Abastece e repara locomotivas em um raio de até 800 km"
-                    >
-                      <span>🔧 Pátio (15B)</span>
-                    </button>
+                  <div className="flex flex-col gap-1.5 border-t border-slate-900/50 pt-2" onClick={(e) => e.stopPropagation()}>
+                    {/* Terminal Central */}
+                    {(() => {
+                      const buildingHub = infraQueue.find(p => p.cityId === city.id && p.type === 'hub');
+                      if (isUpgraded) return (
+                        <div className="flex items-center justify-between bg-amber-950/20 border border-amber-800/30 rounded px-2 py-1">
+                          <span className="text-[9px] text-amber-300 font-bold">★ Terminal Central ativo</span>
+                          <button onClick={() => onBuildHub(city.id)} className="text-[8px] text-slate-500 hover:text-rose-400 transition">demolir</button>
+                        </div>
+                      );
+                      if (buildingHub) return (
+                        <div className="flex items-center justify-between bg-amber-950/10 border border-amber-900/30 rounded px-2 py-1">
+                          <span className="text-[9px] text-amber-400">★ Construindo… {buildingHub.monthsRemaining}/{buildingHub.totalMonths} meses</span>
+                          <button onClick={() => onBuildHub(city.id)} className="text-[8px] text-slate-500 hover:text-rose-400 transition">cancelar</button>
+                        </div>
+                      );
+                      return (
+                        <button onClick={() => onBuildHub(city.id)}
+                          className="w-full text-center py-1 rounded text-[9.5px] font-bold bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800 transition">
+                          ★ Terminal Central — {HUB_CONFIG.months} meses · R${(HUB_CONFIG.cost/1e9).toFixed(0)}B
+                        </button>
+                      );
+                    })()}
+
+                    {/* Pátio de Manutenção */}
+                    {(() => {
+                      const buildingYard = infraQueue.find(p => p.cityId === city.id && p.type === 'yard');
+                      const yardLevel = yardLevels[city.id] as 1|2|3|undefined;
+                      const cfg = yardLevel ? YARD_CONFIGS[yardLevel] : null;
+                      if (hasYard && cfg) return (
+                        <div className="flex items-center justify-between bg-emerald-950/20 border border-emerald-800/30 rounded px-2 py-1">
+                          <span className="text-[9px] text-emerald-300 font-bold">🔧 Pátio {cfg.name} ativo ({cfg.coverage}km)</span>
+                          <button onClick={() => onBuildYard(city.id, 1)} className="text-[8px] text-slate-500 hover:text-rose-400 transition">demolir</button>
+                        </div>
+                      );
+                      if (buildingYard) {
+                        const bCfg = YARD_CONFIGS[buildingYard.yardLevel ?? 1];
+                        return (
+                          <div className="flex items-center justify-between bg-emerald-950/10 border border-emerald-900/30 rounded px-2 py-1">
+                            <span className="text-[9px] text-emerald-400">🔧 Pátio {bCfg.name}… {buildingYard.monthsRemaining}/{buildingYard.totalMonths} meses</span>
+                            <button onClick={() => onBuildYard(city.id, 1)} className="text-[8px] text-slate-500 hover:text-rose-400 transition">cancelar</button>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[8px] text-slate-500 font-semibold uppercase tracking-wide">Construir Pátio:</span>
+                          <div className="flex gap-1">
+                            {([1,2,3] as const).map(lvl => {
+                              const c = YARD_CONFIGS[lvl];
+                              return (
+                                <button key={lvl} onClick={() => onBuildYard(city.id, lvl)}
+                                  className="flex-1 py-1 rounded text-[8.5px] font-bold bg-slate-900 text-emerald-400 border border-emerald-900/40 hover:bg-emerald-950/30 transition leading-tight">
+                                  <div>{c.name}</div>
+                                  <div className="text-[7.5px] text-slate-500">{c.months}m · R${(c.cost/1e9).toFixed(0)}B · {c.coverage}km</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

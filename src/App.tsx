@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CITIES } from './data/cities';
-import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem } from './types';
+import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from './types';
 import { MISSIONS } from './utils/missions';
 import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } from './utils/news';
 import Sidebar from './components/Sidebar';
@@ -27,7 +27,10 @@ import {
   WORKER_NAMES,
   getYearInflationMultiplier,
   getMonthlyRevenue,
-  getCityTypeRevenueMultiplier
+  getCityTypeRevenueMultiplier,
+  YARD_CONFIGS,
+  HUB_CONFIG,
+  YARD_COVERAGE_KM
 } from './utils/gameRules';
 import { 
   Train, 
@@ -86,6 +89,8 @@ export default function App() {
   // Tycoon expansions
   const [upgradedHubs, setUpgradedHubs] = useState<string[]>([]);
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
+  const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
+  const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
 
   // Resource & Crises states
@@ -165,6 +170,7 @@ export default function App() {
         completedMissions, newsItems,
         triggeredEventIds,
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
+        infraQueue, yardLevels,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -174,7 +180,8 @@ export default function App() {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
-      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds]);
+      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
+      infraQueue, yardLevels]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -304,6 +311,39 @@ export default function App() {
             }
           });
         }
+        return stillBuilding;
+      });
+
+      // Process infrastructure build queue
+      setInfraQueue(prev => {
+        const stillBuilding: InfraProject[] = [];
+        const completedInfra: InfraProject[] = [];
+        prev.forEach(p => {
+          if (p.monthsRemaining <= 1) completedInfra.push(p);
+          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
+        });
+        completedInfra.forEach(p => {
+          const cityName = CITIES.find(c => c.id === p.cityId)?.name ?? p.cityId;
+          if (p.type === 'hub') {
+            setUpgradedHubs(prev2 => [...prev2, p.cityId]);
+            showToast(`★ Terminal Central em ${cityName} concluído! +1 slot de conexão.`, 'success');
+          } else {
+            setMaintenanceYards(prev2 => [...prev2, p.cityId]);
+            setYardLevels(prev2 => ({ ...prev2, [p.cityId]: p.yardLevel ?? 1 }));
+            const lvlName = YARD_CONFIGS[p.yardLevel ?? 1].name;
+            const cov = YARD_CONFIGS[p.yardLevel ?? 1].coverage;
+            showToast(`🔧 Pátio ${lvlName} em ${cityName} concluído! Cobertura: ${cov}km.`, 'success');
+          }
+          // Return allocated workers
+          setWorkers(prev2 => ({
+            terraplanagem: prev2.terraplanagem + (p.workersAllocated.terraplanagem ?? 0),
+            assentamento: prev2.assentamento + (p.workersAllocated.assentamento ?? 0),
+            sinalizacao: prev2.sinalizacao + (p.workersAllocated.sinalizacao ?? 0),
+            explosivos: prev2.explosivos,
+            manutencao: prev2.manutencao,
+          }));
+          sound.playConnect();
+        });
         return stillBuilding;
       });
     }
@@ -523,6 +563,8 @@ export default function App() {
     setCurrentEvent(null);
     setTriggeredEventIds([]);
     triggeredEventIdsRef.current = [];
+    setInfraQueue([]);
+    setYardLevels({});
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -550,6 +592,8 @@ export default function App() {
     setNewsItems(save.newsItems ?? []);
     setTriggeredEventIds(save.triggeredEventIds ?? []);
     triggeredEventIdsRef.current = save.triggeredEventIds ?? [];
+    setInfraQueue(save.infraQueue ?? []);
+    setYardLevels(save.yardLevels ?? {});
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -777,7 +821,7 @@ export default function App() {
 
   // Dijkstra nearest yard distance
   const nearestYardDistances = useMemo(() => {
-    return calculateRailwayDistancesFromYards(CITIES, edges, maintenanceYards);
+    return calculateRailwayDistancesFromYards(CITIES, edges, maintenanceYards).distances;
   }, [edges, maintenanceYards]);
 
   // Evaluate missions reactively
@@ -825,49 +869,214 @@ export default function App() {
     }).length;
   }, [edges, nearestYardDistances]);
 
-  // Toggle upgraded hub status (Central Hub with up to 3 links)
-  const HUB_COST = 30_000_000_000;
-  const handleToggleUpgradeHub = (cityId: string) => {
+  // Build Terminal Central (hub upgrade) - async construction system
+  const handleBuildHub = (cityId: string) => {
     const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+
+    // Already complete → demolish
     if (upgradedHubs.includes(cityId)) {
       setUpgradedHubs(prev => prev.filter(id => id !== cityId));
-      setSpentOnResources(prev => Math.max(0, prev - HUB_COST));
-      showToast(`★ Terminal Central em ${city?.name} removido. R$ 30B reembolsados.`, 'info');
+      setSpentOnResources(prev => Math.max(0, prev - HUB_CONFIG.cost));
+      showToast(`★ Terminal Central em ${city.name} demolido. R$ 30B reembolsados.`, 'info');
       sound.playDisconnect();
-    } else {
-      if (budgetState.currentBudget < HUB_COST) {
-        showToast('Orçamento insuficiente para expandir este Terminal Central (R$ 30B)!', 'error');
-        sound.playError();
-        return;
-      }
-      setSpentOnResources(prev => prev + HUB_COST);
-      setUpgradedHubs(prev => [...prev, cityId]);
-      showToast(`★ ${city?.name} virou Terminal Central! Suporta até 3 conexões.`, 'success');
-      sound.playConnect();
+      return;
     }
+
+    // Already building → cancel
+    const existingProject = infraQueue.find(p => p.cityId === cityId && p.type === 'hub');
+    if (existingProject) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existingProject.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(HUB_CONFIG.cost * 0.5)));
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(existingProject.resourcesConsumed) as (keyof GameResources)[]).forEach(k => {
+          u[k] = (u[k] ?? 0) + Math.floor((existingProject.resourcesConsumed[k] ?? 0) * 0.5);
+        });
+        return u;
+      });
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem,
+        assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos,
+        manutencao: prev.manutencao,
+      }));
+      showToast(`★ Construção do Terminal Central em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect();
+      return;
+    }
+
+    // Start construction
+    const cfg = HUB_CONFIG;
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Trabalhadores de Assentamento insuficientes para o Terminal Central (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if ((workers.sinalizacao ?? 0) < (cfg.workers.sinalizacao ?? 0)) {
+      showToast(`⚠️ Trabalhadores de Sinalização insuficientes para o Terminal Central (${cfg.workers.sinalizacao} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    let buyCost = 0;
+    const shortages: Partial<GameResources> = {};
+    (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => {
+      const need = cfg.resources[k] ?? 0;
+      const have = resources[k] ?? 0;
+      const short = Math.max(0, need - have);
+      if (short > 0) { shortages[k] = short; buyCost += short * RESOURCE_BUY_PRICES[k]; }
+    });
+    if (buyCost > 0 && !autoBuyResources) {
+      showToast(`Insumos insuficientes para o Terminal Central. Ative auto-compra ou compre manualmente.`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost + buyCost) {
+      showToast(`Orçamento insuficiente para o Terminal Central (R$ ${((cfg.cost + buyCost)/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost + buyCost);
+    if (buyCost > 0) {
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(shortages) as (keyof GameResources)[]).forEach(k => { u[k] = (u[k] ?? 0) + (shortages[k] ?? 0); });
+        return u;
+      });
+    }
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setWorkers(prev => ({
+      terraplanagem: prev.terraplanagem,
+      assentamento: Math.max(0, prev.assentamento - (cfg.workers.assentamento ?? 0)),
+      sinalizacao: Math.max(0, prev.sinalizacao - (cfg.workers.sinalizacao ?? 0)),
+      explosivos: prev.explosivos,
+      manutencao: prev.manutencao,
+    }));
+    const project: InfraProject = {
+      id: `hub_${cityId}_${Date.now()}`,
+      cityId,
+      type: 'hub',
+      monthsRemaining: cfg.months,
+      totalMonths: cfg.months,
+      workersAllocated: { assentamento: cfg.workers.assentamento ?? 0, sinalizacao: cfg.workers.sinalizacao ?? 0 },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear,
+      startedMonth: monthIdx,
+      cost: cfg.cost,
+    };
+    setInfraQueue(prev => [...prev, project]);
+    showToast(`★ Terminal Central em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
   };
 
-  // Toggle Maintenance Yard construction
-  const YARD_COST = 15_000_000_000;
-  const handleToggleMaintenanceYard = (cityId: string) => {
+  // Build Maintenance Yard - async construction system with 3 levels
+  const handleBuildYard = (cityId: string, level: 1 | 2 | 3 = 1) => {
     const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+    const cfg = YARD_CONFIGS[level];
+
+    // Already complete → demolish
     if (maintenanceYards.includes(cityId)) {
+      const currentLevel = yardLevels[cityId] ?? 1;
+      const currentCost = YARD_CONFIGS[currentLevel as 1|2|3].cost;
       setMaintenanceYards(prev => prev.filter(id => id !== cityId));
-      // Reembolso: subtrai do spentOnResources (aumenta orçamento disponível)
-      setSpentOnResources(prev => Math.max(0, prev - YARD_COST));
-      showToast(`🔧 Pátio de ${city?.name ?? 'cidade'} demolido. R$ 15B reembolsados.`, 'info');
+      setYardLevels(prev => { const u = { ...prev }; delete u[cityId]; return u; });
+      setSpentOnResources(prev => Math.max(0, prev - currentCost));
+      showToast(`🔧 Pátio ${YARD_CONFIGS[currentLevel as 1|2|3].name} em ${city.name} demolido. Reembolso parcial aplicado.`, 'info');
       sound.playDisconnect();
-    } else {
-      if (budgetState.currentBudget < YARD_COST) {
-        showToast('Orçamento insuficiente para construir pátio de manutenção (R$ 15B)!', 'error');
-        sound.playError();
-        return;
-      }
-      setSpentOnResources(prev => prev + YARD_COST);
-      setMaintenanceYards(prev => [...prev, cityId]);
-      showToast(`🔧 Pátio de Manutenção em ${city?.name} ativado! Cobertura de 800 km.`, 'success');
-      sound.playConnect();
+      return;
     }
+
+    // Already building → cancel
+    const existingProject = infraQueue.find(p => p.cityId === cityId && p.type === 'yard');
+    if (existingProject) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existingProject.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(existingProject.cost * 0.5)));
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(existingProject.resourcesConsumed) as (keyof GameResources)[]).forEach(k => {
+          u[k] = (u[k] ?? 0) + Math.floor((existingProject.resourcesConsumed[k] ?? 0) * 0.5);
+        });
+        return u;
+      });
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem + (existingProject.workersAllocated.terraplanagem ?? 0),
+        assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos,
+        manutencao: prev.manutencao,
+      }));
+      showToast(`🔧 Construção do Pátio em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect();
+      return;
+    }
+
+    // Worker checks
+    if ((workers.terraplanagem ?? 0) < (cfg.workers.terraplanagem ?? 0)) {
+      showToast(`⚠️ Terraplanagem insuficiente para o Pátio ${cfg.name} (${cfg.workers.terraplanagem} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Assentamento insuficiente para o Pátio ${cfg.name} (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    let buyCost = 0;
+    const shortages: Partial<GameResources> = {};
+    (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => {
+      const need = cfg.resources[k] ?? 0;
+      const have = resources[k] ?? 0;
+      const short = Math.max(0, need - have);
+      if (short > 0) { shortages[k] = short; buyCost += short * RESOURCE_BUY_PRICES[k]; }
+    });
+    if (buyCost > 0 && !autoBuyResources) {
+      showToast(`Insumos insuficientes para o Pátio ${cfg.name}. Ative auto-compra ou compre manualmente.`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost + buyCost) {
+      showToast(`Orçamento insuficiente para Pátio ${cfg.name} (R$ ${((cfg.cost + buyCost)/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost + buyCost);
+    if (buyCost > 0) {
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(shortages) as (keyof GameResources)[]).forEach(k => { u[k] = (u[k] ?? 0) + (shortages[k] ?? 0); });
+        return u;
+      });
+    }
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setWorkers(prev => ({
+      terraplanagem: Math.max(0, prev.terraplanagem - (cfg.workers.terraplanagem ?? 0)),
+      assentamento: Math.max(0, prev.assentamento - (cfg.workers.assentamento ?? 0)),
+      sinalizacao: Math.max(0, prev.sinalizacao - (cfg.workers.sinalizacao ?? 0)),
+      explosivos: prev.explosivos,
+      manutencao: prev.manutencao,
+    }));
+    const project: InfraProject = {
+      id: `yard_${cityId}_${Date.now()}`,
+      cityId,
+      type: 'yard',
+      yardLevel: level,
+      monthsRemaining: cfg.months,
+      totalMonths: cfg.months,
+      workersAllocated: {
+        terraplanagem: cfg.workers.terraplanagem ?? 0,
+        assentamento: cfg.workers.assentamento ?? 0,
+        sinalizacao: cfg.workers.sinalizacao ?? 0
+      },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear,
+      startedMonth: monthIdx,
+      cost: cfg.cost,
+    };
+    setInfraQueue(prev => [...prev, project]);
+    showToast(`🔧 Pátio ${cfg.name} em ${city.name} em construção — ${cfg.months} meses. Cobertura: ${cfg.coverage}km.`, 'success');
+    sound.playConnect();
   };
 
   // Calculate distance sum
@@ -1212,11 +1421,16 @@ export default function App() {
     if (hasFinishedPath) {
       const componentSize = getComponentSize(CITIES[0].id, completedEdges);
       if (componentSize === CITIES.length) {
-        const nextNearestDistances = calculateRailwayDistancesFromYards(CITIES, completedEdges, maintenanceYards);
+        const { distances: nextNearestDistances, nearestYardIds: nextNearestYardIds } = calculateRailwayDistancesFromYards(CITIES, completedEdges, maintenanceYards);
         const unmaintainedCount = completedEdges.filter(edge => {
-          const dA = nextNearestDistances[edge.from] ?? Infinity;
-          const dB = nextNearestDistances[edge.to] ?? Infinity;
-          return Math.min(dA, dB) > 800;
+          const checkCovered = (cityId: string) => {
+            const dist = nextNearestDistances[cityId] ?? Infinity;
+            const yardId = nextNearestYardIds[cityId];
+            if (!yardId) return false;
+            const lvl = yardLevels[yardId] ?? 1;
+            return dist <= (YARD_COVERAGE_KM[lvl as 1|2|3] ?? 600);
+          };
+          return !checkCovered(edge.from) && !checkCovered(edge.to);
         }).length;
 
         if (unmaintainedCount === 0) {
@@ -1263,9 +1477,11 @@ export default function App() {
         
         // Tycoon extensions
         upgradedHubs={upgradedHubs}
-        onToggleUpgradeHub={handleToggleUpgradeHub}
+        onBuildHub={handleBuildHub}
         maintenanceYards={maintenanceYards}
-        onToggleMaintenanceYard={handleToggleMaintenanceYard}
+        onBuildYard={handleBuildYard}
+        infraQueue={infraQueue}
+        yardLevels={yardLevels}
         constructionType={constructionType}
         onConstructionTypeChange={setConstructionType}
         budgetState={budgetState}
@@ -1450,7 +1666,7 @@ export default function App() {
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2">
                 <button
-                  onClick={() => handleToggleUpgradeHub(selectedCity.id)}
+                  onClick={() => handleBuildHub(selectedCity.id)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
                     isUpgraded ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
                     : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
@@ -1460,7 +1676,7 @@ export default function App() {
                   {isUpgraded ? '★ Central Hub Ativo' : '★ Terminal Central (R$ 30B)'}
                 </button>
                 <button
-                  onClick={() => handleToggleMaintenanceYard(selectedCity.id)}
+                  onClick={() => handleBuildYard(selectedCity.id, 1)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
                     hasYard ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
                     : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'

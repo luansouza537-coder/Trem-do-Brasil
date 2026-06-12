@@ -391,21 +391,23 @@ export function calculateRailwayDistancesFromYards(
   cities: City[],
   edges: Edge[],
   maintenanceYards: string[]
-): Record<string, number> {
+): { distances: Record<string, number>; nearestYardIds: Record<string, string> } {
   const distances: Record<string, number> = {};
+  const nearestYardIds: Record<string, string> = {};
   cities.forEach(c => {
     distances[c.id] = Infinity;
   });
 
   if (maintenanceYards.length === 0) {
-    return distances;
+    return { distances, nearestYardIds };
   }
 
   // Initialize yards with distance 0
-  const queue: { cityId: string; dist: number }[] = [];
+  const queue: { cityId: string; dist: number; yardId: string }[] = [];
   maintenanceYards.forEach(yardId => {
     distances[yardId] = 0;
-    queue.push({ cityId: yardId, dist: 0 });
+    nearestYardIds[yardId] = yardId;
+    queue.push({ cityId: yardId, dist: 0, yardId });
   });
 
   // Dijkstra along the active edges graph
@@ -419,7 +421,7 @@ export function calculateRailwayDistancesFromYards(
   while (queue.length > 0) {
     // Sort queue to get lowest distance (Dijkstra)
     queue.sort((a, b) => a.dist - b.dist);
-    const { cityId, dist } = queue.shift()!;
+    const { cityId, dist, yardId } = queue.shift()!;
 
     if (dist > distances[cityId]) continue;
 
@@ -428,12 +430,13 @@ export function calculateRailwayDistancesFromYards(
       const nextDist = dist + neighObj.dist;
       if (nextDist < distances[neighObj.to]) {
         distances[neighObj.to] = nextDist;
-        queue.push({ cityId: neighObj.to, dist: nextDist });
+        nearestYardIds[neighObj.to] = yardId;
+        queue.push({ cityId: neighObj.to, dist: nextDist, yardId });
       }
     });
   }
 
-  return distances;
+  return { distances, nearestYardIds };
 }
 
 export function getCityTypeRevenueMultiplier(type: City['type']): number {
@@ -482,3 +485,52 @@ export function getYearInflationMultiplier(gameYear: number): number {
   if (gameYear <= 2065) return 1.60;
   return 1.90;
 }
+
+// Yard level configs for Pátio de Manutenção
+export const YARD_COVERAGE_KM: Record<1|2|3, number> = {
+  1: 600,
+  2: 900,
+  3: 1400,
+};
+
+export const YARD_CONFIGS: Record<1|2|3, {
+  name: string;
+  coverage: number;
+  cost: number;
+  months: number;
+  workers: Partial<GameWorkers>;
+  resources: Partial<GameResources>;
+}> = {
+  1: {
+    name: 'Básico',
+    coverage: 600,
+    cost: 15_000_000_000,
+    months: 6,
+    workers: { terraplanagem: 20, assentamento: 10 },
+    resources: { aco: 200, brita: 300, cimento: 150 },
+  },
+  2: {
+    name: 'Avançado',
+    coverage: 900,
+    cost: 28_000_000_000,
+    months: 10,
+    workers: { terraplanagem: 40, assentamento: 20 },
+    resources: { aco: 400, brita: 600, cimento: 300, cobre: 50 },
+  },
+  3: {
+    name: 'Industrial',
+    coverage: 1400,
+    cost: 50_000_000_000,
+    months: 16,
+    workers: { terraplanagem: 80, assentamento: 40, sinalizacao: 20 },
+    resources: { aco: 800, brita: 1200, cimento: 600, cobre: 100, madeira: 200 },
+  },
+};
+
+// Hub (Terminal Central) config
+export const HUB_CONFIG = {
+  cost: 30_000_000_000,
+  months: 8,
+  workers: { assentamento: 30, sinalizacao: 15 },
+  resources: { aco: 500, cimento: 300, cobre: 80 } as Partial<GameResources>,
+};

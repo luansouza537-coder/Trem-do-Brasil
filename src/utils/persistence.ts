@@ -1,4 +1,4 @@
-import { Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem } from '../types';
+import { Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 
 export interface SaveGame {
   version: number;
@@ -20,6 +20,8 @@ export interface SaveGame {
   newsItems: NewsItem[];
   triggeredEventIds: string[];
   currentPartyStatusEffect: string | null;
+  infraQueue?: InfraProject[];
+  yardLevels?: Record<string, number>;
 }
 
 const getSaveKey = (slot: number) =>
@@ -45,6 +47,8 @@ export function loadGame(slot = 1): SaveGame | null {
     // Backwards compatibility defaults
     if (!save.triggeredEventIds) save.triggeredEventIds = [];
     if (save.currentPartyStatusEffect === undefined) save.currentPartyStatusEffect = null;
+    if (!save.infraQueue) save.infraQueue = [];
+    if (!save.yardLevels) save.yardLevels = {};
     return save;
   } catch {
     return null;
