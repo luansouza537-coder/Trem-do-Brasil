@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="32" fill="#0f172a"/>
+  <!-- Track rails (bottom) -->
+  <rect x="6" y="50" width="52" height="2.5" rx="1.2" fill="#f59e0b"/>
+  <rect x="6" y="44" width="52" height="2.5" rx="1.2" fill="#f59e0b"/>
+  <!-- Rail ties -->
+  <rect x="10" y="43" width="3" height="10" rx="1" fill="#92400e"/>
+  <rect x="19" y="43" width="3" height="10" rx="1" fill="#92400e"/>
+  <rect x="28" y="43" width="3" height="10" rx="1" fill="#92400e"/>
+  <rect x="37" y="43" width="3" height="10" rx="1" fill="#92400e"/>
+  <rect x="46" y="43" width="3" height="10" rx="1" fill="#92400e"/>
+  <!-- Locomotive body -->
+  <rect x="8" y="28" width="34" height="16" rx="3" fill="#dc2626"/>
+  <!-- Cab -->
+  <rect x="38" y="22" width="16" height="22" rx="3" fill="#dc2626"/>
+  <!-- Cab windows -->
+  <rect x="40" y="24" width="5" height="6" rx="1" fill="#38bdf8"/>
+  <rect x="47" y="24" width="5" height="6" rx="1" fill="#38bdf8"/>
+  <!-- Boiler details -->
+  <rect x="10" y="32" width="28" height="3" rx="1.5" fill="#b91c1c"/>
+  <!-- Smokestack -->
+  <rect x="14" y="18" width="5" height="10" rx="2" fill="#1e293b"/>
+  <ellipse cx="16.5" cy="18" rx="4" ry="2" fill="#334155"/>
+  <!-- Steam puffs -->
+  <circle cx="16" cy="12" r="4" fill="#e2e8f0" opacity="0.7"/>
+  <circle cx="22" cy="9" r="3" fill="#e2e8f0" opacity="0.5"/>
+  <circle cx="10" cy="10" r="2.5" fill="#e2e8f0" opacity="0.4"/>
+  <!-- Headlight -->
+  <circle cx="55" cy="35" r="3" fill="#fef08a"/>
+  <circle cx="55" cy="35" r="1.5" fill="#fff"/>
+  <!-- Wheels -->
+  <circle cx="16" cy="44" r="5" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+  <circle cx="16" cy="44" r="2" fill="#f59e0b"/>
+  <circle cx="28" cy="44" r="5" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+  <circle cx="28" cy="44" r="2" fill="#f59e0b"/>
+  <circle cx="40" cy="44" r="4" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+  <circle cx="40" cy="44" r="1.5" fill="#f59e0b"/>
+  <circle cx="50" cy="44" r="4" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+  <circle cx="50" cy="44" r="1.5" fill="#f59e0b"/>
+</svg>

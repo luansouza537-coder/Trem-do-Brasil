@@ -39,8 +39,8 @@ interface SidebarProps {
   onHoverCity: (cityId: string | null) => void;
   onFlyTo: (lat: number, lng: number) => void;
   onReset: () => void;
-  tileLayerType: 'voyager' | 'positron' | 'dark' | 'satellite';
-  onTileLayerChange: (type: 'voyager' | 'positron' | 'dark' | 'satellite') => void;
+  tileLayerType: 'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain';
+  onTileLayerChange: (type: 'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain') => void;
   isMuted: boolean;
   onToggleMute: () => void;
   showSuggestions: boolean;
@@ -237,15 +237,14 @@ export default function Sidebar({
       {/* Header */}
       <div className="p-4 bg-slate-900 border-b border-slate-700/80 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-br from-amber-500 to-red-600 rounded-xl shadow-inner relative overflow-hidden group">
-            <Train className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
-            <div className="absolute inset-0 bg-white/20 translate-y-full hover:translate-y-0 transition-transform"></div>
+          <div className="relative shrink-0">
+            <img src="/favicon.svg" alt="Trem do Brasil" className="w-11 h-11 drop-shadow-lg" />
           </div>
           <div>
-            <h1 className="font-display font-bold text-lg tracking-tight bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
-              Trilho Real
+            <h1 className="font-display font-bold text-lg tracking-tight leading-none bg-gradient-to-r from-amber-400 via-orange-400 to-red-500 bg-clip-text text-transparent">
+              Trem do Brasil
             </h1>
-            <p className="text-xs text-slate-400 font-medium">Conectando o Brasil 🚂</p>
+            <p className="text-[10px] text-slate-400 font-medium tracking-wide mt-0.5">REDE FERROVIÁRIA NACIONAL</p>
           </div>
         </div>
 
@@ -1300,7 +1299,7 @@ export default function Sidebar({
 
       {/* Footer Branding */}
       <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
-        <span>© 2026 TRILHO REAL · BR-RAILWAYS V1.0</span>
+        <span>© 2027 TREM DO BRASIL · RENIF V1.0</span>
         <button
           onClick={onExportStats}
           className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"

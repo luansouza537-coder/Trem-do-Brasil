@@ -12,7 +12,7 @@ interface GameMapProps {
   onSelectCity: (cityId: string | null) => void;
   onHoverCity: (cityId: string | null) => void;
   onConnectCities: (cityIdA: string, cityIdB: string) => void;
-  tileLayerType: 'voyager' | 'positron' | 'dark' | 'satellite';
+  tileLayerType: 'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain';
   flyToSignal: { lat: number; lng: number; timestamp: number } | null;
   showSuggestions: boolean;
   upgradedHubs: string[];
@@ -37,6 +37,10 @@ const TILE_LAYERS = {
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri &mdash; Sources: Esri, DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community'
+  },
+  terrain: {
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
   }
 };
 

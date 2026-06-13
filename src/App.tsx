@@ -82,7 +82,7 @@ export default function App() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
   const [hoveredCityId, setHoveredCityId] = useState<string | null>(null);
-  const [tileLayerType, setTileLayerType] = useState<'voyager' | 'positron' | 'dark' | 'satellite'>('dark');
+  const [tileLayerType, setTileLayerType] = useState<'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain'>('dark');
   const [isMuted, setIsMuted] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [flyToSignal, setFlyToSignal] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
@@ -1532,7 +1532,7 @@ export default function App() {
             <span className="hidden sm:inline">Mapa:</span>
           </div>
           <div className="flex gap-1">
-            {(['voyager', 'positron', 'dark', 'satellite'] as const).map((type) => (
+            {(['voyager', 'positron', 'dark', 'satellite', 'terrain'] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setTileLayerType(type)}
@@ -1542,7 +1542,7 @@ export default function App() {
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                 }`}
               >
-                {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : 'Satélite'}
+                {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : type === 'satellite' ? 'Satélite' : 'Relevo'}
               </button>
             ))}
           </div>
