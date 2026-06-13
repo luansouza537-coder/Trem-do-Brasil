@@ -3,6 +3,7 @@ import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject,
 import { MissionDef } from '../utils/missions';
 import { formatDistance } from '../utils/geo';
 import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, YARD_CONFIGS, HUB_CONFIG } from '../utils/gameRules';
+import { getAdvisorMessages, AdvisorPriority } from '../utils/advisor';
 import {
   Train,
   Search,
@@ -386,6 +387,55 @@ export default function Sidebar({
       {/* Tab: Operations & Management */}
       {activeTab === 'operations' && (
         <div className="flex-1 overflow-y-auto divide-y divide-slate-800/80 bg-slate-950/20 custom-scrollbar">
+
+          {/* 0. Conselheiro RENIF */}
+          {(() => {
+            const advisorMsgs = getAdvisorMessages({
+              cities,
+              edges,
+              maintenanceYards,
+              upgradedHubs,
+              resources,
+              workers,
+              currentBudget: budgetState.currentBudget,
+              monthlyRevenue: budgetState.monthlyRevenue ?? 0,
+              activeEvents,
+              constructionQueue,
+              unmaintainedEdgesCount,
+              gameYear,
+              monthIdx,
+            });
+            if (advisorMsgs.length === 0) return null;
+            const borderColor: Record<AdvisorPriority, string> = {
+              critical: 'border-rose-500/60 bg-rose-950/20',
+              warning:  'border-amber-500/50 bg-amber-950/15',
+              tip:      'border-sky-500/40 bg-sky-950/15',
+              positive: 'border-emerald-500/40 bg-emerald-950/15',
+            };
+            const titleColor: Record<AdvisorPriority, string> = {
+              critical: 'text-rose-400',
+              warning:  'text-amber-400',
+              tip:      'text-sky-400',
+              positive: 'text-emerald-400',
+            };
+            return (
+              <div className="p-3 bg-slate-900/40 flex flex-col gap-2">
+                <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
+                  🧠 Conselheiro RENIF
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  {advisorMsgs.map(msg => (
+                    <div key={msg.id} className={`rounded-lg border p-2.5 ${borderColor[msg.priority]}`}>
+                      <p className={`text-[10px] font-bold mb-0.5 ${titleColor[msg.priority]}`}>
+                        {msg.icon} {msg.title}
+                      </p>
+                      <p className="text-[9.5px] text-slate-300 leading-relaxed">{msg.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 1. Finanças detalhadas (Demonstrativo) */}
           <div className="p-3.5 bg-slate-900/30 flex flex-col gap-2">
