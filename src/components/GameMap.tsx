@@ -937,6 +937,32 @@ export default function GameMap({
           trackGroupRef.current?.addLayer(tieLayer);
           trackGroupRef.current?.addLayer(railsBase);
           trackGroupRef.current?.addLayer(railsSplit);
+
+          // Doubled track golden overlay
+          if (edge.doubled) {
+            const doubledLine = L.polyline(latlngs, {
+              color: '#f59e0b',
+              weight: 2.5,
+              opacity: 0.75,
+              dashArray: '6, 4',
+              lineCap: 'round',
+            });
+            trackGroupRef.current?.addLayer(doubledLine);
+          }
+
+          // Train level colored stripe (blue=L2, purple=L3)
+          if (edge.trainLevel && edge.trainLevel > 1) {
+            const lvlColor = edge.trainLevel === 3 ? '#a855f7' : '#38bdf8';
+            const lvlLine = L.polyline(latlngs, {
+              color: lvlColor,
+              weight: 1.8,
+              opacity: 0.65,
+              dashArray: '2, 6',
+              lineCap: 'round',
+            });
+            trackGroupRef.current?.addLayer(lvlLine);
+          }
+
           trackGroupRef.current?.addLayer(interactiveLayer);
 
           // Structure icon at midpoint (bridges/tunnels)
