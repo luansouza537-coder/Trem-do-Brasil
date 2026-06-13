@@ -1048,6 +1048,23 @@ export default function App() {
     sound.playConnect();
   };
 
+  // Trem de Passageiros — eletrifica e adapta a rota para passageiros (+40% receita em capitais/industriais)
+  const handlePassengerUpgrade = (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge || edge.status === 'building' || edge.type === 'balsa') return;
+    if (edge.passenger) { showToast('Esta rota já opera serviço de passageiros.', 'info'); return; }
+    const cost = 25_000_000_000;
+    if (budgetState.currentBudget < cost) { showToast('Orçamento insuficiente (R$25B necessários).', 'error'); sound.playError(); return; }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, passenger: true } : e));
+    setSpentOnResources(prev => prev + cost);
+    const fromCity = CITIES.find(c => c.id === edge.from);
+    const toCity   = CITIES.find(c => c.id === edge.to);
+    const isHighPop = (c: typeof fromCity) => c && (c.type === 'capital' || c.type === 'polo_industrial');
+    const bonus = (isHighPop(fromCity) || isHighPop(toCity)) ? '+40%' : '+15%';
+    showToast(`🚆 Serviço de passageiros ativo! Receita da rota ${bonus}.`, 'success');
+    sound.playConnect();
+  };
+
   // Build Maintenance Yard - async construction system with 3 levels
   const handleBuildYard = (cityId: string, level: 1 | 2 | 3 = 1) => {
     const city = CITIES.find(c => c.id === cityId);
@@ -1590,6 +1607,7 @@ export default function App() {
         onImportSave={handleImportSave}
         onDoubleTrack={handleDoubleTrack}
         onUpgradeTrainLevel={handleUpgradeTrainLevel}
+        onPassengerUpgrade={handlePassengerUpgrade}
         expiredMissions={expiredMissions}
         completedMissions={completedMissions}
         saveSlot={saveSlot}
@@ -1705,10 +1723,24 @@ export default function App() {
                         const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
                         return Math.round(base * (multA + multB) / 2);
                       })();
+                      const upgradeBadges = [
+                        e.doubled && '⊟',
+                        e.trainLevel && e.trainLevel > 1 && `L${e.trainLevel}`,
+                        e.passenger && '🚆',
+                      ].filter(Boolean).join(' ');
                       return (
-                        <div key={e.id} className="flex items-center justify-between px-2.5 py-1.5 text-[9px]">
-                          <span className="text-slate-300 font-medium">{e.type === 'balsa' ? '🚢' : '🚂'} {other?.name ?? otherId} <span className="text-slate-600">({e.distance.toFixed(0)} km)</span></span>
-                          <span className="text-sky-400 font-bold">+R$ {fmt(edgeRevenue)}/mês</span>
+                        <div key={e.id} className="px-2.5 py-1.5 text-[9px]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-300 font-medium">{e.type === 'balsa' ? '🚢' : '🚂'} {other?.name ?? otherId} <span className="text-slate-600">({e.distance.toFixed(0)} km)</span>{upgradeBadges && <span className="ml-1 text-amber-400">{upgradeBadges}</span>}</span>
+                            <span className="text-sky-400 font-bold">+R$ {fmt(edgeRevenue)}/mês</span>
+                          </div>
+                          {e.type !== 'balsa' && (
+                            <div className="flex gap-1 mt-1">
+                              {!e.doubled && <button onClick={() => handleDoubleTrack(e.id)} className="px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-700/40 text-amber-400 text-[8px] hover:bg-amber-900/60">⊟ Bitola Dupla R$20B</button>}
+                              {(e.trainLevel ?? 1) < 3 && <button onClick={() => handleUpgradeTrainLevel(e.id)} className="px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-700/40 text-sky-400 text-[8px] hover:bg-sky-900/60">🚄 Nível {(e.trainLevel ?? 1)+1} R${(e.trainLevel ?? 1) === 1 ? '15' : '30'}B</button>}
+                              {!e.passenger && <button onClick={() => handlePassengerUpgrade(e.id)} className="px-1.5 py-0.5 rounded bg-pink-950/60 border border-pink-700/40 text-pink-400 text-[8px] hover:bg-pink-900/60">🚆 Passageiros R$25B</button>}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

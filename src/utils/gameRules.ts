@@ -469,7 +469,14 @@ export function getMonthlyRevenue(
     const avgMult = (multA + multB) / 2;
     const doubledMult = e.doubled ? 1.5 : 1.0;
     const trainMult = TRAIN_LEVEL_MULT[(e.trainLevel ?? 1) as 1|2|3];
-    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult);
+    // Passenger upgrade: +40% on high-population endpoints (capitals + industrial)
+    const passengerBonus = e.passenger
+      ? (() => {
+          const highPop = (c: City | undefined) => c && (c.type === 'capital' || c.type === 'polo_industrial');
+          return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
+        })()
+      : 1.0;
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus);
   }, 0);
   // Without any maintenance workers revenue decays by 15%
   const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;

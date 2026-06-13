@@ -18,6 +18,7 @@ export interface Edge {
   status?: 'complete' | 'building';
   doubled?: boolean;
   trainLevel?: 1 | 2 | 3;
+  passenger?: boolean;
 }
 
 export interface GameStats {

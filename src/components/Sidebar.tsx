@@ -103,6 +103,7 @@ interface SidebarProps {
   onImportSave?: (data: SaveGame) => void;
   onDoubleTrack?: (edgeId: string) => void;
   onUpgradeTrainLevel?: (edgeId: string) => void;
+  onPassengerUpgrade?: (edgeId: string) => void;
   expiredMissions?: string[];
   completedMissions?: string[];
   onFlyToRegion?: (lat: number, lng: number) => void;
@@ -175,6 +176,7 @@ export default function Sidebar({
   onImportSave,
   onDoubleTrack = () => {},
   onUpgradeTrainLevel = () => {},
+  onPassengerUpgrade = () => {},
   expiredMissions = [],
   completedMissions = [],
   onFlyToRegion,

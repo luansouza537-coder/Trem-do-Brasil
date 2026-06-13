@@ -113,3 +113,11 @@
   animation: wave-ripple 0.7s linear infinite;
 }
 
+/* Passenger train service — gentle pink glide */
+@keyframes passenger-glide {
+  to { stroke-dashoffset: -8; }
+}
+.leaflet-passenger-line path {
+  animation: passenger-glide 1.0s linear infinite;
+}
+

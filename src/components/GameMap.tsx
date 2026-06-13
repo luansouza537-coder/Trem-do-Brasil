@@ -952,6 +952,19 @@ export default function GameMap({
             trackGroupRef.current?.addLayer(doubledLine);
           }
 
+          // Passenger service overlay — rose/pink dashed line
+          if (edge.passenger) {
+            const passengerLine = L.polyline(latlngs, {
+              color: '#f472b6',
+              weight: 2,
+              opacity: 0.75,
+              dashArray: '3, 5',
+              lineCap: 'round',
+              className: 'leaflet-passenger-line',
+            });
+            trackGroupRef.current?.addLayer(passengerLine);
+          }
+
           // Train level colored stripe (blue=L2, purple=L3)
           if (edge.trainLevel && edge.trainLevel > 1) {
             const lvlColor = edge.trainLevel === 3 ? '#a855f7' : '#38bdf8';
