@@ -5,6 +5,7 @@ import { MISSIONS } from './utils/missions';
 import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } from './utils/news';
 import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
+import PauseScreen from './components/PauseScreen';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -1742,6 +1743,23 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* --- PAUSE SCREEN --- */}
+      {playSpeed === 'paused' && !welcomeOpen && !victoryOpen && !gameOverOpen && (
+        <PauseScreen
+          gameYear={gameYear}
+          monthIdx={monthIdx}
+          connectionsCount={edges.filter(e => e.status !== 'building').length}
+          totalDistanceKm={edges.filter(e => e.status !== 'building').reduce((a, e) => a + e.distance, 0)}
+          currentBudget={budgetState.currentBudget}
+          monthlyRevenue={budgetState.monthlyRevenue ?? 0}
+          totalRevenue={totalRevenue}
+          maintenanceYardsCount={maintenanceYards.length}
+          upgradedHubsCount={upgradedHubs.length}
+          constructionQueueCount={constructionQueue.length}
+          onResume={() => setPlaySpeed('normal')}
+        />
+      )}
 
       {/* --- WELCOME TUTORIAL MODAL --- */}
       {welcomeOpen && (

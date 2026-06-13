@@ -759,13 +759,15 @@ export default function GameMap({
             completedLine.on('click', cancelHandler);
             trackGroupRef.current?.addLayer(completedLine);
             const remainLine = L.polyline([[midLat, midLng], [toCity.lat, toCity.lng]], {
-              color: '#f97316', weight: 3.5, opacity: 0.85, dashArray: '8, 6', lineCap: 'round'
+              color: '#f97316', weight: 3.5, opacity: 0.85, dashArray: '8, 6', lineCap: 'round',
+              className: 'leaflet-construction-line'
             });
             remainLine.bindTooltip(tooltipHtml, { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' });
             remainLine.on('click', cancelHandler);
             trackGroupRef.current?.addLayer(remainLine);
           } else {
-            const line = L.polyline(latlngs, { color: '#f97316', weight: 3.5, opacity: 0.9, dashArray: '8, 6', lineCap: 'round' });
+            const line = L.polyline(latlngs, { color: '#f97316', weight: 3.5, opacity: 0.9, dashArray: '8, 6', lineCap: 'round',
+              className: 'leaflet-construction-line' });
             line.bindTooltip(tooltipHtml, { sticky: true, direction: 'auto', className: 'leaflet-railway-tooltip font-sans text-xs bg-slate-900 text-white rounded p-1.5' });
             line.on('click', cancelHandler);
             trackGroupRef.current?.addLayer(line);
