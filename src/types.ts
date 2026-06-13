@@ -16,6 +16,8 @@ export interface Edge {
   type?: 'rail' | 'balsa';
   resourcesConsumed?: GameResources;
   status?: 'complete' | 'building';
+  doubled?: boolean;
+  trainLevel?: 1 | 2 | 3;
 }
 
 export interface GameStats {

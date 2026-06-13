@@ -54,7 +54,7 @@ import {
   Check,
   Layers
 } from 'lucide-react';
-import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates } from './utils/persistence';
+import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates, SaveGame } from './utils/persistence';
 import { SCHEDULED_EVENTS } from './data/scheduledEvents';
 
 interface Toast {
@@ -120,6 +120,7 @@ export default function App() {
   const [saveSlot, setSaveSlot] = useState(1);
   const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
   const [completedMissions, setCompletedMissions] = useState<string[]>([]);
+  const [expiredMissions, setExpiredMissions] = useState<string[]>([]);
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
 
   const [activeEvents, setActiveEvents] = useState<GameEvent[]>([]);
@@ -244,7 +245,17 @@ export default function App() {
       const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
       const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0);
       const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent);
-      const monthlyRev = cyberAttack ? 0 : (Math.round(baseRev * compoundRevMult) + monthlyBonusTotal);
+      const doubledBonus = cyberAttack ? 0 : edgesRef.current
+        .filter(e => e.status !== 'building' && e.doubled)
+        .reduce((s, e) => s + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000) * 0.5), 0);
+      const trainBonus = cyberAttack ? 0 : edgesRef.current
+        .filter(e => e.status !== 'building' && e.trainLevel && e.trainLevel > 1)
+        .reduce((s, e) => {
+          const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+          const mult = e.trainLevel === 2 ? 0.25 : e.trainLevel === 3 ? 0.60 : 0;
+          return s + Math.round(base * mult);
+        }, 0);
+      const monthlyRev = cyberAttack ? 0 : (Math.round((baseRev + doubledBonus + trainBonus) * compoundRevMult) + monthlyBonusTotal);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
       }
@@ -617,6 +628,32 @@ export default function App() {
   };
 
   // Export game statistics as JSON
+  const handleImportSave = (data: SaveGame) => {
+    try {
+      setEdges(data.edges ?? []);
+      setUpgradedHubs(data.upgradedHubs ?? []);
+      setMaintenanceYards(data.maintenanceYards ?? []);
+      setConstructionType(data.constructionType ?? 'rail');
+      setResources(data.resources ?? { aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 });
+      setSpentOnResources(data.spentOnResources ?? 0);
+      setWorkers(data.workers ?? { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 });
+      setSpentOnWorkers(data.spentOnWorkers ?? 0);
+      setActiveEvents(data.activeEvents ?? []);
+      setGameYear(data.gameYear ?? 2027);
+      setMonthIdx(data.monthIdx ?? 0);
+      setConstructionQueue(data.constructionQueue ?? []);
+      setTotalRevenue(data.totalRevenue ?? 0);
+      setCompletedMissions(data.completedMissions ?? []);
+      setNewsItems(data.newsItems ?? []);
+      setTriggeredEventIds(data.triggeredEventIds ?? []);
+      setInfraQueue(data.infraQueue ?? []);
+      setYardLevels(data.yardLevels ?? {});
+      showToast('📥 Save importado com sucesso!', 'success');
+    } catch {
+      showToast('❌ Arquivo inválido — não foi possível importar.', 'error');
+    }
+  };
+
   const handleExportStats = () => {
     const completedEdges = edges.filter(e => e.status !== 'building');
     const stats = {
@@ -849,12 +886,19 @@ export default function App() {
     if (welcomeOpen) return;
     const yearMonth = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
     missionResults.forEach(m => {
+      // Check prerequisite (chained missions)
+      if (m.unlocksAfter && !completedMissions.includes(m.unlocksAfter)) return;
       if (m.completed && !completedMissions.includes(m.id)) {
         setCompletedMissions(prev => [...prev, m.id]);
         setTotalRevenue(prev => prev + m.reward);
         showToast(`🎯 Missão concluída: "${m.title.replace(/^[^ ]+ /, '')}" — Prêmio: R$ ${(m.reward/1e9).toFixed(0)}B`, 'success');
         sound.playConnect();
         setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 40));
+      }
+      // Check deadline
+      if (m.deadlineYear && gameYear > m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
+        setExpiredMissions(prev => [...prev, m.id]);
+        showToast(`⏰ Missão expirada: ${m.title}`, 'error');
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -973,6 +1017,34 @@ export default function App() {
     };
     setInfraQueue(prev => [...prev, project]);
     showToast(`★ Terminal Central em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
+  };
+
+  // Bitola Dupla — doubles track capacity on a completed edge (+50% revenue, R$20B)
+  const handleDoubleTrack = (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge || edge.status === 'building') return;
+    if (edge.doubled) { showToast('Esta rota já tem bitola dupla.', 'info'); return; }
+    const cost = 20_000_000_000;
+    if (budgetState.currentBudget < cost) { showToast('Orçamento insuficiente para bitola dupla (R$20B).', 'error'); sound.playError(); return; }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, doubled: true } : e));
+    setSpentOnResources(prev => prev + cost);
+    showToast('⊟ Bitola dupla instalada! Receita da rota +50%.', 'success');
+    sound.playConnect();
+  };
+
+  // Upgrade de Velocidade — increases train level on a completed edge
+  const handleUpgradeTrainLevel = (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge || edge.status === 'building') return;
+    const level = edge.trainLevel ?? 1;
+    if (level >= 3) { showToast('Nível máximo de velocidade atingido.', 'info'); return; }
+    const cost = level === 1 ? 15_000_000_000 : 30_000_000_000;
+    const newLevel = (level + 1) as 1 | 2 | 3;
+    if (budgetState.currentBudget < cost) { showToast(`Orçamento insuficiente (R$${cost/1e9}B necessários).`, 'error'); sound.playError(); return; }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, trainLevel: newLevel } : e));
+    setSpentOnResources(prev => prev + cost);
+    showToast(`🚄 Velocidade atualizada para Nível ${newLevel}! Receita +${newLevel === 2 ? '25' : '60'}%.`, 'success');
     sound.playConnect();
   };
 
@@ -1515,11 +1587,17 @@ export default function App() {
         // New feature props
         onAdvanceMonth={handleAdvanceMonth}
         onExportStats={handleExportStats}
+        onImportSave={handleImportSave}
+        onDoubleTrack={handleDoubleTrack}
+        onUpgradeTrainLevel={handleUpgradeTrainLevel}
+        expiredMissions={expiredMissions}
+        completedMissions={completedMissions}
         saveSlot={saveSlot}
         onSaveSlotChange={setSaveSlot}
         slotDates={slotDates}
         missionResults={missionResults}
         newsItems={newsItems}
+        onFlyToRegion={(lat, lng) => setFlyToSignal({ lat, lng, timestamp: Date.now() })}
       />
 
       {/* 3. Primary Leaflet Map Container */}
@@ -1692,6 +1770,31 @@ export default function App() {
                   {hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 15B)'}
                 </button>
               </div>
+              {/* Per-edge upgrade actions */}
+              {cityEdges.length > 0 && (
+                <div className="flex flex-col gap-1.5 border-t border-slate-800/60 pt-2">
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest">Upgrades de Rota:</p>
+                  {cityEdges.map(e => (
+                    <div key={e.id} className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-[9px] text-slate-400 min-w-0 truncate flex-1">{e.type === 'balsa' ? '🚢' : '🚂'} {CITIES.find(c => c.id === (e.from === selectedCity.id ? e.to : e.from))?.name}</span>
+                      <button
+                        onClick={() => handleDoubleTrack(e.id)}
+                        disabled={!!e.doubled}
+                        className={`px-2 py-1 rounded text-[8.5px] font-bold border transition cursor-pointer disabled:opacity-40 ${e.doubled ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-amber-500/10 hover:text-amber-300'}`}
+                      >
+                        {e.doubled ? '⊟ Dupla' : '⊟ Bitola Dupla (R$20B)'}
+                      </button>
+                      <button
+                        onClick={() => handleUpgradeTrainLevel(e.id)}
+                        disabled={(e.trainLevel ?? 1) >= 3}
+                        className="px-2 py-1 rounded text-[8.5px] font-bold border bg-slate-800 text-slate-300 border-slate-700 hover:bg-sky-500/10 hover:text-sky-300 transition cursor-pointer disabled:opacity-40"
+                      >
+                        {(e.trainLevel ?? 1) >= 3 ? '🚄 Nível Máx.' : `🚄 Nível ${e.trainLevel ?? 1}→${(e.trainLevel ?? 1) + 1} (R$${(e.trainLevel ?? 1) === 1 ? '15' : '30'}B)`}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -1720,6 +1823,7 @@ export default function App() {
           maintenanceYards={maintenanceYards}
           nearestYardDistances={nearestYardDistances}
           constructionQueue={constructionQueue}
+          activeEvents={activeEvents}
         />
       </main>
 
@@ -2094,6 +2198,41 @@ export default function App() {
                   className="w-full bg-gradient-to-r from-red-650 to-rose-600 hover:from-red-650 hover:to-rose-650 text-white font-display font-extrabold uppercase py-2.5 px-4 rounded-xl transition shadow-md text-xs tracking-wider cursor-pointer"
                 >
                    Aceitar e Absorver ({currentEvent.durationMonths} Meses)
+                </button>
+                <button
+                  onClick={() => {
+                    // Ignore crisis — double its duration
+                    const ev = currentEvent;
+                    const doubledDuration = ev.durationMonths * 2;
+                    const ignoredEvent: GameEvent = { ...ev, durationMonths: doubledDuration, monthsLeft: doubledDuration };
+                    setActiveEvents(prev => [...prev, ignoredEvent]);
+                    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+                    setNewsItems(prev => [newsCrisis(ignoredEvent, ym), ...prev].slice(0, 40));
+                    setCurrentEvent(null);
+                    showToast(`⚠️ Crise ignorada — duração dobrada para ${doubledDuration} meses!`, 'error');
+                    sound.playError();
+                  }}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-rose-400 border border-rose-500/30 font-bold uppercase py-2 px-4 rounded-xl transition text-xs tracking-wider cursor-pointer"
+                >
+                  ⚠️ Ignorar (sofrer consequência — {currentEvent.durationMonths * 2} meses)
+                </button>
+
+                <button
+                  onClick={() => {
+                    const ev = { ...currentEvent, monthsLeft: currentEvent.durationMonths * 2, durationMonths: currentEvent.durationMonths * 2 };
+                    setActiveEvents(prev => [...prev, ev]);
+                    if (ev.workerLoss) {
+                      const { role, amount } = ev.workerLoss;
+                      setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - amount) }));
+                      setSpentOnWorkers(prev => prev + 8_000_000_000);
+                    }
+                    showToast(`⚠️ Crise ignorada — duração dobrada para ${ev.durationMonths} meses!`, 'error');
+                    setCurrentEvent(null);
+                    sound.playError();
+                  }}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 font-bold uppercase py-2 px-4 rounded-xl transition text-[10px] tracking-wider cursor-pointer border border-slate-700"
+                >
+                  ⚠️ Ignorar (duração dobrada)
                 </button>
               </div>
 

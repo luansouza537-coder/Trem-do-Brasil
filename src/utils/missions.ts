@@ -6,6 +6,8 @@ export interface MissionDef {
   title: string;
   description: string;
   reward: number;
+  deadlineYear?: number;
+  unlocksAfter?: string;
   check: (cities: City[], edges: Edge[], yards: string[]) => { completed: boolean; current: number; target: number };
 }
 
@@ -24,6 +26,7 @@ export const MISSIONS: MissionDef[] = [
     title: '🔩 Malha Inicial',
     description: 'Conclua 5 conexões ferroviárias.',
     reward: 18_000_000_000,
+    deadlineYear: 2030,
     check: (_, edges) => { const n = done(edges).length; return { completed: n >= 5, current: n, target: 5 }; },
   },
   {
@@ -31,6 +34,7 @@ export const MISSIONS: MissionDef[] = [
     title: '🔗 Malha Regional',
     description: 'Conclua 10 conexões ferroviárias.',
     reward: 35_000_000_000,
+    deadlineYear: 2035,
     check: (_, edges) => { const n = done(edges).length; return { completed: n >= 10, current: n, target: 10 }; },
   },
   {
@@ -59,6 +63,7 @@ export const MISSIONS: MissionDef[] = [
     title: '🔧 Primeiros Pátios',
     description: 'Construa 3 pátios de manutenção.',
     reward: 20_000_000_000,
+    deadlineYear: 2032,
     check: (_, _e, yards) => ({ completed: yards.length >= 3, current: yards.length, target: 3 }),
   },
   {
@@ -117,6 +122,7 @@ export const MISSIONS: MissionDef[] = [
     title: '🌵 Integração do Nordeste',
     description: 'Conecte todas as 9 capitais nordestinas numa mesma malha.',
     reward: 90_000_000_000,
+    deadlineYear: 2045,
     check: (cities, edges) => {
       const neIds = new Set(cities.filter(c => c.type === 'capital' && ['MA','PI','CE','RN','PB','PE','AL','SE','BA'].includes(c.state)).map(c => c.id));
       const comps = getConnectedComponents(cities, done(edges));
@@ -130,6 +136,7 @@ export const MISSIONS: MissionDef[] = [
     title: '📏 Cinco Mil Quilômetros',
     description: 'Alcance 5.000 km de malha concluída.',
     reward: 35_000_000_000,
+    deadlineYear: 2040,
     check: (_, edges) => {
       const dist = Math.round(done(edges).reduce((s, e) => s + e.distance, 0));
       return { completed: dist >= 5000, current: dist, target: 5000 };
@@ -199,5 +206,28 @@ export const MISSIONS: MissionDef[] = [
       }, 0);
       return { completed: ok, current: best, target: 4 };
     },
+  },
+  {
+    id: 'corredor_pioneiro',
+    title: '🌱 Corredor Pioneiro',
+    description: 'Conecte 3 cidades na malha ferroviária.',
+    reward: 5_000_000_000,
+    check: (_, edges) => { const n = done(edges).length; return { completed: n >= 3, current: Math.min(n, 3), target: 3 }; },
+  },
+  {
+    id: 'expansao_regional',
+    title: '🏙️ Expansão Regional',
+    description: 'Conecte 15 cidades na malha ferroviária.',
+    reward: 25_000_000_000,
+    unlocksAfter: 'corredor_pioneiro',
+    check: (_, edges) => { const n = done(edges).length; return { completed: n >= 15, current: n, target: 15 }; },
+  },
+  {
+    id: 'rede_integrada',
+    title: '🌐 Rede Integrada',
+    description: 'Conecte 40 cidades na malha ferroviária.',
+    reward: 60_000_000_000,
+    unlocksAfter: 'expansao_regional',
+    check: (_, edges) => { const n = done(edges).length; return { completed: n >= 40, current: n, target: 40 }; },
   },
 ];

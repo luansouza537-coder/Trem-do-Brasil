@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
-import { MissionDef } from '../utils/missions';
+import { MissionDef, MISSIONS } from '../utils/missions';
+import { SaveGame } from '../utils/persistence';
 import { formatDistance } from '../utils/geo';
 import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, YARD_CONFIGS, HUB_CONFIG } from '../utils/gameRules';
 import { getAdvisorMessages, AdvisorPriority } from '../utils/advisor';
@@ -99,6 +100,12 @@ interface SidebarProps {
   slotDates?: (string | null)[];
   missionResults?: (MissionDef & { completed: boolean; current: number; target: number })[];
   newsItems?: NewsItem[];
+  onImportSave?: (data: SaveGame) => void;
+  onDoubleTrack?: (edgeId: string) => void;
+  onUpgradeTrainLevel?: (edgeId: string) => void;
+  expiredMissions?: string[];
+  completedMissions?: string[];
+  onFlyToRegion?: (lat: number, lng: number) => void;
 }
 
 export default function Sidebar({
@@ -165,7 +172,21 @@ export default function Sidebar({
   slotDates = [null, null, null],
   missionResults = [],
   newsItems = [],
+  onImportSave,
+  onDoubleTrack = () => {},
+  onUpgradeTrainLevel = () => {},
+  expiredMissions = [],
+  completedMissions = [],
+  onFlyToRegion,
 }: SidebarProps) {
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const SPECIALIST_NAMES = ['Eng. Souza', 'Dr. Carvalho', 'Tec. Lima', 'Eng. Silva', 'Dr. Oliveira', 'Tec. Santos', 'Eng. Pereira', 'Dr. Costa', 'Tec. Rodrigues', 'Eng. Almeida', 'Dr. Nascimento', 'Tec. Ferreira', 'Eng. Gomes', 'Dr. Araújo', 'Tec. Martins', 'Eng. Ribeiro', 'Dr. Barbosa', 'Tec. Melo', 'Eng. Vieira', 'Dr. Xavier'];
+  const getSpecialistName = (role: string): string => {
+    const hash = role.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    return SPECIALIST_NAMES[hash % SPECIALIST_NAMES.length];
+  };
+
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
   const [typeFilter, setTypeFilter] = useState<'all' | 'capital' | 'cidade' | 'portos' | 'mineracao' | 'polo_agricola' | 'polo_industrial' | 'fronteira'>('all');
@@ -437,6 +458,30 @@ export default function Sidebar({
             );
           })()}
 
+          {/* Fly-to-Region */}
+          {onFlyToRegion && (
+            <div className="p-3 bg-slate-950/60 border-b border-slate-850 flex flex-col gap-2 shrink-0">
+              <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">🗺️ Regiões</span>
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  { label: 'Norte', lat: -3.5, lng: -62 },
+                  { label: 'Nordeste', lat: -8, lng: -38 },
+                  { label: 'Centro-Oeste', lat: -15.5, lng: -52 },
+                  { label: 'Sudeste', lat: -20, lng: -44 },
+                  { label: 'Sul', lat: -27, lng: -52 },
+                ] as const).map(r => (
+                  <button
+                    key={r.label}
+                    onClick={() => onFlyToRegion(r.lat, r.lng)}
+                    className="px-2 py-1 rounded-lg text-[9px] font-bold bg-slate-800 border border-slate-700 text-slate-300 hover:bg-amber-500/20 hover:text-amber-300 hover:border-amber-500/40 transition cursor-pointer"
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 1. Finanças detalhadas (Demonstrativo) */}
           <div className="p-3.5 bg-slate-900/30 flex flex-col gap-2">
             <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
@@ -544,6 +589,9 @@ export default function Sidebar({
                           {emoji} {WORKER_NAMES[key]}
                         </span>
                         <span className="text-[8.5px] text-slate-400 block leading-tight">{desc}</span>
+                        {qty > 0 && (
+                          <span className="text-[8px] text-sky-400 block leading-tight">Equipe chefiada por {getSpecialistName(key)}</span>
+                        )}
                         <span className="text-[8px] text-slate-500 font-bold font-sans">
                           R$ {salary.toLocaleString('pt-BR')}/pessoa/mês
                         </span>
@@ -802,27 +850,36 @@ export default function Sidebar({
               {missionResults.map(m => {
                 const pct = Math.min(100, Math.round((m.current / m.target) * 100));
                 const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(0)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+                const isLocked = !!(m.unlocksAfter && !completedMissions.includes(m.unlocksAfter));
+                const prereqMission = m.unlocksAfter ? MISSIONS.find(def => def.id === m.unlocksAfter) : null;
                 return (
                   <div key={m.id} className={`p-2.5 rounded-lg border flex flex-col gap-1.5 ${
+                    isLocked ? 'bg-slate-950/30 border-slate-800/50 opacity-60' :
                     m.completed ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-slate-950/60 border-slate-800'
                   }`}>
                     <div className="flex items-start justify-between gap-1">
                       <div className="min-w-0">
-                        <span className={`text-[10px] font-black block leading-tight ${m.completed ? 'text-emerald-300' : 'text-slate-200'}`}>
-                          {m.title}
+                        <span className={`text-[10px] font-black block leading-tight ${isLocked ? 'text-slate-500' : m.completed ? 'text-emerald-300' : 'text-slate-200'}`}>
+                          {isLocked ? '🔒 ' : ''}{m.title}
                         </span>
                         <span className="text-[8.5px] text-slate-400 leading-tight">{m.description}</span>
+                        {isLocked && prereqMission && (
+                          <span className="text-[8px] text-slate-500 block mt-0.5">Requer: {prereqMission.title}</span>
+                        )}
                       </div>
-                      <span className={`text-[9px] font-black shrink-0 ml-1 ${m.completed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      <span className={`text-[9px] font-black shrink-0 ml-1 ${m.completed ? 'text-emerald-400' : isLocked ? 'text-slate-600' : 'text-amber-400'}`}>
                         {m.completed ? '✓' : fmt(m.reward)}
                       </span>
                     </div>
-                    {!m.completed && (
+                    {!m.completed && !isLocked && (
                       <>
                         <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
                           <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-[8px] text-slate-500">{m.current.toLocaleString('pt-BR')} / {m.target.toLocaleString('pt-BR')} — {pct}%</span>
+                        {m.deadlineYear && (
+                          <span className="text-[8px] text-orange-400 font-bold">⏰ Prazo: até {m.deadlineYear}</span>
+                        )}
                       </>
                     )}
                     {m.completed && (
@@ -1350,13 +1407,48 @@ export default function Sidebar({
       {/* Footer Branding */}
       <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
         <span>© 2027 TREM DO BRASIL · RENIF V1.0</span>
-        <button
-          onClick={onExportStats}
-          className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
-          title="Exportar estatísticas como JSON"
-        >
-          📊 Export
-        </button>
+        <div className="flex gap-1.5 items-center">
+          {onImportSave && (
+            <>
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    try {
+                      const data = JSON.parse(ev.target?.result as string) as SaveGame;
+                      if (!data.edges || !data.gameYear) throw new Error('Invalid save');
+                      onImportSave(data);
+                    } catch {
+                      alert('Arquivo de save inválido.');
+                    }
+                  };
+                  reader.readAsText(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                onClick={() => importFileRef.current?.click()}
+                className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-emerald-400 hover:border-emerald-700 transition text-[9px] font-bold uppercase cursor-pointer"
+                title="Importar save de arquivo JSON"
+              >
+                📥 Import
+              </button>
+            </>
+          )}
+          <button
+            onClick={onExportStats}
+            className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
+            title="Exportar estatísticas como JSON"
+          >
+            📊 Export
+          </button>
+        </div>
       </div>
     </div>
   );

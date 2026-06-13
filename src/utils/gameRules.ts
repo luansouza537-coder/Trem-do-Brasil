@@ -458,16 +458,18 @@ export function getMonthlyRevenue(
 ): number {
   const completedEdges = edges.filter(e => e.status !== 'building');
   const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
+  const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
   const base = completedEdges.reduce((sum, e) => {
     if (e.type === 'balsa' && balsaFrozen) return sum;
     const baseKm = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
-    // Apply city type multiplier (average of both endpoints, if available)
     const cityA = cities.find(c => c.id === e.from);
     const cityB = cities.find(c => c.id === e.to);
     const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
     const multB = cityB ? getCityTypeRevenueMultiplier(cityB.type) : 1.0;
     const avgMult = (multA + multB) / 2;
-    return sum + Math.round(baseKm * avgMult);
+    const doubledMult = e.doubled ? 1.5 : 1.0;
+    const trainMult = TRAIN_LEVEL_MULT[(e.trainLevel ?? 1) as 1|2|3];
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult);
   }, 0);
   // Without any maintenance workers revenue decays by 15%
   const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;

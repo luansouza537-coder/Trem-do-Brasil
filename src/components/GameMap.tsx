@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { City, Edge, ConstructionProject } from '../types';
+import { City, Edge, ConstructionProject, GameEvent } from '../types';
 import { getSuggestedConnections } from '../utils/geo';
 import { getTrackCostDetail, TERRAIN_COLORS } from '../utils/gameRules';
 
@@ -19,6 +19,8 @@ interface GameMapProps {
   maintenanceYards: string[];
   nearestYardDistances: Record<string, number>;
   constructionQueue?: ConstructionProject[];
+  activeEvents?: GameEvent[];
+  onFlyToReady?: (fn: (lat: number, lng: number) => void) => void;
 }
 
 const TILE_LAYERS = {
@@ -59,7 +61,11 @@ export default function GameMap({
   maintenanceYards = [],
   nearestYardDistances = {},
   constructionQueue = [],
+  activeEvents = [],
+  onFlyToReady,
 }: GameMapProps) {
+  const hasBlockConstruction = activeEvents.some(e => e.blockConstruction);
+  const hasStrike = activeEvents.some(e => e.type === 'strike');
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
@@ -386,12 +392,17 @@ export default function GameMap({
       ? `<span class="absolute -bottom-1.5 -left-1.5 text-[8px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-emerald-600 border border-slate-950 text-white font-bold shadow-md z-[60]" title="Pátio de Manutenção Ativo">🔧</span>`
       : '';
 
+    const crisisBadge = (hasBlockConstruction || hasStrike)
+      ? `<span class="absolute -top-1.5 -right-1.5 text-[9px] w-[15px] h-[15px] flex items-center justify-center rounded-full bg-rose-600 border border-slate-950 text-white font-black shadow-md z-[60] animate-pulse" title="Crise ativa">⚠</span>`
+      : '';
+
     return `
       <div class="relative flex items-center justify-center transition-all duration-350 ${scaleClass}">
         ${isSelected ? '<span class="absolute inline-flex h-9 w-9 rounded-full bg-amber-500/30 animate-pulse"></span>' : ''}
         ${isHovered && !isSelected ? '<span class="absolute inline-flex h-8 w-8 rounded-full bg-slate-300/20"></span>' : ''}
         ${hubBadge}
         ${yardBadge}
+        ${crisisBadge}
         <div class="w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 bg-slate-900 ${statusClass} transition-all" style="font-size: 11px;">
           ${cityIcon}
         </div>
@@ -468,6 +479,11 @@ export default function GameMap({
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     mapRef.current = map;
+
+    // Expose flyTo function to parent via callback
+    onFlyToReady?.((lat, lng) => {
+      mapRef.current?.setView([lat, lng], 6, { animate: true });
+    });
 
     // Apply first tileset
     const initialTiles = TILE_LAYERS[tileLayerType];

@@ -49,6 +49,14 @@ export function loadGame(slot = 1): SaveGame | null {
     if (save.currentPartyStatusEffect === undefined) save.currentPartyStatusEffect = null;
     if (!save.infraQueue) save.infraQueue = [];
     if (!save.yardLevels) save.yardLevels = {};
+    // Patch edge fields added in later versions
+    if (save.edges) {
+      save.edges = save.edges.map(e => ({
+        ...e,
+        doubled: e.doubled ?? false,
+        trainLevel: e.trainLevel ?? 1,
+      }));
+    }
     return save;
   } catch {
     return null;
