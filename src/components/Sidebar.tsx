@@ -259,14 +259,41 @@ export default function Sidebar({
       {/* Header */}
       <div className="p-4 bg-slate-900 border-b border-slate-700/80 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">
+          {/* RENIF Logo mark */}
           <div className="relative shrink-0">
-            <img src="/favicon.svg" alt="Trem do Brasil" className="w-11 h-11 drop-shadow-lg" />
+            <svg viewBox="0 0 48 48" className="w-12 h-12 drop-shadow-lg" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="24" cy="24" r="24" fill="#0f172a"/>
+              <circle cx="24" cy="24" r="22" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.5"/>
+              {/* Rails */}
+              <path d="M7 39 Q16 27 24 21 Q32 27 41 39" fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M10 41 Q18 29 24 23 Q30 29 38 41" fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round"/>
+              {/* Sleepers */}
+              <line x1="14" y1="34" x2="17" y2="36" stroke="#92400e" strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="19" y1="28" x2="22" y2="30" stroke="#92400e" strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="26" y1="28" x2="29" y2="30" stroke="#92400e" strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="31" y1="34" x2="34" y2="36" stroke="#92400e" strokeWidth="1.5" strokeLinecap="round"/>
+              {/* Locomotive */}
+              <rect x="19" y="14" width="10" height="6" rx="1.5" fill="#dc2626"/>
+              <rect x="26" y="11" width="6" height="9" rx="1.2" fill="#dc2626"/>
+              <rect x="27" y="12" width="3.5" height="2.5" rx="0.6" fill="#38bdf8"/>
+              <rect x="20" y="9" width="2" height="5" rx="1" fill="#1e293b"/>
+              <circle cx="22" cy="9" rx="2" ry="1" fill="#334155"/>
+              <circle cx="32" cy="17" r="1.5" fill="#fef08a"/>
+              <circle cx="21" cy="20.5" r="1.6" fill="#1e293b" stroke="#f59e0b" strokeWidth="0.8"/>
+              <circle cx="25.5" cy="20.5" r="1.6" fill="#1e293b" stroke="#f59e0b" strokeWidth="0.8"/>
+              <circle cx="30" cy="20.5" r="1.3" fill="#1e293b" stroke="#f59e0b" strokeWidth="0.8"/>
+              {/* Steam */}
+              <circle cx="20" cy="6" r="2" fill="#e2e8f0" opacity="0.55"/>
+              <circle cx="23.5" cy="4.5" r="1.5" fill="#e2e8f0" opacity="0.4"/>
+              {/* RENIF monogram */}
+              <text x="35" y="42" fontFamily="monospace" fontWeight="900" fontSize="9" fill="#f59e0b" opacity="0.85">RF</text>
+            </svg>
           </div>
           <div>
             <h1 className="font-display font-bold text-lg tracking-tight leading-none bg-gradient-to-r from-amber-400 via-orange-400 to-red-500 bg-clip-text text-transparent">
               Trem do Brasil
             </h1>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wide mt-0.5">REDE FERROVIÁRIA NACIONAL</p>
+            <p className="text-[10px] text-slate-500 font-bold tracking-widest mt-0.5 uppercase">RENIF · Rede Ferroviária</p>
           </div>
         </div>
 

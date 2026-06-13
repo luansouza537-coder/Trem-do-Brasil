@@ -809,22 +809,24 @@ export default function GameMap({
             lineCap: 'round'
           });
 
-          // 2. Dotted aquatic line representing shipping ferry lane
+          // 2. Dotted aquatic line representing shipping ferry lane (animated)
           const balsaLine = L.polyline(latlngs, {
-            color: '#0ea5e9', // Sky-500
+            color: '#0ea5e9',
             weight: 4.5,
             opacity: 0.9,
             dashArray: '6, 8',
-            lineCap: 'round'
+            lineCap: 'round',
+            className: 'leaflet-balsa-line'
           });
 
-          // 3. Central light core ripple wave
+          // 3. Central light core ripple wave (animated faster)
           const balsaRipple = L.polyline(latlngs, {
-            color: '#e0f2fe', // Sky-100 water ripple
+            color: '#e0f2fe',
             weight: 1.5,
             opacity: 0.8,
             dashArray: '1, 14',
-            lineCap: 'round'
+            lineCap: 'round',
+            className: 'leaflet-balsa-ripple'
           });
 
           // 4. Interactive hitbox
