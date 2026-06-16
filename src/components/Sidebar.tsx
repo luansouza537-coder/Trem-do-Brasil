@@ -169,6 +169,9 @@ export default function Sidebar({
             <span className="text-xs font-black text-slate-100">
               {MONTHS[monthIdx]}/2077 de <span className="text-amber-400">{gameYear}</span>
             </span>
+            <span className={`text-[9px] font-bold ${2077 - gameYear <= 5 ? 'text-rose-400' : 2077 - gameYear <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
+              ⏳ {2077 - gameYear} anos restantes
+            </span>
           </div>
           <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 shrink-0">
             {(['paused', 'normal', 'fast'] as const).map(speed => (
@@ -196,6 +199,20 @@ export default function Sidebar({
               {budgetState.currentBudget < 100000000000 && <span title="Caixa crítico!">⚠️</span>}
               R$ {budgetState.currentBudget.toLocaleString('pt-BR')}
             </span>
+            {(() => {
+              const payroll = workers ? (
+                (workers.terraplanagem ?? 0) * 850000 + (workers.assentamento ?? 0) * 1200000 +
+                (workers.sinalizacao ?? 0) * 2200000 + (workers.explosivos ?? 0) * 3500000 +
+                (workers.manutencao ?? 0) * 950000
+              ) : 0;
+              const flow = (budgetState.monthlyRevenue ?? 0) - payroll;
+              const fmtFlow = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
+              return (
+                <span className={`text-[9px] font-bold ${flow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {flow >= 0 ? '▲' : '▼'} R$ {fmtFlow(Math.abs(flow))}/mês
+                </span>
+              );
+            })()}
           </div>
           <div className="text-right flex flex-col items-end gap-0.5">
             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Conexões</span>
@@ -223,7 +240,7 @@ export default function Sidebar({
       <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-0.5 shrink-0">
         {([
           { id: 'cities', label: '🗺️ Rotas', badge: false },
-          { id: 'operations', label: '👷 Equipe', badge: activeEvents.length > 0 },
+          { id: 'operations', label: `👷 Equipe${constructionQueue.length > 0 ? ` (${constructionQueue.length})` : ''}`, badge: activeEvents.length > 0 },
           { id: 'missions', label: '🎯 Objetivos', badge: missionResults.some(m => m.completed) && newsItems.length > 0 },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}

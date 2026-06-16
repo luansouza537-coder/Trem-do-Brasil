@@ -62,6 +62,7 @@ export default function CitiesTab({
   const [connsFilter, setConnsFilter] = useState<'all' | '0' | '1' | '2'>('all');
   const [showLegend, setShowLegend] = useState(false);
   const [showStateGrid, setShowStateGrid] = useState(false);
+  const [sortByConns, setSortByConns] = useState(false);
 
   const cityConnections = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -88,8 +89,28 @@ export default function CitiesTab({
       const conns = cityConnections[city.id] || 0;
       const connsMatch = connsFilter === 'all' || conns.toString() === connsFilter;
       return nameMatch && typeMatch && connsMatch;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [cities, search, typeFilter, connsFilter, cityConnections]);
+    }).sort((a, b) => sortByConns
+      ? (cityConnections[b.id] || 0) - (cityConnections[a.id] || 0)
+      : a.name.localeCompare(b.name));
+  }, [cities, search, typeFilter, connsFilter, cityConnections, sortByConns]);
+
+  const hasActiveFilter = search !== '' || typeFilter !== 'all' || connsFilter !== 'all';
+
+  // Rota mais lucrativa por cidade (para destacar no card de rotas)
+  const topEdgeRevByCity = useMemo(() => {
+    const result: Record<string, string> = {};
+    cities.forEach(city => {
+      const cityEdges = edges.filter(e => (e.from === city.id || e.to === city.id) && e.status !== 'building');
+      if (cityEdges.length < 2) return;
+      let maxRev = -1, maxId = '';
+      cityEdges.forEach(e => {
+        const rev = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+        if (rev > maxRev) { maxRev = rev; maxId = e.id; }
+      });
+      result[city.id] = maxId;
+    });
+    return result;
+  }, [cities, edges]);
 
   return (
     <>
@@ -351,9 +372,28 @@ export default function CitiesTab({
       </div>
 
       {/* Directory Title */}
-      <div className="px-4 py-2 bg-slate-950/80 text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex justify-between shrink-0">
+      <div className="px-4 py-2 bg-slate-950/80 text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex justify-between items-center shrink-0">
         <span>Catálogo ({filteredCities.length} cidades)</span>
-        <span>clique para focar</span>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setSortByConns(v => !v)}
+            title={sortByConns ? 'Ordenar A-Z' : 'Ordenar por conexões'}
+            className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border transition cursor-pointer ${
+              sortByConns ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+            }`}
+          >
+            {sortByConns ? '🔗 Conex.' : 'A-Z'}
+          </button>
+          {hasActiveFilter && (
+            <button
+              onClick={() => { setSearch(''); setTypeFilter('all'); setConnsFilter('all'); }}
+              className="px-1.5 py-0.5 rounded text-[8.5px] font-bold border bg-rose-950/40 text-rose-400 border-rose-800/40 hover:bg-rose-900/60 transition cursor-pointer"
+              title="Limpar filtros"
+            >
+              ✕ limpar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Directory List */}
@@ -370,6 +410,7 @@ export default function CitiesTab({
             const isUpgraded = upgradedHubs.includes(city.id);
             const hasYard = maintenanceYards.includes(city.id);
             const maxConns = isUpgraded ? 3 : 2;
+            const topEdgeId = topEdgeRevByCity[city.id];
 
             return (
               <div
@@ -426,6 +467,21 @@ export default function CitiesTab({
 
                 {isSelected && (
                   <div className="flex flex-col gap-1.5 border-t border-slate-900/50 pt-2" onClick={(e) => e.stopPropagation()}>
+                    {/* Rota mais lucrativa */}
+                    {topEdgeId && (() => {
+                      const topEdge = edges.find(e => e.id === topEdgeId);
+                      if (!topEdge) return null;
+                      const otherId = topEdge.from === city.id ? topEdge.to : topEdge.from;
+                      const otherCity = cities.find(c => c.id === otherId);
+                      const rev = Math.round(topEdge.distance * (topEdge.type === 'balsa' ? 40000 : 80000));
+                      const fmt = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
+                      return (
+                        <div className="flex items-center justify-between bg-yellow-950/20 border border-yellow-600/30 rounded px-2 py-1">
+                          <span className="text-[9px] text-yellow-300 font-bold">⭐ Rota mais lucrativa: {topEdge.type === 'balsa' ? '🚢' : '🚂'} {otherCity?.name}</span>
+                          <span className="text-[8.5px] text-yellow-400 font-bold font-mono">+R$ {fmt(rev)}/mês</span>
+                        </div>
+                      );
+                    })()}
                     {/* Terminal Central */}
                     {(() => {
                       const buildingHub = infraQueue.find(p => p.cityId === city.id && p.type === 'hub');

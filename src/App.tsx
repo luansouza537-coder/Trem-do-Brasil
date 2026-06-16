@@ -160,6 +160,19 @@ export default function App() {
     sound.setMute(isMuted);
   }, [isMuted]);
 
+  // Keyboard shortcut: P = pause/resume
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P') {
+        if (welcomeOpen || victoryOpen || gameOverOpen) return;
+        if (document.activeElement?.tagName === 'INPUT') return;
+        setPlaySpeed(prev => prev === 'paused' ? 'normal' : 'paused');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [welcomeOpen, victoryOpen, gameOverOpen]);
+
   // Auto-save game state to localStorage whenever key state changes (debounced 2s)
   useEffect(() => {
     if (welcomeOpen) return;

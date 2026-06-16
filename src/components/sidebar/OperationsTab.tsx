@@ -227,10 +227,14 @@ export default function OperationsTab({
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-amber-500" /> Equipes de Obra:
+            <span className="text-slate-500 font-normal normal-case tracking-normal">
+              {Object.values(workers).reduce((a, b) => a + b, 0).toLocaleString('pt-BR')} pessoas
+            </span>
           </span>
-          <span className="text-[9.5px] text-amber-400 font-bold font-mono">
-            R$ {totalPayroll.toLocaleString('pt-BR')}/mês
-          </span>
+          <div className="text-right">
+            <span className="text-[9.5px] text-amber-400 font-bold font-mono block">R$ {totalPayroll.toLocaleString('pt-BR')}/mês</span>
+            <span className="text-[8px] text-slate-500 font-mono">R$ {(totalPayroll * 12).toLocaleString('pt-BR')}/ano</span>
+          </div>
         </div>
 
         <div className="flex flex-col gap-1.5 mt-1">
@@ -318,7 +322,12 @@ export default function OperationsTab({
       {constructionQueue.length > 0 && (
         <div className="p-3.5 flex flex-col gap-2 bg-orange-950/10 border-t border-orange-500/20">
           <span className="text-[10px] text-orange-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-            🚧 Obras em Andamento ({constructionQueue.length}):
+            🚧 Obras em Andamento ({constructionQueue.length})
+            {constructionQueue.length > 0 && (
+              <span className="text-[9px] text-slate-500 normal-case font-normal tracking-normal">
+                — média {Math.round(constructionQueue.reduce((s, p) => s + p.monthsRemaining, 0) / constructionQueue.length)} meses
+              </span>
+            )}
           </span>
           <div className="flex flex-col gap-2">
             {constructionQueue.map(p => {
