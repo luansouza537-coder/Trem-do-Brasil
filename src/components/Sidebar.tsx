@@ -101,13 +101,18 @@ export default function Sidebar({
 }: SidebarProps) {
   const importFileRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
+  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const activeConns = edges.length;
   const maxConnsCount = cities.length - 1;
   const pctComplete = Math.min(100, Math.round((activeConns / maxConnsCount) * 100));
 
   return (
-    <div id="control-sidebar" className="w-full md:w-96 text-slate-100 flex flex-col h-[40vh] md:h-full overflow-hidden select-none shrink-0">
+    <div id="control-sidebar" className={`w-full md:w-96 text-slate-100 flex flex-col md:h-full overflow-hidden select-none shrink-0 ${
+      mobileExpanded
+        ? 'fixed inset-0 z-[9999] h-screen'
+        : 'h-[40vh]'
+    }`}>
       {/* Header */}
       <div className="p-4 bg-slate-900 border-b border-slate-700/80 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">
@@ -143,6 +148,11 @@ export default function Sidebar({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <button onClick={() => setMobileExpanded(e => !e)}
+            className="md:hidden p-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition text-[11px] font-black"
+            title={mobileExpanded ? 'Minimizar painel' : 'Expandir painel'}>
+            {mobileExpanded ? '✕' : '⬆'}
+          </button>
           <button onClick={onAdvanceMonth}
             className="p-1.5 rounded-lg border border-sky-900/40 bg-sky-950/20 text-sky-400 hover:bg-sky-900/40 hover:text-sky-200 transition text-[9px] font-black uppercase tracking-wider"
             title="Avançar 1 mês manualmente">
