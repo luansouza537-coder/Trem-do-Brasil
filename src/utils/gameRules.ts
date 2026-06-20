@@ -95,53 +95,94 @@ export function getTrackResourcesRequired(
 }
 
 export const WORKER_SALARIES: Record<keyof GameWorkers, number> = {
-  basico: 5000000,       // R$ 5.000.000 por mês (escala realista do jogo, compatível com o orçamento de trilhões/bilhões!)
-  operador: 12000000,    // R$ 12.000.000 por mês
-  especialista: 25050300, // R$ 25.050.300 por mês
-  perfurador: 18000000,   // R$ 18.000.000 por mês
+  terraplanagem: 4_500_000,
+  assentamento:  5_500_000,
+  sinalizacao:   7_000_000,
+  explosivos:    12_000_000,
+  manutencao:    4_000_000,
+};
+
+// Onboarding cost = 3× monthly salary per worker type
+export const WORKER_HIRE_COST: Record<keyof GameWorkers, number> = {
+  terraplanagem: 4_500_000 * 3,
+  assentamento:  5_500_000 * 3,
+  sinalizacao:   7_000_000 * 3,
+  explosivos:    12_000_000 * 3,
+  manutencao:    4_000_000 * 3,
+};
+
+// Severance = 2× monthly salary per worker type
+export const WORKER_SEVERANCE: Record<keyof GameWorkers, number> = {
+  terraplanagem: 4_500_000 * 2,
+  assentamento:  5_500_000 * 2,
+  sinalizacao:   7_000_000 * 2,
+  explosivos:    12_000_000 * 2,
+  manutencao:    4_000_000 * 2,
 };
 
 export const WORKER_NAMES: Record<keyof GameWorkers, string> = {
-  basico: 'Básico (Servente, Carpinteiro, Armador)',
-  operador: 'Operador de Máquinas (Escavadeira, Trator, Britador)',
-  especialista: 'Especialista (Soldador, Engenheiro, Eletricista)',
-  perfurador: 'Túnel / Montanha (Perfuratriz, Mangoteiro)',
+  terraplanagem: 'Terraplanagem',
+  assentamento:  'Assentamento de Trilhos',
+  sinalizacao:   'Sinalização & Elétrica',
+  explosivos:    'Explosivos & Túneis',
+  manutencao:    'Manutenção',
 };
 
-/**
- * Calculates workforce requirements to build a stretch.
- * @param distance Length of the route in km
- * @param type 'rail' or 'balsa'
- * @param hasExplosives If the route consumes explosives
- */
+export function getConstructionMonths(
+  cityA: City,
+  cityB: City,
+  distance: number,
+  type: 'rail' | 'balsa',
+  workers: GameWorkers
+): number {
+  if (type === 'balsa') {
+    // Waterways: fixed base of 6 months + 1 month per 400km of surveying/dredging
+    // Worker count on assentamento speeds it up slightly
+    const baseBalsaMonths = 6 + Math.ceil(distance / 400);
+    const workerBonus = workers.assentamento >= 200 ? 0.75 : workers.assentamento >= 50 ? 0.9 : 1.0;
+    return Math.max(4, Math.ceil(baseBalsaMonths * workerBonus));
+  }
+
+  const isNorth = (s: string) => ['AM','PA','RO','RR','AP','AC','TO'].includes(s);
+  const isMountain = (s: string) => ['SC','RS','RJ','ES','MG'].includes(s);
+
+  // Base pace in km/month before worker scaling
+  // Realistic pace: a well-staffed front manages ~15-25 km/month sustained
+  let kmPerMonth = 20;
+  if (isNorth(cityA.state) || isNorth(cityB.state)) kmPerMonth = 12;
+  else if (isMountain(cityA.state) || isMountain(cityB.state)) kmPerMonth = 10;
+
+  // Worker scaling: each worker type has diminishing returns
+  // Minimum viable crew = 50; optimal = 600-1000; beyond 2000 = no extra gain
+  const coreWorkers = workers.terraplanagem + workers.assentamento;
+  let workerMod = 0.25; // skeleton crew
+  if (coreWorkers >= 50)   workerMod = 0.40;
+  if (coreWorkers >= 150)  workerMod = 0.60;
+  if (coreWorkers >= 300)  workerMod = 0.80;
+  if (coreWorkers >= 600)  workerMod = 1.00;
+  if (coreWorkers >= 1000) workerMod = 1.15;
+  if (coreWorkers >= 1500) workerMod = 1.25;
+  if (coreWorkers >= 2000) workerMod = 1.35; // hard cap
+
+  // Sinalização crew adds up to +15% speed (logistics coordination)
+  const sigMod = Math.min(1.15, 1.0 + workers.sinalizacao * 0.001);
+  const effectiveKmPerMonth = kmPerMonth * workerMod * sigMod;
+  return Math.max(4, Math.ceil(distance / effectiveKmPerMonth));
+}
+
 export function getTrackWorkersRequired(
   cityA: City,
   cityB: City,
   distance: number,
   type: 'rail' | 'balsa',
-  hasExplosives: boolean
+  needsExplosivos: boolean
 ): GameWorkers {
-  if (type === 'balsa') {
-    return {
-      basico: Math.max(3, Math.ceil(distance * 0.08)),
-      operador: Math.max(1, Math.ceil(distance * 0.03)),
-      especialista: Math.max(2, Math.ceil(distance * 0.04)),
-      perfurador: 0,
-    };
-  }
-
-  // Montanha/Serra detection
-  const isSerras =
-    (cityA.portType === 'maritime' && cityB.portType !== 'maritime') ||
-    (cityB.portType === 'maritime' && cityA.portType !== 'maritime');
-
-  const needsExplosives = hasExplosives || isSerras || (distance > 250 && Math.random() > 0.5);
-
   return {
-    basico: Math.max(10, Math.ceil(distance * 0.25)),
-    operador: Math.max(4, Math.ceil(distance * 0.12)),
-    especialista: Math.max(3, Math.ceil(distance * 0.06)),
-    perfurador: needsExplosives ? Math.max(5, Math.ceil(distance * 0.10)) : 0,
+    terraplanagem: type === 'balsa' ? 40 : Math.ceil(distance * 0.50),
+    assentamento:  type === 'balsa' ? 20 : Math.ceil(distance * 0.30),
+    sinalizacao:   Math.ceil(distance * 0.10),
+    explosivos:    needsExplosivos ? Math.max(10, Math.ceil(distance * 0.06)) : 0,
+    manutencao:    0,
   };
 }
 
@@ -159,39 +200,64 @@ export interface FundGrant {
 /**
  * Calculates detail costs for standard rail connection based on geographical factors and terrain.
  */
+export type TerrainKey = 'cerrado' | 'amazon' | 'pantanal' | 'mountain' | 'valley';
+
+export const TERRAIN_COLORS: Record<TerrainKey, string> = {
+  cerrado:  '#ef4444',
+  amazon:   '#22c55e',
+  pantanal: '#06b6d4',
+  mountain: '#a855f7',
+  valley:   '#3b82f6',
+};
+
 export function getTrackCostDetail(cityA: City, cityB: City, distance: number) {
   const isNorth = (state: string) => ['AM', 'PA', 'RO', 'RR', 'AP', 'AC', 'TO'].includes(state);
   const isPantanal = (state: string) => ['MS', 'MT'].includes(state);
 
   let terrainName = 'Planalto / Cerrado (Custo Regular)';
   let multiplier = 1.0;
+  let terrainKey: TerrainKey = 'cerrado';
 
   if (isNorth(cityA.state) || isNorth(cityB.state)) {
     terrainName = 'Floresta Amazônica (Preservação e Travessia de Rios)';
     multiplier = 2.0;
+    terrainKey = 'amazon';
   } else if (isPantanal(cityA.state) || isPantanal(cityB.state)) {
     terrainName = 'Pantanal Wetlands (Pontes em Áreas Inundadas)';
     multiplier = 1.8;
+    terrainKey = 'pantanal';
   } else if (
     (cityA.portType === 'maritime' && cityB.portType !== 'maritime') ||
     (cityB.portType === 'maritime' && cityA.portType !== 'maritime')
   ) {
     terrainName = 'Serras e Chapadas (Subidas e Declives Íngremes)';
     multiplier = 2.2;
+    terrainKey = 'mountain';
   } else if (cityA.portType === 'fluvial' && cityB.portType === 'fluvial') {
     terrainName = 'Vales de Rios (Solos de Várzea Instável)';
     multiplier = 1.3;
+    terrainKey = 'valley';
   }
 
-  const baseCostPerKm = 40000000; // R$ 40.000.000 / km
+  const baseCostPerKm = 40000000;
   const unitCost = baseCostPerKm * multiplier;
   const totalCost = Math.round(distance * unitCost);
 
+  // Infrastructure structures count
+  const bridgesCount = terrainKey === 'amazon'   ? Math.ceil(distance / 90)
+                     : terrainKey === 'pantanal' ? Math.ceil(distance / 55)
+                     : terrainKey === 'valley'   ? Math.ceil(distance / 120)
+                     : 0;
+  const tunnelsCount = terrainKey === 'mountain' ? Math.ceil(distance / 100) : 0;
+
   return {
     terrainName,
+    terrainKey,
     multiplier,
     unitCost,
     totalCost,
+    bridgesCount,
+    tunnelsCount,
   };
 }
 
@@ -325,21 +391,23 @@ export function calculateRailwayDistancesFromYards(
   cities: City[],
   edges: Edge[],
   maintenanceYards: string[]
-): Record<string, number> {
+): { distances: Record<string, number>; nearestYardIds: Record<string, string> } {
   const distances: Record<string, number> = {};
+  const nearestYardIds: Record<string, string> = {};
   cities.forEach(c => {
     distances[c.id] = Infinity;
   });
 
   if (maintenanceYards.length === 0) {
-    return distances;
+    return { distances, nearestYardIds };
   }
 
   // Initialize yards with distance 0
-  const queue: { cityId: string; dist: number }[] = [];
+  const queue: { cityId: string; dist: number; yardId: string }[] = [];
   maintenanceYards.forEach(yardId => {
     distances[yardId] = 0;
-    queue.push({ cityId: yardId, dist: 0 });
+    nearestYardIds[yardId] = yardId;
+    queue.push({ cityId: yardId, dist: 0, yardId });
   });
 
   // Dijkstra along the active edges graph
@@ -353,7 +421,7 @@ export function calculateRailwayDistancesFromYards(
   while (queue.length > 0) {
     // Sort queue to get lowest distance (Dijkstra)
     queue.sort((a, b) => a.dist - b.dist);
-    const { cityId, dist } = queue.shift()!;
+    const { cityId, dist, yardId } = queue.shift()!;
 
     if (dist > distances[cityId]) continue;
 
@@ -362,10 +430,116 @@ export function calculateRailwayDistancesFromYards(
       const nextDist = dist + neighObj.dist;
       if (nextDist < distances[neighObj.to]) {
         distances[neighObj.to] = nextDist;
-        queue.push({ cityId: neighObj.to, dist: nextDist });
+        nearestYardIds[neighObj.to] = yardId;
+        queue.push({ cityId: neighObj.to, dist: nextDist, yardId });
       }
     });
   }
 
-  return distances;
+  return { distances, nearestYardIds };
 }
+
+export function getCityTypeRevenueMultiplier(type: City['type']): number {
+  switch (type) {
+    case 'mineracao':     return 1.4;
+    case 'polo_industrial': return 1.25;
+    case 'polo_agricola': return 1.2;
+    case 'fronteira':     return 1.15;
+    default:              return 1.0;
+  }
+}
+
+export function getMonthlyRevenue(
+  edges: Edge[],
+  workers: { manutencao: number },
+  activeEffects: string[] = [],
+  cities: City[] = [],
+  balsaFrozenOverride?: boolean
+): number {
+  const completedEdges = edges.filter(e => e.status !== 'building');
+  const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
+  const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
+  const base = completedEdges.reduce((sum, e) => {
+    if (e.type === 'balsa' && balsaFrozen) return sum;
+    const baseKm = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+    const cityA = cities.find(c => c.id === e.from);
+    const cityB = cities.find(c => c.id === e.to);
+    const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
+    const multB = cityB ? getCityTypeRevenueMultiplier(cityB.type) : 1.0;
+    const avgMult = (multA + multB) / 2;
+    const doubledMult = e.doubled ? 1.5 : 1.0;
+    const trainMult = TRAIN_LEVEL_MULT[(e.trainLevel ?? 1) as 1|2|3];
+    // Passenger upgrade: +40% on high-population endpoints (capitals + industrial)
+    const passengerBonus = e.passenger
+      ? (() => {
+          const highPop = (c: City | undefined) => c && (c.type === 'capital' || c.type === 'polo_industrial');
+          return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
+        })()
+      : 1.0;
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus);
+  }, 0);
+  // Without any maintenance workers revenue decays by 15%
+  const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;
+  // Big maintenance team bonus: +5% revenue per 50 workers above 100 (max +20%)
+  const maintBonus = workers.manutencao >= 100
+    ? Math.min(1.20, 1.0 + Math.floor((workers.manutencao - 100) / 50) * 0.05)
+    : 1.0;
+  return Math.round(base * maintPenalty * maintBonus);
+}
+
+export function getYearInflationMultiplier(gameYear: number): number {
+  if (gameYear <= 2035) return 1.0;
+  if (gameYear <= 2045) return 1.15;
+  if (gameYear <= 2055) return 1.35;
+  if (gameYear <= 2065) return 1.60;
+  return 1.90;
+}
+
+// Yard level configs for Pátio de Manutenção
+export const YARD_COVERAGE_KM: Record<1|2|3, number> = {
+  1: 600,
+  2: 900,
+  3: 1400,
+};
+
+export const YARD_CONFIGS: Record<1|2|3, {
+  name: string;
+  coverage: number;
+  cost: number;
+  months: number;
+  workers: Partial<GameWorkers>;
+  resources: Partial<GameResources>;
+}> = {
+  1: {
+    name: 'Básico',
+    coverage: 600,
+    cost: 15_000_000_000,
+    months: 6,
+    workers: { terraplanagem: 20, assentamento: 10 },
+    resources: { aco: 200, brita: 300, cimento: 150 },
+  },
+  2: {
+    name: 'Avançado',
+    coverage: 900,
+    cost: 28_000_000_000,
+    months: 10,
+    workers: { terraplanagem: 40, assentamento: 20 },
+    resources: { aco: 400, brita: 600, cimento: 300, cobre: 50 },
+  },
+  3: {
+    name: 'Industrial',
+    coverage: 1400,
+    cost: 50_000_000_000,
+    months: 16,
+    workers: { terraplanagem: 80, assentamento: 40, sinalizacao: 20 },
+    resources: { aco: 800, brita: 1200, cimento: 600, cobre: 100, madeira: 200 },
+  },
+};
+
+// Hub (Terminal Central) config
+export const HUB_CONFIG = {
+  cost: 30_000_000_000,
+  months: 8,
+  workers: { assentamento: 30, sinalizacao: 15 },
+  resources: { aco: 500, cimento: 300, cobre: 80 } as Partial<GameResources>,
+};

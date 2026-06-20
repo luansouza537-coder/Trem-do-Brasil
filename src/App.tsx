@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CITIES } from './data/cities';
-import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers } from './types';
+import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from './types';
+import { MISSIONS } from './utils/missions';
+import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } from './utils/news';
 import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
+import PauseScreen from './components/PauseScreen';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -13,12 +16,22 @@ import {
 import {
   getTrackCostDetail,
   getIntermodalGrants,
+  RESOURCE_NAMES,
   calculateRailwayDistancesFromYards,
   getTrackResourcesRequired,
   RESOURCE_BUY_PRICES,
   getTrackWorkersRequired,
+  getConstructionMonths,
   WORKER_SALARIES,
-  WORKER_NAMES
+  WORKER_HIRE_COST,
+  WORKER_SEVERANCE,
+  WORKER_NAMES,
+  getYearInflationMultiplier,
+  getMonthlyRevenue,
+  getCityTypeRevenueMultiplier,
+  YARD_CONFIGS,
+  HUB_CONFIG,
+  YARD_COVERAGE_KM
 } from './utils/gameRules';
 import { 
   Train, 
@@ -41,7 +54,8 @@ import {
   Check,
   Layers
 } from 'lucide-react';
-import { saveGame, loadGame, deleteSave, hasSave, getSaveDate } from './utils/persistence';
+import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates, SaveGame } from './utils/persistence';
+import { SCHEDULED_EVENTS } from './data/scheduledEvents';
 
 interface Toast {
   id: string;
@@ -57,14 +71,18 @@ const HISTORIC_FACTS = [
   "Construída no coração de Rondônia, a lendária Estrada de Ferro Madeira-Mamoré ficou tragicamente conhecida como a 'Ferrovia do Diabo', devido às milhares de vidas cobradas por malária e febre amarela durante o ciclo da borracha."
 ];
 
+const MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 export default function App() {
   const lastPaidMonthRef = React.useRef('');
+  const lowBudgetAlertedRef = React.useRef(false);
+  const edgesRef = React.useRef<Edge[]>([]);
 
   // Game States
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
   const [hoveredCityId, setHoveredCityId] = useState<string | null>(null);
-  const [tileLayerType, setTileLayerType] = useState<'voyager' | 'positron' | 'dark' | 'satellite'>('dark');
+  const [tileLayerType, setTileLayerType] = useState<'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain'>('dark');
   const [isMuted, setIsMuted] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [flyToSignal, setFlyToSignal] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
@@ -72,6 +90,8 @@ export default function App() {
   // Tycoon expansions
   const [upgradedHubs, setUpgradedHubs] = useState<string[]>([]);
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
+  const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
+  const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
 
   // Resource & Crises states
@@ -88,12 +108,20 @@ export default function App() {
 
   // Workforce state (workers pool and spent payroll)
   const [workers, setWorkers] = useState<GameWorkers>({
-    basico: 35,
-    operador: 15,
-    especialista: 8,
-    perfurador: 4
+    terraplanagem: 500,
+    assentamento:  300,
+    sinalizacao:   80,
+    explosivos:    30,
+    manutencao:    150,
   });
   const [spentOnWorkers, setSpentOnWorkers] = useState(0);
+  const [constructionQueue, setConstructionQueue] = useState<ConstructionProject[]>([]);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [saveSlot, setSaveSlot] = useState(1);
+  const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
+  const [completedMissions, setCompletedMissions] = useState<string[]>([]);
+  const [expiredMissions, setExpiredMissions] = useState<string[]>([]);
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
 
   const [activeEvents, setActiveEvents] = useState<GameEvent[]>([]);
   const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
@@ -117,11 +145,33 @@ export default function App() {
   const [hasSaveGame, setHasSaveGame] = useState(() => hasSave());
   const [saveDate, setSaveDate] = useState<string | null>(() => getSaveDate());
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggeredEventIdsRef = React.useRef<string[]>([]);
+  const currentEventRef = React.useRef<GameEvent | null>(null);
+  const [triggeredEventIds, setTriggeredEventIds] = useState<string[]>([]);
+  const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
+
+  // Keep edgesRef in sync for use inside non-edges-dependent effects
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { triggeredEventIdsRef.current = triggeredEventIds; }, [triggeredEventIds]);
+  useEffect(() => { currentEventRef.current = currentEvent; }, [currentEvent]);
 
   // Load sound setting preference
   useEffect(() => {
     sound.setMute(isMuted);
   }, [isMuted]);
+
+  // Keyboard shortcut: P = pause/resume
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P') {
+        if (welcomeOpen || victoryOpen || gameOverOpen) return;
+        if (document.activeElement?.tagName === 'INPUT') return;
+        setPlaySpeed(prev => prev === 'paused' ? 'normal' : 'paused');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [welcomeOpen, victoryOpen, gameOverOpen]);
 
   // Auto-save game state to localStorage whenever key state changes (debounced 2s)
   useEffect(() => {
@@ -131,16 +181,22 @@ export default function App() {
       saveGame({
         edges, upgradedHubs, maintenanceYards, constructionType,
         resources, spentOnResources, workers, spentOnWorkers,
-        activeEvents, gameYear, monthIdx,
-      });
+        activeEvents, gameYear, monthIdx, constructionQueue, totalRevenue,
+        completedMissions, newsItems,
+        triggeredEventIds,
+        currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
+        infraQueue, yardLevels,
+      }, saveSlot);
       setHasSaveGame(true);
-      setSaveDate(getSaveDate());
+      setSaveDate(getSaveDate(saveSlot));
+      setSlotDates(getAllSlotDates());
     }, 2000);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
-      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen]);
+      spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
+      infraQueue, yardLevels]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -181,96 +237,288 @@ export default function App() {
     if (lastPaidMonthRef.current !== monthKey) {
       lastPaidMonthRef.current = monthKey;
 
-      const monthlyPayroll = (workers.basico * WORKER_SALARIES.basico) +
-                             (workers.operador * WORKER_SALARIES.operador) +
-                             (workers.especialista * WORKER_SALARIES.especialista) +
-                             (workers.perfurador * WORKER_SALARIES.perfurador);
+      const monthlyPayroll = (workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
+                             (workers.assentamento  * WORKER_SALARIES.assentamento)  +
+                             (workers.sinalizacao   * WORKER_SALARIES.sinalizacao)   +
+                             (workers.explosivos    * WORKER_SALARIES.explosivos)    +
+                             (workers.manutencao    * WORKER_SALARIES.manutencao);
 
-      if (monthlyPayroll > 0) {
-        setSpentOnWorkers((prev) => prev + monthlyPayroll);
-        showToast(`🚚 Folha de Pagamento: R$ ${monthlyPayroll.toLocaleString('pt-BR')} pagos para ${workers.basico + workers.operador + workers.especialista + workers.perfurador} profissionais em campo.`, 'info');
+      const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
+      const payrollMultiplier = activeEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
+      const adjustedPayroll = Math.round(monthlyPayroll * payrollMultiplier);
+      if (adjustedPayroll > 0) {
+        setSpentOnWorkers((prev) => prev + adjustedPayroll);
       }
+
+      // Collect revenue from all completed routes
+      const activeEffects = activeEvents.map(e => e.statusEffect);
+      const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
+      let compoundRevMult = activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
+      if (compoundRevMult > 1.0) compoundRevMult = Math.min(1.35, compoundRevMult);
+      const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
+      const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0);
+      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent);
+      const doubledBonus = cyberAttack ? 0 : edgesRef.current
+        .filter(e => e.status !== 'building' && e.doubled)
+        .reduce((s, e) => s + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000) * 0.5), 0);
+      const trainBonus = cyberAttack ? 0 : edgesRef.current
+        .filter(e => e.status !== 'building' && e.trainLevel && e.trainLevel > 1)
+        .reduce((s, e) => {
+          const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+          const mult = e.trainLevel === 2 ? 0.25 : e.trainLevel === 3 ? 0.60 : 0;
+          return s + Math.round(base * mult);
+        }, 0);
+      const monthlyRev = cyberAttack ? 0 : (Math.round((baseRev + doubledBonus + trainBonus) * compoundRevMult) + monthlyBonusTotal);
+      if (cyberAttack) {
+        showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
+      }
+      if (monthlyRev > 0) {
+        setTotalRevenue(prev => prev + monthlyRev);
+      }
+
+      // Monthly summary toast
+      const net = monthlyRev - adjustedPayroll;
+      const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(2)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
+      showToast(
+        `📊 ${MONTHS_PT[monthIdx]}/${gameYear} — Receita: +R$ ${fmt(monthlyRev)} | Folha: -R$ ${fmt(adjustedPayroll)} | Saldo: ${net >= 0 ? '+' : ''}R$ ${fmt(net)}`,
+        net >= 0 ? 'success' : 'info'
+      );
+
+      // Random monthly news
+      const rnd = newsRandom(gameYear, monthIdx);
+      if (rnd) setNewsItems(prev => [rnd, ...prev].slice(0, 40));
+
+      // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
+
+      // Advance construction queue
+      setConstructionQueue(prev => {
+        const stillBuilding: ConstructionProject[] = [];
+        const completed: ConstructionProject[] = [];
+        prev.forEach(p => {
+          if (p.monthsRemaining <= 1) completed.push(p);
+          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
+        });
+        if (completed.length > 0) {
+          const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+          setEdges(prevEdges => prevEdges.map(e => {
+            const done = completed.find(p => p.edgeId === e.id);
+            return done ? { ...e, status: 'complete' as const } : e;
+          }));
+          // Return allocated workers to the free pool
+          const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
+          completed.forEach(p => {
+            if (p.workersAllocated) {
+              (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
+                totalReturned[k] += p.workersAllocated[k];
+              });
+            }
+          });
+          const anyReturned = Object.values(totalReturned).some(v => v > 0);
+          if (anyReturned) {
+            setWorkers(prev => ({
+              terraplanagem: prev.terraplanagem + totalReturned.terraplanagem,
+              assentamento:  prev.assentamento  + totalReturned.assentamento,
+              sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
+              explosivos:    prev.explosivos    + totalReturned.explosivos,
+              manutencao:    prev.manutencao,
+            }));
+          }
+          completed.forEach(p => {
+            const cityA = CITIES.find(c => c.id === p.from);
+            const cityB = CITIES.find(c => c.id === p.to);
+            const workerReturn = p.workersAllocated
+              ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
+              : '';
+            showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
+            sound.playConnect();
+            if (cityA && cityB) {
+              setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 40));
+            }
+          });
+        }
+        return stillBuilding;
+      });
+
+      // Process infrastructure build queue
+      setInfraQueue(prev => {
+        const stillBuilding: InfraProject[] = [];
+        const completedInfra: InfraProject[] = [];
+        prev.forEach(p => {
+          if (p.monthsRemaining <= 1) completedInfra.push(p);
+          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
+        });
+        completedInfra.forEach(p => {
+          const cityName = CITIES.find(c => c.id === p.cityId)?.name ?? p.cityId;
+          if (p.type === 'hub') {
+            setUpgradedHubs(prev2 => [...prev2, p.cityId]);
+            showToast(`★ Terminal Central em ${cityName} concluído! +1 slot de conexão.`, 'success');
+          } else {
+            setMaintenanceYards(prev2 => [...prev2, p.cityId]);
+            setYardLevels(prev2 => ({ ...prev2, [p.cityId]: p.yardLevel ?? 1 }));
+            const lvlName = YARD_CONFIGS[p.yardLevel ?? 1].name;
+            const cov = YARD_CONFIGS[p.yardLevel ?? 1].coverage;
+            showToast(`🔧 Pátio ${lvlName} em ${cityName} concluído! Cobertura: ${cov}km.`, 'success');
+          }
+          // Return allocated workers
+          setWorkers(prev2 => ({
+            terraplanagem: prev2.terraplanagem + (p.workersAllocated.terraplanagem ?? 0),
+            assentamento: prev2.assentamento + (p.workersAllocated.assentamento ?? 0),
+            sinalizacao: prev2.sinalizacao + (p.workersAllocated.sinalizacao ?? 0),
+            explosivos: prev2.explosivos,
+            manutencao: prev2.manutencao,
+          }));
+          sound.playConnect();
+        });
+        return stillBuilding;
+      });
     }
 
-    // 1. Durations Tick
+    // 1. Durations Tick + monthly fine deductions
     setActiveEvents((prev) => {
       const updated = prev.map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }));
       const expired = updated.filter(e => e.monthsLeft <= 0);
       const active = updated.filter(e => e.monthsLeft > 0);
 
+      // Deduct monthly crisis fines
+      let totalFines = 0;
+      prev.forEach(e => {
+        if (e.costPerMonth && e.monthsLeft > 0) totalFines += e.costPerMonth;
+      });
+      if (totalFines > 0) {
+        setSpentOnResources(p => p + totalFines);
+        const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+        showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
+      }
+
       expired.forEach(e => {
-        showToast(`Crise resolvida: os efeitos da crise "${e.title}" terminaram!`, 'success');
+        showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');
       });
 
       return active;
     });
 
-    // 2. Random Event Trigger Roll (e.g. 15% probability of checking, max 2 concurrent events)
-    // Avoid triggering in the first 4 months of 2027 to let the user get acclimated
-    if (gameYear === 2027 && monthIdx < 4) return;
+    // 2. Calendar-based scheduled event trigger
+    const triggerMonth = monthIdx + 1; // monthIdx is 0-based; triggerMonth is 1-based
+    const yearMonth = `${gameYear}/${String(triggerMonth).padStart(2, '0')}`;
 
-    if (Math.random() < 0.15 && activeEvents.length < 2 && !currentEvent) {
-      const candidateEvents: GameEvent[] = [
-        {
-          id: 'greve_' + Date.now(),
-          title: 'Greve Geral Ferroviária 🚧',
-          description: 'Sindicatos paralisaram parcialmente as obras reivindicando melhorias nas frentes de trabalho e adicionais salariais de campo. Custos adicionais serão aplicados!',
-          type: 'strike',
-          statusEffect: 'GREVE_GERAL',
-          costToResolve: 35000000000, // R$ 35 B
-          durationMonths: 12,
-          monthsLeft: 12
-        },
-        {
-          id: 'licenca_' + Date.now(),
-          title: 'Impasse de Licença na Amazônia 🌳',
-          description: 'Estudos de impacto ambiental no trecho Norte foram travados provisoriamente pelo IBAMA para preservação de mananciais de igarapé. O custo de metal/cimento dispara em 50% na Região Norte.',
-          type: 'env_delay',
-          statusEffect: 'ATRASO_AMBIENTAL_AMAZONIA',
-          costToResolve: 25000000000, // R$ 25 B
-          durationMonths: 18,
-          monthsLeft: 18
-        },
-        {
-          id: 'crise_' + Date.now(),
-          title: 'Super Inflação de Insumos 📈',
-          description: 'Uma escalada geopolítica internacional travou frotas de cargueiros de minério, dobrando instantaneamente o preço de aquisição de Aço e Cobre.',
-          type: 'crisis',
-          statusEffect: 'INFLACAO_GLOBAL',
-          durationMonths: 10,
-          monthsLeft: 10
-        },
-        {
-          id: 'natural_' + Date.now(),
-          title: 'Grande Cheia no Pantanal 🌧️',
-          description: 'Chuvas torrenciais inundaram as bacias estuarinas de MS/MT. Dormentes e sapatas de madeira foram totalmente levados pelas corredeiras, exigindo 1.8x mais consumo de Madeira.',
-          type: 'natural',
-          statusEffect: 'ESCASSES_MADEIRA',
-          costToResolve: 15000000000, // R$ 15 B
-          durationMonths: 14,
-          monthsLeft: 14
-        },
-        {
-          id: 'politics_' + Date.now(),
-          title: 'Multas e Emendas Legislativas 🏛️',
-          description: 'Bancadas parlamentares congelaram temporariamente autorizações e emendas de escoamento marítimo regional por pressões políticas locais.',
+    const due = SCHEDULED_EVENTS.filter(
+      ev => ev.triggerYear === gameYear &&
+            ev.triggerMonth === triggerMonth &&
+            !triggeredEventIdsRef.current.includes(ev.id)
+    );
+
+    for (const ev of due) {
+      // Mark as triggered immediately to avoid double-fire
+      setTriggeredEventIds(prev => {
+        const next = [...prev, ev.id];
+        triggeredEventIdsRef.current = next;
+        return next;
+      });
+
+      // Party / political election event
+      if (ev.category === 'POL' && ev.party) {
+        const partyEffect = `PARTIDO_${ev.party}`;
+        const partyEvent: GameEvent = {
+          id: `pol_${ev.id}`,
+          title: ev.title,
+          description: ev.description,
           type: 'politics',
-          statusEffect: 'LOBBY_REGIONAL',
-          costToResolve: 20000000000, // R$ 20 B
-          durationMonths: 8,
-          monthsLeft: 8
+          statusEffect: partyEffect,
+          durationMonths: 48,
+          monthsLeft: 48,
+          ...(ev.party === 'PL' ? { revenueMultiplier: 0.85 } : {}),
+          ...(ev.party === 'PS' ? { monthlyBonus: 2_000_000_000 } : {}),
+        };
+        // Remove previous party effect and add new one
+        setActiveEvents(prev => [
+          ...prev.filter(e => !e.statusEffect.startsWith('PARTIDO_')),
+          partyEvent,
+        ]);
+        setNewsItems(prev => [{
+          id: `news_${ev.id}`,
+          headline: `🗳️ ${ev.title} — ${ev.description.slice(0, 80)}`,
+          yearMonth,
+          category: 'crisis',
+        }, ...prev].slice(0, 40));
+        showToast(`🗳️ ${ev.title}`, 'info');
+        continue;
+      }
+
+      // Immediate cash bonus/penalty
+      if (ev.immediateCash) {
+        if (ev.immediateCash > 0) {
+          setTotalRevenue(prev => prev + ev.immediateCash!);
+          showToast(`💰 ${ev.title}: +R$ ${(ev.immediateCash! / 1e9).toFixed(0)}B creditados`, 'success');
+        } else {
+          setSpentOnResources(prev => prev + Math.abs(ev.immediateCash!));
+          showToast(`💸 ${ev.title}: -R$ ${(Math.abs(ev.immediateCash!) / 1e9).toFixed(0)}B debitados`, 'error');
         }
-      ];
+        setNewsItems(prev => [{
+          id: `news_${ev.id}`,
+          headline: `${ev.immediateCash! > 0 ? '💰' : '💸'} ${ev.title}`,
+          yearMonth,
+          category: ev.immediateCash! > 0 ? 'grant' : 'crisis',
+        }, ...prev].slice(0, 40));
+      }
 
-      // Exclude events already active
-      const available = candidateEvents.filter(
-        cand => !activeEvents.some(act => act.statusEffect === cand.statusEffect)
-      );
+      // Apply game event effect
+      if (ev.gameEvent) {
+        const ge = ev.gameEvent;
+        const gameEventObj: GameEvent = {
+          id: `ge_${ev.id}`,
+          title: ev.title,
+          description: ev.description,
+          type: ge.type,
+          statusEffect: ge.statusEffect,
+          durationMonths: ge.durationMonths,
+          monthsLeft: ge.durationMonths,
+          ...(ge.costPerMonth !== undefined ? { costPerMonth: ge.costPerMonth } : {}),
+          ...(ge.costToResolve !== undefined ? { costToResolve: ge.costToResolve } : {}),
+          ...(ge.workerLoss !== undefined ? { workerLoss: ge.workerLoss } : {}),
+          ...(ge.revenueMultiplier !== undefined ? { revenueMultiplier: ge.revenueMultiplier } : {}),
+          ...(ge.monthlyBonus !== undefined ? { monthlyBonus: ge.monthlyBonus } : {}),
+          ...(ge.resourceMultipliers !== undefined ? { resourceMultipliers: ge.resourceMultipliers } : {}),
+          ...(ge.constructionSlowFactor !== undefined ? { constructionSlowFactor: ge.constructionSlowFactor } : {}),
+          ...(ge.balsaFrozen !== undefined ? { balsaFrozen: ge.balsaFrozen } : {}),
+          ...(ge.blockConstruction !== undefined ? { blockConstruction: ge.blockConstruction } : {}),
+          ...(ge.payrollMultiplier !== undefined ? { payrollMultiplier: ge.payrollMultiplier } : {}),
+        };
 
-      if (available.length > 0) {
-        const selected = available[Math.floor(Math.random() * available.length)];
-        setCurrentEvent(selected);
-        sound.playError();
+        // Worker loss events apply immediately
+        if (ge.workerLoss) {
+          setWorkers(prev => ({
+            ...prev,
+            [ge.workerLoss!.role]: Math.max(0, prev[ge.workerLoss!.role] - ge.workerLoss!.amount),
+          }));
+        }
+
+        if (ev.category === 'CRI') {
+          // Crisis events: show popup for player acknowledgement
+          if (!currentEventRef.current) {
+            setCurrentEvent(gameEventObj);
+            sound.playError();
+          } else {
+            // If there's already a popup open, add directly to active
+            setActiveEvents(prev => [...prev, gameEventObj]);
+            setNewsItems(prev => [{
+              id: `news_${ev.id}`,
+              headline: `⚠️ ${ev.title}`,
+              yearMonth,
+              category: 'crisis',
+            }, ...prev].slice(0, 40));
+          }
+        } else {
+          // POS/NEU events apply automatically, no popup
+          setActiveEvents(prev => [...prev, gameEventObj]);
+          const icon = ev.category === 'POS' ? '✅' : 'ℹ️';
+          showToast(`${icon} ${ev.title}`, ev.category === 'POS' ? 'success' : 'info');
+          setNewsItems(prev => [{
+            id: `news_${ev.id}`,
+            headline: `${icon} ${ev.title}`,
+            yearMonth,
+            category: ev.category === 'POS' ? 'grant' : 'economy',
+          }, ...prev].slice(0, 40));
+        }
       }
     }
   }, [monthIdx, gameYear, workers]);
@@ -324,15 +572,24 @@ export default function App() {
 
     // Reset workers state
     setWorkers({
-      basico: 35,
-      operador: 15,
-      especialista: 8,
-      perfurador: 4
+      terraplanagem: 500,
+      assentamento:  300,
+      sinalizacao:   80,
+      explosivos:    30,
+      manutencao:    150,
     });
     setSpentOnWorkers(0);
+    setConstructionQueue([]);
+    setTotalRevenue(0);
+    setCompletedMissions([]);
+    setNewsItems([]);
 
     setActiveEvents([]);
     setCurrentEvent(null);
+    setTriggeredEventIds([]);
+    triggeredEventIdsRef.current = [];
+    setInfraQueue([]);
+    setYardLevels({});
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -340,8 +597,8 @@ export default function App() {
   };
 
   // Load saved game state from localStorage
-  const handleLoadGame = () => {
-    const save = loadGame();
+  const handleLoadGame = (slot = saveSlot) => {
+    const save = loadGame(slot);
     if (!save) return;
     setEdges(save.edges);
     setUpgradedHubs(save.upgradedHubs);
@@ -354,72 +611,155 @@ export default function App() {
     setActiveEvents(save.activeEvents);
     setGameYear(save.gameYear);
     setMonthIdx(save.monthIdx);
+    setConstructionQueue(save.constructionQueue ?? []);
+    setTotalRevenue(save.totalRevenue ?? 0);
+    setCompletedMissions(save.completedMissions ?? []);
+    setNewsItems(save.newsItems ?? []);
+    setTriggeredEventIds(save.triggeredEventIds ?? []);
+    triggeredEventIdsRef.current = save.triggeredEventIds ?? [];
+    setInfraQueue(save.infraQueue ?? []);
+    setYardLevels(save.yardLevels ?? {});
+    setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
-    showToast(`Partida carregada! Ano ${save.gameYear}.`, 'success');
+    showToast(`Partida carregada! Slot ${slot} — Ano ${save.gameYear}.`, 'success');
+  };
+
+  // Advance one game month manually
+  const handleAdvanceMonth = () => {
+    if (victoryOpen || gameOverOpen) return;
+    setMonthIdx(prev => {
+      if (prev === 11) {
+        setGameYear(py => {
+          if (py >= 2077) { setGameOverOpen(true); return 2077; }
+          return py + 1;
+        });
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
+
+  // Export game statistics as JSON
+  const handleImportSave = (data: SaveGame) => {
+    try {
+      setEdges(data.edges ?? []);
+      setUpgradedHubs(data.upgradedHubs ?? []);
+      setMaintenanceYards(data.maintenanceYards ?? []);
+      setConstructionType(data.constructionType ?? 'rail');
+      setResources(data.resources ?? { aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 });
+      setSpentOnResources(data.spentOnResources ?? 0);
+      setWorkers(data.workers ?? { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 });
+      setSpentOnWorkers(data.spentOnWorkers ?? 0);
+      setActiveEvents(data.activeEvents ?? []);
+      setGameYear(data.gameYear ?? 2027);
+      setMonthIdx(data.monthIdx ?? 0);
+      setConstructionQueue(data.constructionQueue ?? []);
+      setTotalRevenue(data.totalRevenue ?? 0);
+      setCompletedMissions(data.completedMissions ?? []);
+      setNewsItems(data.newsItems ?? []);
+      setTriggeredEventIds(data.triggeredEventIds ?? []);
+      setInfraQueue(data.infraQueue ?? []);
+      setYardLevels(data.yardLevels ?? {});
+      showToast('📥 Save importado com sucesso!', 'success');
+    } catch {
+      showToast('❌ Arquivo inválido — não foi possível importar.', 'error');
+    }
+  };
+
+  const handleExportStats = () => {
+    const completedEdges = edges.filter(e => e.status !== 'building');
+    const stats = {
+      exportedAt: new Date().toISOString(),
+      gameYear,
+      month: monthIdx + 1,
+      budgetCurrent: budgetState.currentBudget,
+      budgetSpent: budgetState.totalSpent,
+      totalRevenue,
+      monthlyRevenue: budgetState.monthlyRevenue,
+      connectionsComplete: completedEdges.length,
+      connectionsBuilding: edges.filter(e => e.status === 'building').length,
+      totalDistanceKm: Math.round(edges.reduce((s, e) => s + e.distance, 0)),
+      workers,
+      upgradedHubs: upgradedHubs.length,
+      maintenanceYards: maintenanceYards.length,
+      activeEvents: activeEvents.map(e => ({ title: e.title, monthsLeft: e.monthsLeft })),
+    };
+    const blob = new Blob([JSON.stringify(stats, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renif-stats-${gameYear}-${String(monthIdx + 1).padStart(2, '0')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📊 Estatísticas exportadas com sucesso!', 'success');
   };
 
   // Hire workforce handler
   const handleHireWorker = (role: keyof GameWorkers, amount: number) => {
-    const onboardingFeePerWorker = 1500000; // R$ 1.500.000 por trabalhador
-    const totalCost = amount * onboardingFeePerWorker;
+    const costPerWorker = WORKER_HIRE_COST[role];
+    const totalCost = amount * costPerWorker;
 
     if (budgetState.currentBudget < totalCost) {
       sound.playError();
-      showToast(`Orçamento insuficiente para qualificar e admitir ${amount} profissionais! (Investimento de admissão: R$ ${totalCost.toLocaleString('pt-BR')})`, 'error');
+      showToast(`Orçamento insuficiente para contratar ${amount} profissionais! (R$ ${totalCost.toLocaleString('pt-BR')} — 3× salário/pessoa de onboarding)`, 'error');
       return;
     }
 
     setSpentOnWorkers(prev => prev + totalCost);
-    setWorkers(prev => ({
-      ...prev,
-      [role]: (prev[role] ?? 0) + amount
-    }));
+    setWorkers(prev => ({ ...prev, [role]: (prev[role] ?? 0) + amount }));
     sound.playConnect();
 
     const nameMap: Record<keyof GameWorkers, string> = {
-      basico: 'Operário Básico',
-      operador: 'Operador de Máquinas',
-      especialista: 'Especialista',
-      perfurador: 'Perfurador de Túnel'
+      terraplanagem: 'Terraplanagem', assentamento: 'Assentamento',
+      sinalizacao: 'Sinalização', explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
-
-    showToast(`Admissão: +${amount} ${nameMap[role]}(s) contratado(s). Taxa paga: R$ ${totalCost.toLocaleString('pt-BR')}.`, 'success');
+    showToast(`Admissão: +${amount} ${nameMap[role]}(s). Taxa de integração: R$ ${totalCost.toLocaleString('pt-BR')}.`, 'success');
   };
 
-  // Fire/Dispense workforce handler
   const handleFireWorker = (role: keyof GameWorkers, amount: number) => {
     const currentQty = workers[role] ?? 0;
     if (currentQty <= 0) {
       showToast("Não há trabalhadores deste tipo contratados!", "error");
       return;
     }
-
     const actualAmount = Math.min(amount, currentQty);
+    const severanceCost = actualAmount * WORKER_SEVERANCE[role];
 
-    setWorkers(prev => ({
-      ...prev,
-      [role]: Math.max(0, (prev[role] ?? 0) - actualAmount)
-    }));
+    // Mass layoff penalty: demitting >30 at once adds R$2B fine
+    const massLayoffPenalty = actualAmount > 30 ? 2_000_000_000 : 0;
+    const totalCost = severanceCost + massLayoffPenalty;
+
+    setSpentOnWorkers(prev => prev + totalCost);
+    setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - actualAmount) }));
     sound.playDisconnect();
 
     const nameMap: Record<keyof GameWorkers, string> = {
-      basico: 'Operário Básico',
-      operador: 'Operador de Máquinas',
-      especialista: 'Especialista',
-      perfurador: 'Perfurador de Túnel'
+      terraplanagem: 'Terraplanagem', assentamento: 'Assentamento',
+      sinalizacao: 'Sinalização', explosivos: 'Explosivos', manutencao: 'Manutenção'
     };
-
-    showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s) desligados da equipe de obras!`, 'info');
+    if (massLayoffPenalty > 0) {
+      showToast(`Demissão em massa: ${actualAmount} ${nameMap[role]}(s). Rescisão: R$ ${severanceCost.toLocaleString('pt-BR')} + Multa R$ 2B por instabilidade no canteiro!`, 'error');
+    } else {
+      showToast(`Rescisão: ${actualAmount} ${nameMap[role]}(s). Indenização: R$ ${severanceCost.toLocaleString('pt-BR')}`, 'info');
+    }
   };
 
   // Manual resource purchasing handler
   const handleBuyResource = (resKey: keyof GameResources, amount: number) => {
-    const isHighInflation = activeEvents.some(e => 
-      (resKey === 'aco' && e.statusEffect === 'INFLACAO_GLOBAL') || 
-      (resKey === 'cobre' && e.statusEffect === 'INFLACAO_GLOBAL')
-    );
-    const unitPrice = RESOURCE_BUY_PRICES[resKey] * (isHighInflation ? 2.0 : 1.0);
+    const buyActiveEffects = activeEvents.map(e => e.statusEffect);
+    const isHighInflation = buyActiveEffects.includes('INFLACAO_GLOBAL');
+    const isGeopoliticTension = buyActiveEffects.includes('TENSAO_GEOPOLITICA');
+    let unitPrice = RESOURCE_BUY_PRICES[resKey];
+    if (resKey === 'aco' && isHighInflation) unitPrice *= 2.0;
+    if (resKey === 'cobre' && isHighInflation) unitPrice *= 2.0;
+    if (resKey === 'cobre' && isGeopoliticTension) unitPrice *= 1.8;
+    // Apply resource price multipliers from active events
+    activeEvents.forEach(e => {
+      if (e.resourceMultipliers && e.resourceMultipliers[resKey] !== undefined) {
+        unitPrice = Math.round(unitPrice * e.resourceMultipliers[resKey]!);
+      }
+    });
     const totalCost = amount * unitPrice;
 
     if (budgetState.currentBudget < totalCost) {
@@ -445,35 +785,51 @@ export default function App() {
     );
   };
 
+  // Returns the native maximum connections for a city based on its size tier
+  const getCityNativeMaxConns = (cityId: string): number => {
+    // Metropoles (4 native connections): SP, RJ, BH, Curitiba, Salvador, Recife, Fortaleza, Belém, Manaus, Goiânia, Brasília, Porto Alegre
+    const METROPOLE_IDS = new Set(['1','2','3','7','8','11','14','17','20','24','25','5']);
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return 2;
+    if (METROPOLE_IDS.has(cityId)) return 4;
+    if (city.type === 'capital') return 3;
+    if (city.type === 'polo_industrial' || city.type === 'mineracao') return 3;
+    return 2;
+  };
+
   // Dynamic cost & grant budget state (calculated reactively to avoid state bugs)
   const startingBudget = 1250000000000; // R$ 1.250.000.000.000,00 starting cash
+
+  // Split intermodal grants into own useMemo — only re-runs when edges change
+  const intermodalGrants = useMemo(() => getIntermodalGrants(CITIES, edges), [edges]);
 
   const budgetState = useMemo(() => {
     let spentRail = 0;
     let spentBalsa = 0;
-    
+
     edges.forEach(edge => {
       const cityA = CITIES.find(c => c.id === edge.from);
       const cityB = CITIES.find(c => c.id === edge.to);
       if (cityA && cityB) {
         if (edge.type === 'balsa') {
-          spentBalsa += Math.round(edge.distance * 12000000); // R$ 12.000.000 / km
+          spentBalsa += Math.round(edge.distance * 12000000);
         } else {
           spentRail += getTrackCostDetail(cityA, cityB, edge.distance).totalCost;
         }
       }
     });
 
-    const spentYards = maintenanceYards.length * 15000000000; // R$ 15.000.000.000
-    const spentHubs = upgradedHubs.length * 30000000000; // R$ 30.000.000.000
-    
-    const unlockedGrants = getIntermodalGrants(CITIES, edges);
-    const grantIncome = unlockedGrants
+    // Yards and hubs are debited directly via spentOnResources — no separate tracking needed
+    const spentYards = 0;
+    const spentHubs = 0;
+
+    const grantIncome = intermodalGrants
       .filter(g => g.unlocked)
       .reduce((sum, g) => sum + g.value, 0);
 
     const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
-    const currentBudget = startingBudget - totalSpent + grantIncome;
+    const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
+    const monthlyRevenue = getMonthlyRevenue(edges, workers, [], CITIES);
 
     return {
       totalSpent,
@@ -483,61 +839,352 @@ export default function App() {
       spentHubs,
       grantIncome,
       currentBudget,
-      unlockedGrants,
+      unlockedGrants: intermodalGrants,
       spentOnWorkers,
       spentOnResources,
+      totalRevenue,
+      monthlyRevenue,
     };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers]);
+  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue]);
 
-  // Dijkstra nearest yard distance
-  const nearestYardDistances = useMemo(() => {
+  // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
+  useEffect(() => {
+    setBudgetHistory(prev => [
+      ...prev.slice(-23),
+      { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
+    ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.currentBudget]);
+
+  // Budget critically low alert
+  useEffect(() => {
+    if (welcomeOpen) return;
+    const pct = budgetState.currentBudget / startingBudget;
+    if (pct < 0.08 && budgetState.currentBudget > 0 && !lowBudgetAlertedRef.current) {
+      lowBudgetAlertedRef.current = true;
+      showToast('🚨 ALERTA CRÍTICO: Caixa abaixo de 8% do orçamento inicial! Reduza gastos urgentemente.', 'error');
+      sound.playError();
+    } else if (pct >= 0.15) {
+      lowBudgetAlertedRef.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.currentBudget, welcomeOpen]);
+
+  // Dijkstra nearest yard distance + which yard is nearest
+  const { distances: nearestYardDistances, nearestYardIds } = useMemo(() => {
     return calculateRailwayDistancesFromYards(CITIES, edges, maintenanceYards);
   }, [edges, maintenanceYards]);
 
-  // Counting edges with no active maintenance coverage (> 800 km or Infinity)
+  // Evaluate missions reactively
+  const missionResults = useMemo(() => {
+    return MISSIONS.map(m => ({ ...m, ...m.check(CITIES, edges, maintenanceYards) }));
+  }, [edges, maintenanceYards]);
+
+  // News when a grant is newly unlocked
+  const prevGrantsRef = React.useRef<string[]>([]);
+  useEffect(() => {
+    if (welcomeOpen) return;
+    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+    budgetState.unlockedGrants.filter(g => g.unlocked).forEach(g => {
+      if (!prevGrantsRef.current.includes(g.id)) {
+        setNewsItems(prev => [newsGrant(g.title, g.value, ym), ...prev].slice(0, 40));
+      }
+    });
+    prevGrantsRef.current = budgetState.unlockedGrants.filter(g => g.unlocked).map(g => g.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetState.unlockedGrants, welcomeOpen]);
+
+  // Grant rewards for newly completed missions
+  useEffect(() => {
+    if (welcomeOpen) return;
+    const yearMonth = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+    missionResults.forEach(m => {
+      // Check prerequisite (chained missions)
+      if (m.unlocksAfter && !completedMissions.includes(m.unlocksAfter)) return;
+      if (m.completed && !completedMissions.includes(m.id)) {
+        setCompletedMissions(prev => [...prev, m.id]);
+        setTotalRevenue(prev => prev + m.reward);
+        showToast(`🎯 Missão concluída: "${m.title.replace(/^[^ ]+ /, '')}" — Prêmio: R$ ${(m.reward/1e9).toFixed(0)}B`, 'success');
+        sound.playConnect();
+        setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 40));
+      }
+      // Check deadline
+      if (m.deadlineYear && gameYear > m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
+        setExpiredMissions(prev => [...prev, m.id]);
+        showToast(`⏰ Missão expirada: ${m.title}`, 'error');
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missionResults, welcomeOpen]);
+
+  // Counting edges with no active maintenance coverage (level-aware)
   const unmaintainedEdgesCount = useMemo(() => {
     if (edges.length === 0) return 0;
     return edges.filter(edge => {
-      const dA = nearestYardDistances[edge.from] ?? Infinity;
-      const dB = nearestYardDistances[edge.to] ?? Infinity;
-      return Math.min(dA, dB) > 800;
+      const checkCovered = (cityId: string) => {
+        const dist = nearestYardDistances[cityId] ?? Infinity;
+        const yardId = nearestYardIds[cityId];
+        if (!yardId) return false;
+        const level = yardLevels[yardId] ?? 1;
+        return dist <= YARD_COVERAGE_KM[level as 1|2|3];
+      };
+      return !checkCovered(edge.from) && !checkCovered(edge.to);
     }).length;
-  }, [edges, nearestYardDistances]);
+  }, [edges, nearestYardDistances, nearestYardIds, yardLevels]);
 
-  // Toggle upgraded hub status (Central Hub with up to 3 links)
-  const handleToggleUpgradeHub = (cityId: string) => {
+  // Build Terminal Central (hub upgrade) - async construction system
+  const handleBuildHub = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+
+    // Already complete → demolish
     if (upgradedHubs.includes(cityId)) {
       setUpgradedHubs(prev => prev.filter(id => id !== cityId));
-      showToast("Upgrade de Terminal Central removido. R$ 30.000.000.000 reembolsados!", "info");
+      setSpentOnResources(prev => Math.max(0, prev - HUB_CONFIG.cost));
+      showToast(`★ Terminal Central em ${city.name} demolido. R$ 30B reembolsados.`, 'info');
       sound.playDisconnect();
-    } else {
-      if (budgetState.currentBudget < 30000000000) {
-        showToast("Orçamento insuficiente para expandir este Terminal Central (necessário R$ 30.000.000.000)!", "error");
-        sound.playError();
-        return;
-      }
-      setUpgradedHubs(prev => [...prev, cityId]);
-      showToast("Upgrade de Alta Conectividade! Esta cidade agora suporta até 3 conexões de linhas.", "success");
-      sound.playConnect();
+      return;
     }
+
+    // Already building → cancel
+    const existingProject = infraQueue.find(p => p.cityId === cityId && p.type === 'hub');
+    if (existingProject) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existingProject.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(HUB_CONFIG.cost * 0.5)));
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(existingProject.resourcesConsumed) as (keyof GameResources)[]).forEach(k => {
+          u[k] = (u[k] ?? 0) + Math.floor((existingProject.resourcesConsumed[k] ?? 0) * 0.5);
+        });
+        return u;
+      });
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem,
+        assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos,
+        manutencao: prev.manutencao,
+      }));
+      showToast(`★ Construção do Terminal Central em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect();
+      return;
+    }
+
+    // Start construction
+    const cfg = HUB_CONFIG;
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Trabalhadores de Assentamento insuficientes para o Terminal Central (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if ((workers.sinalizacao ?? 0) < (cfg.workers.sinalizacao ?? 0)) {
+      showToast(`⚠️ Trabalhadores de Sinalização insuficientes para o Terminal Central (${cfg.workers.sinalizacao} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    let buyCost = 0;
+    const shortages: Partial<GameResources> = {};
+    (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => {
+      const need = cfg.resources[k] ?? 0;
+      const have = resources[k] ?? 0;
+      const short = Math.max(0, need - have);
+      if (short > 0) { shortages[k] = short; buyCost += short * RESOURCE_BUY_PRICES[k]; }
+    });
+    if (buyCost > 0 && !autoBuyResources) {
+      showToast(`Insumos insuficientes para o Terminal Central. Ative auto-compra ou compre manualmente.`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost + buyCost) {
+      showToast(`Orçamento insuficiente para o Terminal Central (R$ ${((cfg.cost + buyCost)/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost + buyCost);
+    if (buyCost > 0) {
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(shortages) as (keyof GameResources)[]).forEach(k => { u[k] = (u[k] ?? 0) + (shortages[k] ?? 0); });
+        return u;
+      });
+    }
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setWorkers(prev => ({
+      terraplanagem: prev.terraplanagem,
+      assentamento: Math.max(0, prev.assentamento - (cfg.workers.assentamento ?? 0)),
+      sinalizacao: Math.max(0, prev.sinalizacao - (cfg.workers.sinalizacao ?? 0)),
+      explosivos: prev.explosivos,
+      manutencao: prev.manutencao,
+    }));
+    const project: InfraProject = {
+      id: `hub_${cityId}_${Date.now()}`,
+      cityId,
+      type: 'hub',
+      monthsRemaining: cfg.months,
+      totalMonths: cfg.months,
+      workersAllocated: { assentamento: cfg.workers.assentamento ?? 0, sinalizacao: cfg.workers.sinalizacao ?? 0 },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear,
+      startedMonth: monthIdx,
+      cost: cfg.cost,
+    };
+    setInfraQueue(prev => [...prev, project]);
+    showToast(`★ Terminal Central em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
   };
 
-  // Toggle Maintenance Yard construction
-  const handleToggleMaintenanceYard = (cityId: string) => {
+  // Bitola Dupla — doubles track capacity on a completed edge (+50% revenue, R$20B)
+  const handleDoubleTrack = (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge || edge.status === 'building') return;
+    if (edge.doubled) { showToast('Esta rota já tem bitola dupla.', 'info'); return; }
+    const cost = 20_000_000_000;
+    if (budgetState.currentBudget < cost) { showToast('Orçamento insuficiente para bitola dupla (R$20B).', 'error'); sound.playError(); return; }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, doubled: true } : e));
+    setSpentOnResources(prev => prev + cost);
+    showToast('⊟ Bitola dupla instalada! Receita da rota +50%.', 'success');
+    sound.playConnect();
+  };
+
+  // Upgrade de Velocidade — increases train level on a completed edge
+  const handleUpgradeTrainLevel = (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge || edge.status === 'building') return;
+    const level = edge.trainLevel ?? 1;
+    if (level >= 3) { showToast('Nível máximo de velocidade atingido.', 'info'); return; }
+    const cost = level === 1 ? 15_000_000_000 : 30_000_000_000;
+    const newLevel = (level + 1) as 1 | 2 | 3;
+    if (budgetState.currentBudget < cost) { showToast(`Orçamento insuficiente (R$${cost/1e9}B necessários).`, 'error'); sound.playError(); return; }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, trainLevel: newLevel } : e));
+    setSpentOnResources(prev => prev + cost);
+    showToast(`🚄 Velocidade atualizada para Nível ${newLevel}! Receita +${newLevel === 2 ? '25' : '60'}%.`, 'success');
+    sound.playConnect();
+  };
+
+  // Trem de Passageiros — eletrifica e adapta a rota para passageiros (+40% receita em capitais/industriais)
+  const handlePassengerUpgrade = (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge || edge.status === 'building' || edge.type === 'balsa') return;
+    if (edge.passenger) { showToast('Esta rota já opera serviço de passageiros.', 'info'); return; }
+    const cost = 25_000_000_000;
+    if (budgetState.currentBudget < cost) { showToast('Orçamento insuficiente (R$25B necessários).', 'error'); sound.playError(); return; }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, passenger: true } : e));
+    setSpentOnResources(prev => prev + cost);
+    const fromCity = CITIES.find(c => c.id === edge.from);
+    const toCity   = CITIES.find(c => c.id === edge.to);
+    const isHighPop = (c: typeof fromCity) => c && (c.type === 'capital' || c.type === 'polo_industrial');
+    const bonus = (isHighPop(fromCity) || isHighPop(toCity)) ? '+40%' : '+15%';
+    showToast(`🚆 Serviço de passageiros ativo! Receita da rota ${bonus}.`, 'success');
+    sound.playConnect();
+  };
+
+  // Build Maintenance Yard - async construction system with 3 levels
+  const handleBuildYard = (cityId: string, level: 1 | 2 | 3 = 1) => {
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+    const cfg = YARD_CONFIGS[level];
+
+    // Already complete → demolish
     if (maintenanceYards.includes(cityId)) {
+      const currentLevel = yardLevels[cityId] ?? 1;
+      const currentCost = YARD_CONFIGS[currentLevel as 1|2|3].cost;
       setMaintenanceYards(prev => prev.filter(id => id !== cityId));
-      showToast("Pátio de manutenção demolido. R$ 15.000.000.000 reembolsados!", "info");
+      setYardLevels(prev => { const u = { ...prev }; delete u[cityId]; return u; });
+      setSpentOnResources(prev => Math.max(0, prev - currentCost));
+      showToast(`🔧 Pátio ${YARD_CONFIGS[currentLevel as 1|2|3].name} em ${city.name} demolido. Reembolso parcial aplicado.`, 'info');
       sound.playDisconnect();
-    } else {
-      if (budgetState.currentBudget < 15000000000) {
-        showToast("Orçamento insuficiente para construir pátio de manutenção (necessário R$ 15.000.000.000)!", "error");
-        sound.playError();
-        return;
-      }
-      setMaintenanceYards(prev => [...prev, cityId]);
-      showToast("Pátio de Manutenção Ativado! Rotas férreas em um raio de até 800 km serão cobertas.", "success");
-      sound.playConnect();
+      return;
     }
+
+    // Already building → cancel
+    const existingProject = infraQueue.find(p => p.cityId === cityId && p.type === 'yard');
+    if (existingProject) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existingProject.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(existingProject.cost * 0.5)));
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(existingProject.resourcesConsumed) as (keyof GameResources)[]).forEach(k => {
+          u[k] = (u[k] ?? 0) + Math.floor((existingProject.resourcesConsumed[k] ?? 0) * 0.5);
+        });
+        return u;
+      });
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem + (existingProject.workersAllocated.terraplanagem ?? 0),
+        assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos,
+        manutencao: prev.manutencao,
+      }));
+      showToast(`🔧 Construção do Pátio em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect();
+      return;
+    }
+
+    // Worker checks
+    if ((workers.terraplanagem ?? 0) < (cfg.workers.terraplanagem ?? 0)) {
+      showToast(`⚠️ Terraplanagem insuficiente para o Pátio ${cfg.name} (${cfg.workers.terraplanagem} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Assentamento insuficiente para o Pátio ${cfg.name} (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    let buyCost = 0;
+    const shortages: Partial<GameResources> = {};
+    (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => {
+      const need = cfg.resources[k] ?? 0;
+      const have = resources[k] ?? 0;
+      const short = Math.max(0, need - have);
+      if (short > 0) { shortages[k] = short; buyCost += short * RESOURCE_BUY_PRICES[k]; }
+    });
+    if (buyCost > 0 && !autoBuyResources) {
+      showToast(`Insumos insuficientes para o Pátio ${cfg.name}. Ative auto-compra ou compre manualmente.`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost + buyCost) {
+      showToast(`Orçamento insuficiente para Pátio ${cfg.name} (R$ ${((cfg.cost + buyCost)/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost + buyCost);
+    if (buyCost > 0) {
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(shortages) as (keyof GameResources)[]).forEach(k => { u[k] = (u[k] ?? 0) + (shortages[k] ?? 0); });
+        return u;
+      });
+    }
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setWorkers(prev => ({
+      terraplanagem: Math.max(0, prev.terraplanagem - (cfg.workers.terraplanagem ?? 0)),
+      assentamento: Math.max(0, prev.assentamento - (cfg.workers.assentamento ?? 0)),
+      sinalizacao: Math.max(0, prev.sinalizacao - (cfg.workers.sinalizacao ?? 0)),
+      explosivos: prev.explosivos,
+      manutencao: prev.manutencao,
+    }));
+    const project: InfraProject = {
+      id: `yard_${cityId}_${Date.now()}`,
+      cityId,
+      type: 'yard',
+      yardLevel: level,
+      monthsRemaining: cfg.months,
+      totalMonths: cfg.months,
+      workersAllocated: {
+        terraplanagem: cfg.workers.terraplanagem ?? 0,
+        assentamento: cfg.workers.assentamento ?? 0,
+        sinalizacao: cfg.workers.sinalizacao ?? 0
+      },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear,
+      startedMonth: monthIdx,
+      cost: cfg.cost,
+    };
+    setInfraQueue(prev => [...prev, project]);
+    showToast(`🔧 Pátio ${cfg.name} em ${city.name} em construção — ${cfg.months} meses. Cobertura: ${cfg.coverage}km.`, 'success');
+    sound.playConnect();
   };
 
   // Calculate distance sum
@@ -549,6 +1196,21 @@ export default function App() {
   const handleConnectCities = (idA: string, idB: string) => {
     // 1. Prevent connecting City A with itself
     if (idA === idB) {
+      setSelectedCityId(null);
+      return;
+    }
+
+    // 1b. City pairs where rail is physically impossible (separated by wide rivers/sea)
+    const BALSA_ONLY_PAIRS = new Set([
+      '17-18', // Belém–Macapá (foz do Amazonas)
+      '17-74', // Belém–Santana AP
+      '18-74', // Macapá–Santana
+      '16-18', // São Luís–Macapá
+    ]);
+    const routeKey = [idA, idB].sort().join('-');
+    if (BALSA_ONLY_PAIRS.has(routeKey) && constructionType !== 'balsa') {
+      sound.playError();
+      showToast('🚢 Esta rota cruza a Foz do Amazonas — impossível por ferrovia. Selecione modo Hidrovia (balsa)!', 'error');
       setSelectedCityId(null);
       return;
     }
@@ -567,15 +1229,37 @@ export default function App() {
       setEdges((prev) => prev.filter((e) => e.id !== existingEdge.id));
       setSelectedCityId(null);
       sound.playDisconnect();
-      
-      const refundedCost = existingEdge.type === 'balsa' 
+
+      const isBuilding = existingEdge.status === 'building';
+      if (isBuilding) {
+        // Return allocated workers when cancelling a build
+        const cancelledProject = constructionQueue.find(p => p.edgeId === existingEdge.id);
+        if (cancelledProject?.workersAllocated) {
+          setWorkers(prev => ({
+            terraplanagem: prev.terraplanagem + cancelledProject.workersAllocated.terraplanagem,
+            assentamento:  prev.assentamento  + cancelledProject.workersAllocated.assentamento,
+            sinalizacao:   prev.sinalizacao   + cancelledProject.workersAllocated.sinalizacao,
+            explosivos:    prev.explosivos    + cancelledProject.workersAllocated.explosivos,
+            manutencao:    prev.manutencao,
+          }));
+        }
+        setConstructionQueue(prev => prev.filter(p => p.edgeId !== existingEdge.id));
+      }
+
+      const refundRatio = isBuilding ? 0.5 : 1.0;
+      const baseCost = existingEdge.type === 'balsa'
         ? Math.round(existingEdge.distance * 12000000)
         : getTrackCostDetail(cityA, cityB, existingEdge.distance).totalCost;
+      const refundedCost = Math.round(baseCost * refundRatio);
 
-      // Refund materials actually consumed at construction time (not recalculated with current crisis effects)
       const activeEffects = activeEvents.map(e => e.statusEffect);
-      const refundedResources = existingEdge.resourcesConsumed
+      const consumed = existingEdge.resourcesConsumed
         ?? getTrackResourcesRequired(cityA, cityB, existingEdge.distance, existingEdge.type ?? 'rail', []);
+      const refundedResources: GameResources = {} as GameResources;
+      Object.keys(consumed).forEach(k => {
+        const key = k as keyof GameResources;
+        refundedResources[key] = Math.floor(consumed[key] * refundRatio);
+      });
       setResources(prev => {
         const u = { ...prev };
         Object.keys(refundedResources).forEach(k => {
@@ -586,10 +1270,14 @@ export default function App() {
       });
 
       const refundedText = Object.entries(refundedResources)
-        .map(([k, v]) => `${v.toFixed(0)}t de ${k === 'aco' ? 'Aço' : k === 'brita' ? 'Brita' : k === 'madeira' ? 'Madeira' : k === 'cimento' ? 'Cimento' : k === 'cobre' ? 'Cobre' : 'Explosivos'}`)
+        .map(([k, v]) => `${(v as number).toFixed(0)}t de ${k === 'aco' ? 'Aço' : k === 'brita' ? 'Brita' : k === 'madeira' ? 'Madeira' : k === 'cimento' ? 'Cimento' : k === 'cobre' ? 'Cobre' : 'Explosivos'}`)
         .join(", ");
 
-      showToast(`Rota entre ${cityA.name} e ${cityB.name} demolida. R$ ${refundedCost.toLocaleString('pt-BR')} liberados e insumos estornados ao estoque: ${refundedText}!`, 'info');
+      if (isBuilding) {
+        showToast(`🚧 Obra cancelada (reembolso 50%): R$ ${refundedCost.toLocaleString('pt-BR')} e materiais devolvidos: ${refundedText}`, 'info');
+      } else {
+        showToast(`Rota ${cityA.name} ↔ ${cityB.name} demolida. R$ ${refundedCost.toLocaleString('pt-BR')} liberados. Insumos: ${refundedText}`, 'info');
+      }
       return;
     }
 
@@ -597,18 +1285,18 @@ export default function App() {
     const degA = getCityDegree(idA);
     const degB = getCityDegree(idB);
 
-    const maxDegA = upgradedHubs.includes(idA) ? 3 : 2;
-    const maxDegB = upgradedHubs.includes(idB) ? 3 : 2;
+    const maxDegA = getCityNativeMaxConns(idA) + (upgradedHubs.includes(idA) ? 1 : 0);
+    const maxDegB = getCityNativeMaxConns(idB) + (upgradedHubs.includes(idB) ? 1 : 0);
 
     if (degA >= maxDegA) {
       sound.playError();
-      showToast(`A cidade ${cityA.name} atingiu seu limite máximo de ${maxDegA} conexões! Upgrades podem ser feitos no painel lateral.`, 'error');
+      showToast(`A cidade ${cityA.name} já possui ${degA} conexões (limite desta cidade). Upgrades de Terminal Central adicionam +1 slot.`, 'error');
       setSelectedCityId(null);
       return;
     }
     if (degB >= maxDegB) {
       sound.playError();
-      showToast(`A cidade ${cityB.name} atingiu seu limite máximo de ${maxDegB} conexões! Upgrades podem ser feitos no painel lateral.`, 'error');
+      showToast(`A cidade ${cityB.name} já possui ${degB} conexões (limite desta cidade). Upgrades de Terminal Central adicionam +1 slot.`, 'error');
       setSelectedCityId(null);
       return;
     }
@@ -625,8 +1313,26 @@ export default function App() {
       }
     }
 
+    // Block construction during political crises
+    const activeEffectsList = activeEvents.map(e => e.statusEffect);
+    if (activeEffectsList.includes('LOBBY_REGIONAL') || activeEvents.some(e => e.blockConstruction)) {
+      sound.playError();
+      showToast('🏛️ Crise: Emendas Legislativas bloqueiam novas construções! Resolva a crise primeiro.', 'error');
+      setSelectedCityId(null);
+      return;
+    }
+    const isMT = (s: string) => s === 'MT';
+    const isGO = (s: string) => s === 'GO';
+    if (activeEffectsList.includes('CONFLITO_FUNDIARIO') && (isMT(cityA.state) || isMT(cityB.state) || isGO(cityA.state) || isGO(cityB.state))) {
+      sound.playError();
+      showToast('🌾 Conflito Fundiário: obras em MT e GO estão bloqueadas judicialmente!', 'error');
+      setSelectedCityId(null);
+      return;
+    }
+
     // Checking construction type & budgets
     const distanceVal = getHaversineDistance(cityA.lat, cityA.lng, cityB.lat, cityB.lng);
+    const inflationMultiplier = getYearInflationMultiplier(gameYear);
     let targetCost = 0;
 
     if (constructionType === 'balsa') {
@@ -636,52 +1342,43 @@ export default function App() {
         setSelectedCityId(null);
         return;
       }
-      targetCost = Math.round(distanceVal * 12000000);
+      targetCost = Math.round(distanceVal * 12000000 * inflationMultiplier);
     } else {
-      targetCost = getTrackCostDetail(cityA, cityB, distanceVal).totalCost;
+      targetCost = Math.round(getTrackCostDetail(cityA, cityB, distanceVal).totalCost * inflationMultiplier);
+    }
+    if (inflationMultiplier > 1.0) {
+      showToast(`⚠️ Inflação acumulada ${gameYear}: +${Math.round((inflationMultiplier - 1) * 100)}% sobre custo base`, 'info');
     }
 
     // Verify resource requirements and shortages
     const activeEffects = activeEvents.map(e => e.statusEffect);
     const reqs = getTrackResourcesRequired(cityA, cityB, distanceVal, constructionType, activeEffects);
 
-    // Verify workforce requirements and shortages
+    // Verify workforce requirements
     const hasExplosives = reqs.explosivos > 0;
     const reqWorkers = getTrackWorkersRequired(cityA, cityB, distanceVal, constructionType, hasExplosives);
 
-    // 1. Basic workers check (Servente, Carpinteiro, Armador)
-    if (workers.basico < reqWorkers.basico) {
+    if (workers.terraplanagem < reqWorkers.terraplanagem) {
       sound.playError();
-      showToast(`⚠️ Equipe básica insuficiente! O trecho de ${distanceVal.toFixed(0)} km requer pelo menos ${reqWorkers.basico} Serventes/Carpinteiros contratados ativos (Contratados atuais: ${workers.basico}). Recrute profissionais no painel lateral!`, 'error');
+      showToast(`⚠️ Equipe de Terraplanagem insuficiente! Este trecho requer pelo menos ${reqWorkers.terraplanagem} trabalhadores (atual: ${workers.terraplanagem}). Contrate mais no painel de equipes!`, 'error');
       setSelectedCityId(null);
       return;
     }
-
-    // 2. Specialists check (Soldador, Engenheiro, Eletricista)
-    if (workers.especialista < reqWorkers.especialista) {
+    if (workers.assentamento < reqWorkers.assentamento) {
       sound.playError();
-      showToast(`⚠️ Especialistas insuficientes! Solda térmica e conformidade técnica deste trecho exigem pelo menos ${reqWorkers.especialista} Especialistas (Engenheiros) contratados ativos (Contratados atuais: ${workers.especialista}).`, 'error');
+      showToast(`⚠️ Equipe de Assentamento insuficiente! Este trecho requer pelo menos ${reqWorkers.assentamento} trabalhadores (atual: ${workers.assentamento}). Contrate mais no painel de equipes!`, 'error');
       setSelectedCityId(null);
       return;
     }
-
-    // 3. Drillers check (Perfuratriz, Mangoteiro)
-    if (reqWorkers.perfurador > 0 && workers.perfurador < reqWorkers.perfurador) {
+    if (reqWorkers.explosivos > 0 && workers.explosivos < reqWorkers.explosivos) {
       sound.playError();
-      showToast(`⚠️ Falta de equipe serrana! O trecho íngreme que atravessa serras exige detonações de explosivos, necessitando de pelo menos ${reqWorkers.perfurador} Perfuradores contratados ativos (Contratados atuais: ${workers.perfurador}).`, 'error');
+      showToast(`⚠️ Equipe de Explosivos insuficiente! Túneis e serras neste trecho requerem pelo menos ${reqWorkers.explosivos} especialistas em explosivos (atual: ${workers.explosivos}).`, 'error');
       setSelectedCityId(null);
       return;
     }
-
-    // 4. Machinery Operators penalty ("Acelera a obra. Se faltar, tempo dobra")
-    const isShortOperators = workers.operador < reqWorkers.operador;
-    const operatorPenaltyCost = isShortOperators ? targetCost : 0;
-    if (isShortOperators) {
-      targetCost = targetCost * 2.0; // Double construction financial cost
-    }
-    
     let buyCost = 0;
     const isHighInflation = activeEffects.includes('INFLACAO_GLOBAL');
+    const isTensaoGeo = activeEffects.includes('TENSAO_GEOPOLITICA');
     const shortages: Partial<GameResources> = {};
     let hasShortage = false;
 
@@ -691,7 +1388,10 @@ export default function App() {
       if (short > 0) {
         shortages[key] = short;
         hasShortage = true;
-        const unitPrice = RESOURCE_BUY_PRICES[key] * (isHighInflation ? 2.0 : 1.0);
+        let unitPrice = RESOURCE_BUY_PRICES[key];
+        if (key === 'aco' && isHighInflation) unitPrice *= 2.0;
+        if (key === 'cobre' && isHighInflation) unitPrice *= 2.0;
+        if (key === 'cobre' && isTensaoGeo) unitPrice *= 1.8;
         buyCost += short * unitPrice;
       }
     });
@@ -716,13 +1416,23 @@ export default function App() {
       return;
     }
 
-    // 6. Safe to build: Deduct used materials and apply buying costs if autoBuy occurred
+    // 6. Safe to build: auto-buy missing resources, then consume all requirements
     if (buyCost > 0) {
       setSpentOnResources(prev => prev + buyCost);
-    }
-    // Track operator penalty as extra expense (not captured in spentRail which uses base cost)
-    if (operatorPenaltyCost > 0) {
-      setSpentOnResources(prev => prev + operatorPenaltyCost);
+      // Add purchased units to stock first so the ledger is visible in the UI
+      setResources(prev => {
+        const u = { ...prev };
+        (Object.keys(shortages) as (keyof GameResources)[]).forEach(key => {
+          u[key] = (u[key] ?? 0) + (shortages[key] ?? 0);
+        });
+        return u;
+      });
+      const boughtLines = (Object.entries(shortages) as [keyof GameResources, number][])
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${v}t ${RESOURCE_NAMES[k]}`)
+        .join(', ');
+      const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+      showToast(`🛒 Auto-compra de insumos: ${boughtLines} — ${fmt(buyCost)}`, 'info');
     }
 
     setResources(prev => {
@@ -734,27 +1444,65 @@ export default function App() {
       return u;
     });
 
-    const newEdge: Edge = {
+    // Start construction — edge enters queue as 'building'
+    const cimentoShortage = activeEffectsList.includes('ESCASSEZ_CIMENTO');
+    const rawMonths = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
+    const baseMths = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
+    if (cimentoShortage) showToast('🏗️ Escassez de cimento: obra terá duração +50% mais longa!', 'info');
+    const slowFactor = activeEvents.reduce((acc, e) => acc * (e.constructionSlowFactor ?? 1.0), 1.0);
+    const months = Math.ceil(baseMths * slowFactor);
+
+    // Allocate workers to the project — they stay dedicated until completion
+    const allocated: GameWorkers = {
+      terraplanagem: reqWorkers.terraplanagem,
+      assentamento:  reqWorkers.assentamento,
+      sinalizacao:   reqWorkers.sinalizacao,
+      explosivos:    reqWorkers.explosivos,
+      manutencao:    0,
+    };
+
+    // Deduct allocated workers from the free pool
+    setWorkers(prev => ({
+      terraplanagem: Math.max(0, prev.terraplanagem - allocated.terraplanagem),
+      assentamento:  Math.max(0, prev.assentamento  - allocated.assentamento),
+      sinalizacao:   Math.max(0, prev.sinalizacao   - allocated.sinalizacao),
+      explosivos:    Math.max(0, prev.explosivos    - allocated.explosivos),
+      manutencao:    prev.manutencao,
+    }));
+
+    const project: ConstructionProject = {
+      edgeId: `${idA}-${idB}`,
+      from: idA,
+      to: idB,
+      distance: distanceVal,
+      type: constructionType,
+      resourcesConsumed: reqs,
+      workersAllocated: allocated,
+      totalMonths: months,
+      monthsRemaining: months,
+      startedYear: gameYear,
+      startedMonth: monthIdx,
+    };
+    setConstructionQueue(prev => [...prev, project]);
+
+    // Show allocation summary
+    const workerSummary = Object.entries(allocated)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`)
+      .join(', ');
+    showToast(`👷 ${workerSummary} alocados na obra — ficarão indisponíveis por ${months} ${months === 1 ? 'mês' : 'meses'}.`, 'info');
+
+    const buildingEdge: Edge = {
       id: `${idA}-${idB}`,
       from: idA,
       to: idB,
       distance: distanceVal,
       type: constructionType,
       resourcesConsumed: reqs,
+      status: 'building',
     };
-
-    const nextEdges = [...edges, newEdge];
+    const nextEdges = [...edges, buildingEdge];
     setEdges(nextEdges);
-
-    // Pre-emptive maintenance warning for the newly added edge
-    const postBuildDistances = calculateRailwayDistancesFromYards(CITIES, nextEdges, maintenanceYards);
-    const newEdgeMaintDist = Math.min(
-      postBuildDistances[idA] ?? Infinity,
-      postBuildDistances[idB] ?? Infinity
-    );
-    if (newEdgeMaintDist > 800) {
-      showToast(`⚠️ Trecho ${cityA.name} ↔ ${cityB.name} está fora do alcance de manutenção (${newEdgeMaintDist === Infinity ? '∞' : newEdgeMaintDist.toFixed(0)} km do pátio mais próximo). Construa um pátio de manutenção próximo para cobrir este trecho!`, 'info');
-    }
 
     setSelectedCityId(null);
     sound.playConnect();
@@ -763,32 +1511,34 @@ export default function App() {
     const consumedText = Object.entries(reqs)
       .map(([k, v]) => `${v.toFixed(0)}t de ${k === 'aco' ? 'Aço' : k === 'brita' ? 'Brita' : k === 'madeira' ? 'Madeira' : k === 'cimento' ? 'Cimento' : k === 'cobre' ? 'Cobre' : 'Explosivos'}`)
       .join(", ");
-    
-    const autoBuyText = buyCost > 0
-      ? ` e auto-adquiridos R$ ${(buyCost / 1000000000).toFixed(2)} Bilhões em insumos em falta`
-      : '';
 
-    const operatorsWarningText = isShortOperators
-      ? ` ⚠️ Custo FINANCEIRO DOBRADO (Manual): Falta de Operadores de Máquinas contratados (${workers.operador}/${reqWorkers.operador}).`
+    const autoBuyText = buyCost > 0
+      ? ` | Auto-compra: R$ ${(buyCost / 1000000000).toFixed(2)}B`
       : '';
 
     if (constructionType === 'balsa') {
-      showToast(`Balsa estabelecida: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) - Investimento: R$ ${formattedCost}${autoBuyText}.${operatorsWarningText} Materiais: ${consumedText}`, 'success');
+      showToast(`🚧 Obra iniciada: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) — ${months} mes(es) — R$ ${formattedCost}${autoBuyText}. Materiais: ${consumedText}`, 'info');
     } else {
       const detail = getTrackCostDetail(cityA, cityB, distanceVal);
-      showToast(`Aço assentado: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) - Terreno: ${detail.terrainName} - Investimento: R$ ${formattedCost}${autoBuyText}.${operatorsWarningText} Materiais: ${consumedText}`, 'success');
+      showToast(`🚧 Obra iniciada: ${cityA.name} ⇄ ${cityB.name} (${distanceVal.toFixed(0)} km) — Terreno: ${detail.terrainName} — ${months} mes(es) — R$ ${formattedCost}${autoBuyText}. Materiais: ${consumedText}`, 'info');
     }
 
-    // 7. Check for perfect linear win conditions
-    const hasFinishedPath = nextEdges.length === CITIES.length - 1;
+    // 7. Check for perfect linear win conditions (only completed edges count)
+    const completedEdges = nextEdges.filter(e => e.status !== 'building');
+    const hasFinishedPath = completedEdges.length === CITIES.length - 1;
     if (hasFinishedPath) {
-      const componentSize = getComponentSize(CITIES[0].id, nextEdges);
+      const componentSize = getComponentSize(CITIES[0].id, completedEdges);
       if (componentSize === CITIES.length) {
-        const nextNearestDistances = calculateRailwayDistancesFromYards(CITIES, nextEdges, maintenanceYards);
-        const unmaintainedCount = nextEdges.filter(edge => {
-          const dA = nextNearestDistances[edge.from] ?? Infinity;
-          const dB = nextNearestDistances[edge.to] ?? Infinity;
-          return Math.min(dA, dB) > 800;
+        const { distances: nextNearestDistances, nearestYardIds: nextNearestYardIds } = calculateRailwayDistancesFromYards(CITIES, completedEdges, maintenanceYards);
+        const unmaintainedCount = completedEdges.filter(edge => {
+          const checkCovered = (cityId: string) => {
+            const dist = nextNearestDistances[cityId] ?? Infinity;
+            const yardId = nextNearestYardIds[cityId];
+            if (!yardId) return false;
+            const lvl = yardLevels[yardId] ?? 1;
+            return dist <= (YARD_COVERAGE_KM[lvl as 1|2|3] ?? 600);
+          };
+          return !checkCovered(edge.from) && !checkCovered(edge.to);
         }).length;
 
         if (unmaintainedCount === 0) {
@@ -835,9 +1585,11 @@ export default function App() {
         
         // Tycoon extensions
         upgradedHubs={upgradedHubs}
-        onToggleUpgradeHub={handleToggleUpgradeHub}
+        onBuildHub={handleBuildHub}
         maintenanceYards={maintenanceYards}
-        onToggleMaintenanceYard={handleToggleMaintenanceYard}
+        onBuildYard={handleBuildYard}
+        infraQueue={infraQueue}
+        yardLevels={yardLevels}
         constructionType={constructionType}
         onConstructionTypeChange={setConstructionType}
         budgetState={budgetState}
@@ -859,6 +1611,24 @@ export default function App() {
         workers={workers}
         onHireWorker={handleHireWorker}
         onFireWorker={handleFireWorker}
+        budgetHistory={budgetHistory}
+        constructionQueue={constructionQueue}
+
+        // New feature props
+        onAdvanceMonth={handleAdvanceMonth}
+        onExportStats={handleExportStats}
+        onImportSave={handleImportSave}
+        onDoubleTrack={handleDoubleTrack}
+        onUpgradeTrainLevel={handleUpgradeTrainLevel}
+        onPassengerUpgrade={handlePassengerUpgrade}
+        expiredMissions={expiredMissions}
+        completedMissions={completedMissions}
+        saveSlot={saveSlot}
+        onSaveSlotChange={setSaveSlot}
+        slotDates={slotDates}
+        missionResults={missionResults}
+        newsItems={newsItems}
+        onFlyToRegion={(lat, lng) => setFlyToSignal({ lat, lng, timestamp: Date.now() })}
       />
 
       {/* 3. Primary Leaflet Map Container */}
@@ -871,7 +1641,7 @@ export default function App() {
             <span className="hidden sm:inline">Mapa:</span>
           </div>
           <div className="flex gap-1">
-            {(['voyager', 'positron', 'dark', 'satellite'] as const).map((type) => (
+            {(['voyager', 'positron', 'dark', 'satellite', 'terrain'] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setTileLayerType(type)}
@@ -881,60 +1651,195 @@ export default function App() {
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                 }`}
               >
-                {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : 'Satélite'}
+                {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : type === 'satellite' ? 'Satélite' : 'Relevo'}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Helper overlay when a city is selected */}
+        {/* City stats popup when selected */}
         {selectedCityId && (() => {
           const selectedCity = CITIES.find(c => c.id === selectedCityId);
           if (!selectedCity) return null;
           const isUpgraded = upgradedHubs.includes(selectedCity.id);
           const hasYard = maintenanceYards.includes(selectedCity.id);
-          
+          const cityEdges = edges.filter(e => (e.from === selectedCity.id || e.to === selectedCity.id) && e.status !== 'building');
+          const cityMonthlyRevenue = cityEdges.reduce((s, e) => {
+            const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+            const otherCityId = e.from === selectedCity.id ? e.to : e.from;
+            const otherCity = CITIES.find(c => c.id === otherCityId);
+            const multA = getCityTypeRevenueMultiplier(selectedCity.type);
+            const multB = otherCity ? getCityTypeRevenueMultiplier(otherCity.type) : 1.0;
+            return s + Math.round(base * (multA + multB) / 2);
+          }, 0);
+          const mDist = nearestYardDistances[selectedCity.id];
+          const maintOk = mDist !== undefined && mDist !== Infinity && mDist <= 800;
+          const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
+
           return (
-            <div className="absolute top-4 left-4 right-4 md:right-auto md:w-[450px] bg-slate-900/95 backdrop-blur-md border border-slate-800 px-4 py-3.5 rounded-xl shadow-2xl z-50 transition-all flex flex-col gap-3">
-              <div className="flex items-start gap-2.5">
-                <Train className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-slate-100">
-                    Estação Selecionada: <span className="text-amber-400 font-extrabold">{selectedCity.name}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5 leading-normal">
-                    Assente trilhos ou rotas selecionando outra cidade no mapa ou na lista. Clique em qualquer área limpa do mapa para cancelar.
-                  </p>
+            <div className="absolute top-4 left-4 right-4 md:right-auto md:w-[480px] bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 rounded-xl shadow-2xl z-50 flex flex-col gap-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Train className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-xs font-extrabold text-amber-400">{selectedCity.name} — {selectedCity.state}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {selectedCity.portType === 'maritime' ? '⚓ Porto Marítimo' : selectedCity.portType === 'fluvial' ? '🚢 Porto Fluvial' : selectedCity.type === 'capital' ? '★ Capital Estadual' : selectedCity.type === 'mineracao' ? '⛏️ Polo de Mineração (+40% receita)' : selectedCity.type === 'polo_industrial' ? '🏭 Polo Industrial (+25% receita)' : selectedCity.type === 'polo_agricola' ? '🌾 Polo Agrícola (+20% receita)' : selectedCity.type === 'fronteira' ? '🌐 Cidade de Fronteira (+15% receita)' : '● Cidade Central'}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] text-slate-500 font-mono block">Clique no mapa para cancelar</span>
+                  <span className="text-[8.5px] text-slate-600">
+                    {(() => {
+                      const nat = getCityNativeMaxConns(selectedCity.id);
+                      const tot = nat + (isUpgraded ? 1 : 0);
+                      const cur = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
+                      return `${cur}/${tot} conexões${isUpgraded ? ' (hub)' : ''}`;
+                    })()}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2.5">
+              {/* Stats grid — only if connected */}
+              {cityEdges.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800 text-center">
+                  <div>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wide">Conexões</p>
+                    <p className="text-[14px] font-black text-amber-400">{cityEdges.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wide">Receita/Mês</p>
+                    <p className="text-[13px] font-black text-sky-400">R$ {fmt(cityMonthlyRevenue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wide">Manutenção</p>
+                    <p className={`text-[11px] font-black ${maintOk ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {maintOk ? `✓ ${mDist?.toFixed(0)} km` : '⚠️ Sem cobertura'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Routes list — only if connected */}
+              {cityEdges.length > 0 && (
+                <div className="bg-slate-950/50 rounded-lg border border-slate-800 overflow-hidden">
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest px-2.5 pt-2 pb-1">Rotas Ativas</p>
+                  <div className="divide-y divide-slate-900 max-h-32 overflow-y-auto">
+                    {cityEdges.map(e => {
+                      const otherId = e.from === selectedCity.id ? e.to : e.from;
+                      const other = CITIES.find(c => c.id === otherId);
+                      const edgeRevenue = (() => {
+                        const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+                        const multA = getCityTypeRevenueMultiplier(selectedCity.type);
+                        const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
+                        return Math.round(base * (multA + multB) / 2);
+                      })();
+                      const upgradeBadges = [
+                        e.doubled && '⊟',
+                        e.trainLevel && e.trainLevel > 1 && `L${e.trainLevel}`,
+                        e.passenger && '🚆',
+                      ].filter(Boolean).join(' ');
+                      return (
+                        <div key={e.id} className="px-2.5 py-1.5 text-[9px]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-300 font-medium">{e.type === 'balsa' ? '🚢' : '🚂'} {other?.name ?? otherId} <span className="text-slate-600">({e.distance.toFixed(0)} km)</span>{upgradeBadges && <span className="ml-1 text-amber-400">{upgradeBadges}</span>}</span>
+                            <span className="text-sky-400 font-bold">+R$ {fmt(edgeRevenue)}/mês</span>
+                          </div>
+                          {e.type !== 'balsa' && (
+                            <div className="flex gap-1 mt-1">
+                              {!e.doubled && <button onClick={() => handleDoubleTrack(e.id)} className="px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-700/40 text-amber-400 text-[8px] hover:bg-amber-900/60">⊟ Bitola Dupla R$20B</button>}
+                              {(e.trainLevel ?? 1) < 3 && <button onClick={() => handleUpgradeTrainLevel(e.id)} className="px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-700/40 text-sky-400 text-[8px] hover:bg-sky-900/60">🚄 Nível {(e.trainLevel ?? 1)+1} R${(e.trainLevel ?? 1) === 1 ? '15' : '30'}B</button>}
+                              {!e.passenger && <button onClick={() => handlePassengerUpgrade(e.id)} className="px-1.5 py-0.5 rounded bg-pink-950/60 border border-pink-700/40 text-pink-400 text-[8px] hover:bg-pink-900/60">🚆 Passageiros R$25B</button>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Nearest unconnected cities suggestion */}
+              {(() => {
+                const nativeMax = getCityNativeMaxConns(selectedCity.id);
+                const maxConnsTotal = nativeMax + (isUpgraded ? 1 : 0);
+                const currentConns = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
+                if (currentConns >= maxConnsTotal) return null;
+                const connectedIds = new Set([selectedCity.id, ...edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).map(e => e.from === selectedCity.id ? e.to : e.from)]);
+                const unconnected = CITIES
+                  .filter(c => !connectedIds.has(c.id))
+                  .map(c => ({ city: c, dist: Math.sqrt((c.lat - selectedCity.lat)**2 + (c.lng - selectedCity.lng)**2) }))
+                  .sort((a,b) => a.dist - b.dist)
+                  .slice(0, 3);
+                if (unconnected.length === 0) return null;
+                return (
+                  <div className="bg-slate-950/40 rounded-lg border border-slate-800/60 p-2">
+                    <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest mb-1.5">Conexões Sugeridas ({currentConns}/{maxConnsTotal})</p>
+                    <div className="flex flex-col gap-1">
+                      {unconnected.map(({ city: c, dist }) => {
+                        const approxKm = Math.round(dist * 111);
+                        return (
+                          <div key={c.id} className="flex items-center justify-between text-[9px]">
+                            <span className="text-slate-400">{c.name} ({c.state})</span>
+                            <span className="text-slate-600">~{approxKm} km</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2">
                 <button
-                  onClick={() => handleToggleUpgradeHub(selectedCity.id)}
+                  onClick={() => handleBuildHub(selectedCity.id)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
-                    isUpgraded
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                      : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                    isUpgraded ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
                   }`}
-                  title="Grandes Terminais Integradores suportam até 3 conexões ferroviárias"
                 >
                   <Star className={`w-3 h-3 ${isUpgraded ? 'fill-amber-400 text-amber-400' : ''}`} />
-                  <span>{isUpgraded ? '★ Central Hub Ativo' : '★ Terminal Central (R$ 300k)'}</span>
+                  {isUpgraded ? '★ Central Hub Ativo' : '★ Terminal Central (R$ 30B)'}
                 </button>
-
                 <button
-                  onClick={() => handleToggleMaintenanceYard(selectedCity.id)}
+                  onClick={() => handleBuildYard(selectedCity.id, 1)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
-                    hasYard
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                      : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                    hasYard ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                    : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
                   }`}
-                  title="Pátios de manutenção dão cobertura contra quebras em rotas"
                 >
                   <Wrench className="w-3 h-3 text-emerald-400" />
-                  <span>{hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 150k)'}</span>
+                  {hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 15B)'}
                 </button>
               </div>
+              {/* Per-edge upgrade actions */}
+              {cityEdges.length > 0 && (
+                <div className="flex flex-col gap-1.5 border-t border-slate-800/60 pt-2">
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest">Upgrades de Rota:</p>
+                  {cityEdges.map(e => (
+                    <div key={e.id} className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-[9px] text-slate-400 min-w-0 truncate flex-1">{e.type === 'balsa' ? '🚢' : '🚂'} {CITIES.find(c => c.id === (e.from === selectedCity.id ? e.to : e.from))?.name}</span>
+                      <button
+                        onClick={() => handleDoubleTrack(e.id)}
+                        disabled={!!e.doubled}
+                        className={`px-2 py-1 rounded text-[8.5px] font-bold border transition cursor-pointer disabled:opacity-40 ${e.doubled ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-amber-500/10 hover:text-amber-300'}`}
+                      >
+                        {e.doubled ? '⊟ Dupla' : '⊟ Bitola Dupla (R$20B)'}
+                      </button>
+                      <button
+                        onClick={() => handleUpgradeTrainLevel(e.id)}
+                        disabled={(e.trainLevel ?? 1) >= 3}
+                        className="px-2 py-1 rounded text-[8.5px] font-bold border bg-slate-800 text-slate-300 border-slate-700 hover:bg-sky-500/10 hover:text-sky-300 transition cursor-pointer disabled:opacity-40"
+                      >
+                        {(e.trainLevel ?? 1) >= 3 ? '🚄 Nível Máx.' : `🚄 Nível ${e.trainLevel ?? 1}→${(e.trainLevel ?? 1) + 1} (R$${(e.trainLevel ?? 1) === 1 ? '15' : '30'}B)`}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -962,6 +1867,8 @@ export default function App() {
           upgradedHubs={upgradedHubs}
           maintenanceYards={maintenanceYards}
           nearestYardDistances={nearestYardDistances}
+          constructionQueue={constructionQueue}
+          activeEvents={activeEvents}
         />
       </main>
 
@@ -985,6 +1892,23 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* --- PAUSE SCREEN --- */}
+      {playSpeed === 'paused' && !welcomeOpen && !victoryOpen && !gameOverOpen && (
+        <PauseScreen
+          gameYear={gameYear}
+          monthIdx={monthIdx}
+          connectionsCount={edges.filter(e => e.status !== 'building').length}
+          totalDistanceKm={edges.filter(e => e.status !== 'building').reduce((a, e) => a + e.distance, 0)}
+          currentBudget={budgetState.currentBudget}
+          monthlyRevenue={budgetState.monthlyRevenue ?? 0}
+          totalRevenue={totalRevenue}
+          maintenanceYardsCount={maintenanceYards.length}
+          upgradedHubsCount={upgradedHubs.length}
+          constructionQueueCount={constructionQueue.length}
+          onResume={() => setPlaySpeed('normal')}
+        />
+      )}
 
       {/* --- WELCOME TUTORIAL MODAL --- */}
       {welcomeOpen && (
@@ -1066,25 +1990,43 @@ export default function App() {
 
               {/* Action */}
               <div className="mt-8 flex flex-col gap-3">
-                {hasSaveGame && (
-                  <button
-                    onClick={handleLoadGame}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-display font-extrabold uppercase py-3.5 px-6 rounded-xl transition-all shadow-lg text-xs tracking-widest cursor-pointer active:scale-95"
-                  >
-                    Continuar Partida 💾 {saveDate ? `(${saveDate})` : ''}
-                  </button>
-                )}
+                {/* Save slot selector */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Slot de Jogo:</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 2, 3].map(slot => {
+                      const date = slotDates[slot - 1];
+                      return (
+                        <button
+                          key={slot}
+                          onClick={() => { setSaveSlot(slot); if (date) handleLoadGame(slot); }}
+                          className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                            saveSlot === slot
+                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                          }`}
+                        >
+                          <div className="text-[10px] font-black uppercase">Slot {slot}</div>
+                          <div className="text-[9px] mt-0.5 truncate">{date ? `💾 ${date}` : 'Vazio'}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <button
                   onClick={() => {
-                    if (hasSaveGame && !window.confirm('Iniciar uma nova partida apagará seu progresso salvo. Continuar?')) return;
-                    deleteSave();
+                    const date = slotDates[saveSlot - 1];
+                    if (date && !window.confirm(`Iniciar nova partida no Slot ${saveSlot} apagará o progresso salvo. Continuar?`)) return;
+                    deleteSave(saveSlot);
                     setHasSaveGame(false);
+                    setSlotDates(getAllSlotDates());
                     setWelcomeOpen(false);
                     sound.playSelect();
                   }}
                   className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-display font-extrabold uppercase py-3.5 px-6 rounded-xl transition-all shadow-lg text-xs tracking-widest cursor-pointer active:scale-95"
                 >
-                  {hasSaveGame ? 'Nova Partida 🆕' : 'Iniciar Jornada 🚂'}
+                  {slotDates[saveSlot - 1] ? `Nova Partida no Slot ${saveSlot} 🆕` : 'Iniciar Jornada 🚂'}
                 </button>
               </div>
             </div>
@@ -1215,18 +2157,51 @@ export default function App() {
                 <div>
                   <p className="font-extrabold text-[10px] text-red-400 uppercase tracking-widest mb-1">Impactos sobre frentes ferroviárias:</p>
                   <p className="text-[11px] text-slate-400">
-                    {currentEvent.statusEffect === 'GREVE_GERAL' && 'Todos os trilhos custam +25% mais caro por greve de operários.'}
-                    {currentEvent.statusEffect === 'ATRASO_AMBIENTAL_AMAZONIA' && 'Tranchas metálicas na Região Norte consumirão +50% extra de aço/cimento.'}
-                    {currentEvent.statusEffect === 'INFLACAO_GLOBAL' && 'Insumos do mercado duplicam custo de compra voluntária de Aço e Cobre.'}
-                    {currentEvent.statusEffect === 'ESCASSES_MADEIRA' && 'A sapataria de madeira de todos os trilhos exige 1.8x mais cota unitária.'}
-                    {currentEvent.statusEffect === 'LOBBY_REGIONAL' && 'Investimentos travados até resolução jurídica ou pagamento.'}
+                    {currentEvent.statusEffect === 'GREVE_GERAL' && 'Trilhos +25% mais caros. Multa mensal de R$3B até resolução.'}
+                    {currentEvent.statusEffect === 'ATRASO_AMBIENTAL_AMAZONIA' && 'Obras no Norte: +50% em aço/cimento. Multa mensal R$2B.'}
+                    {currentEvent.statusEffect === 'INFLACAO_GLOBAL' && 'Aço e Cobre dobram de preço no mercado. Resolução antecipada disponível.'}
+                    {currentEvent.statusEffect === 'ESCASSES_MADEIRA' && 'Consumo de Madeira ×1.8 em toda a malha. Multa mensal R$1.5B.'}
+                    {currentEvent.statusEffect === 'LOBBY_REGIONAL' && '🚫 TODAS as novas obras bloqueadas! Multa mensal R$2B.'}
+                    {currentEvent.statusEffect === 'AUDITORIA_CGU' && 'R$5B descontados do caixa a cada mês durante a auditoria.'}
+                    {currentEvent.statusEffect === 'ACIDENTE_OBRA' && '80 especialistas em Explosivos afastados + R$8B de indenização automática.'}
+                    {currentEvent.statusEffect === 'SECA_TOCANTINS' && 'Receita de TODAS as rotas de balsa = R$0 durante a seca.'}
+                    {currentEvent.statusEffect === 'CYBER_ATAQUE' && '💻 Receita mensal ZERADA enquanto os sistemas estiverem offline.'}
+                    {currentEvent.statusEffect === 'TENSAO_GEOPOLITICA' && 'Preço do Cobre +80% no mercado internacional.'}
+                    {currentEvent.statusEffect === 'ESCASSEZ_CIMENTO' && 'Duração de todas as obras +50% (menos cimento disponível por mês).'}
+                    {currentEvent.statusEffect === 'CONFLITO_FUNDIARIO' && '🚫 Obras em MT e GO bloqueadas judicialmente. Multa mensal R$1.5B.'}
+                    {!['GREVE_GERAL','ATRASO_AMBIENTAL_AMAZONIA','INFLACAO_GLOBAL','ESCASSES_MADEIRA','LOBBY_REGIONAL','AUDITORIA_CGU','ACIDENTE_OBRA','SECA_TOCANTINS','CYBER_ATAQUE','TENSAO_GEOPOLITICA','ESCASSEZ_CIMENTO','CONFLITO_FUNDIARIO'].includes(currentEvent.statusEffect) && currentEvent.description}
                   </p>
+                  {currentEvent.revenueMultiplier !== undefined && currentEvent.revenueMultiplier < 1 && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      📉 Receita -{Math.round((1 - currentEvent.revenueMultiplier) * 100)}% durante a crise
+                    </p>
+                  )}
+                  {currentEvent.constructionSlowFactor !== undefined && currentEvent.constructionSlowFactor > 1 && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      🐢 Obras +{Math.round((currentEvent.constructionSlowFactor - 1) * 100)}% mais lentas
+                    </p>
+                  )}
+                  {currentEvent.balsaFrozen && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      ⛵ Receita de todas as balsas = R$0
+                    </p>
+                  )}
+                  {currentEvent.blockConstruction && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1">
+                      🚫 Novas obras bloqueadas durante a crise
+                    </p>
+                  )}
+                  {currentEvent.costPerMonth && (
+                    <p className="text-[10px] text-red-400 font-bold mt-1.5">
+                      💸 Multa automática: R$ {(currentEvent.costPerMonth / 1_000_000_000).toFixed(1)}B/mês debitados do caixa
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Actions */}
               <div className="flex flex-col gap-2">
-                {currentEvent.costToResolve && (
+                {currentEvent.costToResolve != null && currentEvent.costToResolve > 0 && (
                   <button
                     onClick={() => {
                       if (budgetState.currentBudget < currentEvent.costToResolve!) {
@@ -1242,22 +2217,67 @@ export default function App() {
                     }}
                     className="w-full bg-slate-800 hover:bg-slate-750 text-slate-100 font-display font-bold py-2.5 px-4 rounded-xl transition text-xs uppercase tracking-wide flex justify-between items-center border border-slate-750 cursor-pointer"
                   >
-                    <span>💸 Pagar Mitigação</span>
-                    <span className="text-emerald-400 font-black">R$ {(currentEvent.costToResolve / 1000000000).toFixed(0)} Bilhões</span>
+                    <span>💸 Pagar Mitigação Imediata</span>
+                    <span className="text-emerald-400 font-black">R$ {(currentEvent.costToResolve! / 1_000_000_000).toFixed(0)}B</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => {
                     // Accept and absorb the crisis
-                    setActiveEvents(prev => [...prev, currentEvent]);
-                    showToast(`Medida emergencial aceita: ${currentEvent.title} ativo por ${currentEvent.durationMonths} meses!`, 'info');
+                    const ev = currentEvent;
+                    setActiveEvents(prev => [...prev, ev]);
+                    // Accident: immediately remove workers
+                    if (ev.workerLoss) {
+                      const { role, amount } = ev.workerLoss;
+                      setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - amount) }));
+                      setSpentOnWorkers(prev => prev + 8_000_000_000); // R$8B indenização automática
+                      showToast(`☠️ Acidente: ${amount} trabalhadores de ${WORKER_NAMES[role]} afastados + R$8B de indenização debitados!`, 'error');
+                    }
+                    showToast(`Crise absorvida: ${ev.title} ativo por ${ev.durationMonths} meses!`, 'info');
+                    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+                    setNewsItems(prev => [newsCrisis(ev, ym), ...prev].slice(0, 40));
                     setCurrentEvent(null);
                     sound.playSelect();
                   }}
                   className="w-full bg-gradient-to-r from-red-650 to-rose-600 hover:from-red-650 hover:to-rose-650 text-white font-display font-extrabold uppercase py-2.5 px-4 rounded-xl transition shadow-md text-xs tracking-wider cursor-pointer"
                 >
                    Aceitar e Absorver ({currentEvent.durationMonths} Meses)
+                </button>
+                <button
+                  onClick={() => {
+                    // Ignore crisis — double its duration
+                    const ev = currentEvent;
+                    const doubledDuration = ev.durationMonths * 2;
+                    const ignoredEvent: GameEvent = { ...ev, durationMonths: doubledDuration, monthsLeft: doubledDuration };
+                    setActiveEvents(prev => [...prev, ignoredEvent]);
+                    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+                    setNewsItems(prev => [newsCrisis(ignoredEvent, ym), ...prev].slice(0, 40));
+                    setCurrentEvent(null);
+                    showToast(`⚠️ Crise ignorada — duração dobrada para ${doubledDuration} meses!`, 'error');
+                    sound.playError();
+                  }}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-rose-400 border border-rose-500/30 font-bold uppercase py-2 px-4 rounded-xl transition text-xs tracking-wider cursor-pointer"
+                >
+                  ⚠️ Ignorar (sofrer consequência — {currentEvent.durationMonths * 2} meses)
+                </button>
+
+                <button
+                  onClick={() => {
+                    const ev = { ...currentEvent, monthsLeft: currentEvent.durationMonths * 2, durationMonths: currentEvent.durationMonths * 2 };
+                    setActiveEvents(prev => [...prev, ev]);
+                    if (ev.workerLoss) {
+                      const { role, amount } = ev.workerLoss;
+                      setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - amount) }));
+                      setSpentOnWorkers(prev => prev + 8_000_000_000);
+                    }
+                    showToast(`⚠️ Crise ignorada — duração dobrada para ${ev.durationMonths} meses!`, 'error');
+                    setCurrentEvent(null);
+                    sound.playError();
+                  }}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 font-bold uppercase py-2 px-4 rounded-xl transition text-[10px] tracking-wider cursor-pointer border border-slate-700"
+                >
+                  ⚠️ Ignorar (duração dobrada)
                 </button>
               </div>
 

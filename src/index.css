@@ -83,3 +83,41 @@
   animation: map-pulse 2s infinite ease-in-out;
 }
 
+/* Animated dashes for construction lines in Leaflet SVG */
+@keyframes dash-march {
+  to { stroke-dashoffset: -24; }
+}
+.leaflet-construction-line path {
+  animation: dash-march 0.8s linear infinite;
+}
+
+/* Slow march for balsa/ferry construction */
+@keyframes dash-march-slow {
+  to { stroke-dashoffset: -28; }
+}
+.leaflet-construction-slow path {
+  animation: dash-march-slow 1.4s linear infinite;
+}
+
+/* Animated water waves for balsa (ferry) routes */
+@keyframes wave-flow {
+  to { stroke-dashoffset: -14; }
+}
+@keyframes wave-ripple {
+  to { stroke-dashoffset: -15; }
+}
+.leaflet-balsa-line path {
+  animation: wave-flow 1.2s linear infinite;
+}
+.leaflet-balsa-ripple path {
+  animation: wave-ripple 0.7s linear infinite;
+}
+
+/* Passenger train service — gentle pink glide */
+@keyframes passenger-glide {
+  to { stroke-dashoffset: -8; }
+}
+.leaflet-passenger-line path {
+  animation: passenger-glide 1.0s linear infinite;
+}
+
