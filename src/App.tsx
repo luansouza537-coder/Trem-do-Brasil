@@ -23,6 +23,8 @@ import {
   getTrackWorkersRequired,
   getConstructionMonths,
   getSimultaneousPenalty,
+  getActiveSeasonalEffects,
+  getDemandGrowthMultiplier,
   WORKER_SALARIES,
   WORKER_HIRE_COST,
   WORKER_SEVERANCE,
@@ -258,7 +260,23 @@ export default function App() {
       if (compoundRevMult > 1.0) compoundRevMult = Math.min(1.35, compoundRevMult);
       const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
       const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0);
-      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent);
+
+      // Seasonal effects
+      const seasonalEffects = getActiveSeasonalEffects(monthIdx);
+      const seasonalRevFactor = seasonalEffects.reduce((acc, s) => acc * (s.revenueFactor ?? 1.0), 1.0);
+      // Add seasonal news on first month of each effect
+      seasonalEffects.forEach(s => {
+        if (s.months[0] === monthIdx) {
+          setNewsItems(prev => [{
+            id: `seasonal-${s.id}-${gameYear}`,
+            headline: s.headline,
+            category: s.revenueFactor && s.revenueFactor < 1 ? 'crisis' : s.revenueFactor && s.revenueFactor > 1 ? 'grant' : 'infra',
+            yearMonth: `${MONTHS_PT[monthIdx]}/${gameYear}`,
+          }, ...prev].slice(0, 40));
+        }
+      });
+
+      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent, gameYear, upgradedHubs);
       const doubledBonus = cyberAttack ? 0 : edgesRef.current
         .filter(e => e.status !== 'building' && e.doubled)
         .reduce((s, e) => s + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000) * 0.5), 0);
@@ -269,7 +287,7 @@ export default function App() {
           const mult = e.trainLevel === 2 ? 0.25 : e.trainLevel === 3 ? 0.60 : 0;
           return s + Math.round(base * mult);
         }, 0);
-      const monthlyRev = cyberAttack ? 0 : (Math.round((baseRev + doubledBonus + trainBonus) * compoundRevMult) + monthlyBonusTotal);
+      const monthlyRev = cyberAttack ? 0 : (Math.round((baseRev + doubledBonus + trainBonus) * compoundRevMult * seasonalRevFactor) + monthlyBonusTotal);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
       }
@@ -830,7 +848,7 @@ export default function App() {
 
     const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
     const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
-    const monthlyRevenue = getMonthlyRevenue(edges, workers, [], CITIES);
+    const monthlyRevenue = getMonthlyRevenue(edges, workers, [], CITIES, false, gameYear, upgradedHubs);
 
     return {
       totalSpent,
@@ -846,7 +864,7 @@ export default function App() {
       totalRevenue,
       monthlyRevenue,
     };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue]);
+  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue, gameYear, workers]);
 
   // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
   useEffect(() => {
@@ -1456,7 +1474,16 @@ export default function App() {
       const pct = Math.round((1 - simultaneousPenalty) * 100);
       showToast(`⚠️ ${constructionQueue.length + 1} obras simultâneas — velocidade desta obra reduzida em ${pct}%`, 'info');
     }
-    const months = Math.ceil(baseMths * slowFactor / simultaneousPenalty);
+    // Seasonal construction slow for Norte states
+    const NORTE_STATES = ['AM', 'PA', 'RO', 'RR', 'AP', 'AC', 'TO'];
+    const activeSeasonal = getActiveSeasonalEffects(monthIdx);
+    const seasonalSlowFactor = activeSeasonal
+      .filter(s => s.constructionSlowFactor && s.states?.some(st => [cityA.state, cityB.state].includes(st)))
+      .reduce((acc, s) => acc * (s.constructionSlowFactor ?? 1.0), 1.0);
+    if (seasonalSlowFactor > 1.0 && NORTE_STATES.includes(cityA.state) || NORTE_STATES.includes(cityB.state)) {
+      showToast(`🌧️ Chuvas amazônicas: obra no Norte terá duração +${Math.round((seasonalSlowFactor - 1) * 100)}% mais longa`, 'info');
+    }
+    const months = Math.ceil(baseMths * slowFactor * seasonalSlowFactor / simultaneousPenalty);
 
     // Allocate workers to the project — they stay dedicated until completion
     const allocated: GameWorkers = {
@@ -1728,44 +1755,61 @@ export default function App() {
                 </div>
               )}
 
-              {/* Routes list — only if connected */}
-              {cityEdges.length > 0 && (
-                <div className="bg-slate-950/50 rounded-lg border border-slate-800 overflow-hidden">
-                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest px-2.5 pt-2 pb-1">Rotas Ativas</p>
-                  <div className="divide-y divide-slate-900 max-h-32 overflow-y-auto">
-                    {cityEdges.map(e => {
-                      const otherId = e.from === selectedCity.id ? e.to : e.from;
-                      const other = CITIES.find(c => c.id === otherId);
-                      const edgeRevenue = (() => {
-                        const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
-                        const multA = getCityTypeRevenueMultiplier(selectedCity.type);
-                        const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
-                        return Math.round(base * (multA + multB) / 2);
-                      })();
-                      const upgradeBadges = [
-                        e.doubled && '⊟',
-                        e.trainLevel && e.trainLevel > 1 && `L${e.trainLevel}`,
-                        e.passenger && '🚆',
-                      ].filter(Boolean).join(' ');
-                      return (
-                        <div key={e.id} className="px-2.5 py-1.5 text-[9px]">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-300 font-medium">{e.type === 'balsa' ? '🚢' : '🚂'} {other?.name ?? otherId} <span className="text-slate-600">({e.distance.toFixed(0)} km)</span>{upgradeBadges && <span className="ml-1 text-amber-400">{upgradeBadges}</span>}</span>
-                            <span className="text-sky-400 font-bold">+R$ {fmt(edgeRevenue)}/mês</span>
-                          </div>
-                          {e.type !== 'balsa' && (
-                            <div className="flex gap-1 mt-1">
-                              {!e.doubled && <button onClick={() => handleDoubleTrack(e.id)} className="px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-700/40 text-amber-400 text-[8px] hover:bg-amber-900/60">⊟ Bitola Dupla R$20B</button>}
-                              {(e.trainLevel ?? 1) < 3 && <button onClick={() => handleUpgradeTrainLevel(e.id)} className="px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-700/40 text-sky-400 text-[8px] hover:bg-sky-900/60">🚄 Nível {(e.trainLevel ?? 1)+1} R${(e.trainLevel ?? 1) === 1 ? '15' : '30'}B</button>}
-                              {!e.passenger && <button onClick={() => handlePassengerUpgrade(e.id)} className="px-1.5 py-0.5 rounded bg-pink-950/60 border border-pink-700/40 text-pink-400 text-[8px] hover:bg-pink-900/60">🚆 Passageiros R$25B</button>}
+              {/* Routes list — sorted by revenue with mini bars */}
+              {cityEdges.length > 0 && (() => {
+                const routesWithRev = cityEdges.map(e => {
+                  const otherId = e.from === selectedCity.id ? e.to : e.from;
+                  const other = CITIES.find(c => c.id === otherId);
+                  const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+                  const multA = getCityTypeRevenueMultiplier(selectedCity.type);
+                  const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
+                  const hubBonus = upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to) ? 1.25 : 1.0;
+                  const demandMult = getDemandGrowthMultiplier(gameYear);
+                  const edgeRevenue = Math.round(base * (multA + multB) / 2 * hubBonus * demandMult);
+                  return { e, other, edgeRevenue };
+                }).sort((a, b) => b.edgeRevenue - a.edgeRevenue);
+                const maxRev = routesWithRev[0]?.edgeRevenue ?? 1;
+                return (
+                  <div className="bg-slate-950/50 rounded-lg border border-slate-800 overflow-hidden">
+                    <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-widest px-2.5 pt-2 pb-1">
+                      📊 Rotas Ativas — por receita
+                    </p>
+                    <div className="divide-y divide-slate-900 max-h-36 overflow-y-auto">
+                      {routesWithRev.map(({ e, other, edgeRevenue }, idx) => {
+                        const barPct = Math.round((edgeRevenue / maxRev) * 100);
+                        const upgradeBadges = [
+                          e.doubled && '⊟',
+                          e.trainLevel && e.trainLevel > 1 && `L${e.trainLevel}`,
+                          e.passenger && '🚆',
+                        ].filter(Boolean).join(' ');
+                        return (
+                          <div key={e.id} className="px-2.5 py-1.5 text-[9px]">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-slate-300 font-medium">
+                                {idx === 0 && <span className="text-amber-400 mr-0.5">★</span>}
+                                {e.type === 'balsa' ? '🚢' : '🚂'} {other?.name ?? e.to}{' '}
+                                <span className="text-slate-600">({e.distance.toFixed(0)} km)</span>
+                                {upgradeBadges && <span className="ml-1 text-amber-400">{upgradeBadges}</span>}
+                              </span>
+                              <span className="text-sky-400 font-bold shrink-0 ml-1">+R$ {fmt(edgeRevenue)}/mês</span>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            <div className="w-full bg-slate-900 rounded-full h-1 overflow-hidden">
+                              <div className="h-full bg-sky-600 rounded-full" style={{ width: `${barPct}%` }} />
+                            </div>
+                            {e.type !== 'balsa' && (
+                              <div className="flex gap-1 mt-1">
+                                {!e.doubled && <button onClick={() => handleDoubleTrack(e.id)} className="px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-700/40 text-amber-400 text-[8px] hover:bg-amber-900/60">⊟ Bitola Dupla R$20B</button>}
+                                {(e.trainLevel ?? 1) < 3 && <button onClick={() => handleUpgradeTrainLevel(e.id)} className="px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-700/40 text-sky-400 text-[8px] hover:bg-sky-900/60">🚄 Nível {(e.trainLevel ?? 1)+1} R${(e.trainLevel ?? 1) === 1 ? '15' : '30'}B</button>}
+                                {!e.passenger && <button onClick={() => handlePassengerUpgrade(e.id)} className="px-1.5 py-0.5 rounded bg-pink-950/60 border border-pink-700/40 text-pink-400 text-[8px] hover:bg-pink-900/60">🚆 Passageiros R$25B</button>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Nearest unconnected cities suggestion */}
               {(() => {

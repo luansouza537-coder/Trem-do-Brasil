@@ -459,16 +459,68 @@ export function getCityTypeRevenueMultiplier(type: City['type']): number {
   }
 }
 
+// ── Seasonal effects ────────────────────────────────────────────────────────
+export interface SeasonalEffect {
+  id: string;
+  label: string;
+  months: number[]; // 0 = January
+  states?: string[]; // if set, construction slow only affects routes touching these states
+  revenueFactor?: number;
+  constructionSlowFactor?: number;
+  headline: string;
+}
+
+export const SEASONAL_EFFECTS: SeasonalEffect[] = [
+  {
+    id: 'chuvas_amazonia',
+    label: 'Chuvas Amazônicas',
+    months: [0, 1, 2], // Jan–Mar
+    states: ['AM', 'PA', 'RO', 'RR', 'AP', 'AC', 'TO'],
+    constructionSlowFactor: 1.35,
+    headline: '🌧️ Chuvas intensas na Amazônia: obras no Norte com ritmo reduzido em 35%',
+  },
+  {
+    id: 'seca_nordeste',
+    label: 'Seca no Nordeste',
+    months: [6, 7, 8], // Jul–Sep
+    revenueFactor: 0.88,
+    headline: '☀️ Seca histórica no Nordeste: demanda de transportes cai 12% no país',
+  },
+  {
+    id: 'festas_dezembro',
+    label: 'Temporada de Festas',
+    months: [11], // December
+    revenueFactor: 1.20,
+    headline: '🎄 Temporada festiva: demanda de passageiros sobe 20% em todo o Brasil',
+  },
+];
+
+export function getActiveSeasonalEffects(monthIdx: number): SeasonalEffect[] {
+  return SEASONAL_EFFECTS.filter(e => e.months.includes(monthIdx));
+}
+
+// ── Demand growth by year ────────────────────────────────────────────────────
+export function getDemandGrowthMultiplier(gameYear: number): number {
+  if (gameYear <= 2035) return 1.00;
+  if (gameYear <= 2045) return 1.10;
+  if (gameYear <= 2055) return 1.22;
+  if (gameYear <= 2065) return 1.36;
+  return 1.50;
+}
+
 export function getMonthlyRevenue(
   edges: Edge[],
   workers: { manutencao: number },
   activeEffects: string[] = [],
   cities: City[] = [],
-  balsaFrozenOverride?: boolean
+  balsaFrozenOverride?: boolean,
+  gameYear?: number,
+  upgradedHubs?: string[]
 ): number {
   const completedEdges = edges.filter(e => e.status !== 'building');
   const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
   const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
+  const demandMult = gameYear ? getDemandGrowthMultiplier(gameYear) : 1.0;
   const base = completedEdges.reduce((sum, e) => {
     if (e.type === 'balsa' && balsaFrozen) return sum;
     const baseKm = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
@@ -486,7 +538,9 @@ export function getMonthlyRevenue(
           return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
         })()
       : 1.0;
-    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus);
+    // Hub bonus: +25% if either endpoint has an upgraded hub
+    const hubBonus = upgradedHubs && (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.25 : 1.0;
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
   }, 0);
   // Without any maintenance workers revenue decays by 15%
   const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;
