@@ -435,6 +435,7 @@ export default function App() {
           id: `pol_${ev.id}`,
           title: ev.title,
           description: ev.description,
+          ...(ev.lore ? { lore: ev.lore } : {}),
           type: 'politics',
           statusEffect: partyEffect,
           durationMonths: 48,
@@ -481,6 +482,7 @@ export default function App() {
           id: `ge_${ev.id}`,
           title: ev.title,
           description: ev.description,
+          ...(ev.lore ? { lore: ev.lore } : {}),
           type: ge.type,
           statusEffect: ge.statusEffect,
           durationMonths: ge.durationMonths,
@@ -2229,9 +2231,19 @@ export default function App() {
               </div>
 
               {/* Msg */}
-              <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/40 p-4 rounded-xl border border-slate-850/60 mb-5 italic">
-                "{currentEvent.description}"
-              </p>
+              {currentEvent.lore ? (
+                <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-850/60 mb-5 max-h-48 overflow-y-auto custom-scrollbar">
+                  {currentEvent.lore.split('\n\n').map((para, i) => (
+                    <p key={i} className={`text-xs text-slate-300 leading-relaxed ${i > 0 ? 'mt-3' : ''} ${i === 0 ? 'italic' : ''}`}>
+                      {para}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/40 p-4 rounded-xl border border-slate-850/60 mb-5 italic">
+                  "{currentEvent.description}"
+                </p>
+              )}
 
               {/* Modifiers */}
               <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-850 flex items-start gap-2.5 mb-6 text-xs text-slate-300 leading-relaxed">

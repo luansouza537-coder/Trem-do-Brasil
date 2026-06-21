@@ -70,6 +70,7 @@ export interface GameEvent {
   id: string;
   title: string;
   description: string;
+  lore?: string;
   type: 'strike' | 'env_delay' | 'politics' | 'crisis' | 'natural' | 'cyber' | 'accident' | 'positive' | 'neutral';
   statusEffect: string;
   costToResolve?: number;
