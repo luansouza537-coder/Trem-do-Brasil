@@ -6,6 +6,7 @@ import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } fro
 import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
 import PauseScreen from './components/PauseScreen';
+import SplashScreen from './components/SplashScreen';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -87,6 +88,8 @@ export default function App() {
   const [hoveredCityId, setHoveredCityId] = useState<string | null>(null);
   const [tileLayerType, setTileLayerType] = useState<'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain'>('dark');
   const [isMuted, setIsMuted] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [flyToSignal, setFlyToSignal] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
 
@@ -542,11 +545,19 @@ export default function App() {
     }, 4500);
   };
 
+  // Soundtrack: start after splash, respect mute
+  useEffect(() => {
+    if (!splashDone || !audioRef.current) return;
+    audioRef.current.volume = 0.35;
+    if (!isMuted) audioRef.current.play().catch(() => {});
+    else audioRef.current.pause();
+  }, [splashDone, isMuted]);
+
   // Sound muter toggle
   const handleToggleMute = () => {
     const nextMute = sound.toggleMute();
     setIsMuted(nextMute);
-    showToast(nextMute ? 'Efeitos sonoros desativados' : 'Efeitos sonoros ativados', 'info');
+    showToast(nextMute ? 'Som desativado' : 'Som ativado', 'info');
   };
 
   // Reset the railway grid
@@ -1592,6 +1603,9 @@ export default function App() {
   };
 
   return (
+    <>
+    {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
+    <audio ref={audioRef} src="/soundtrack.mp3" loop preload="auto" />
     <div id="game-workspace" className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-slate-950 font-sans" style={{ contentVisibility: 'auto' }}>
       
       {/* 2. Left Overlay Sidebar Panel */}
@@ -2400,5 +2414,6 @@ export default function App() {
       )}
 
     </div>
+    </>
   );
 }
