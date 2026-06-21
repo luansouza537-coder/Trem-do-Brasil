@@ -6,6 +6,7 @@ import { FundGrant, WORKER_SALARIES } from '../utils/gameRules';
 import { Volume2, VolumeX, RotateCw } from 'lucide-react';
 import OperationsTab from './sidebar/OperationsTab';
 import MissionsTab from './sidebar/MissionsTab';
+import NewsTab from './sidebar/NewsTab';
 import CitiesTab from './sidebar/CitiesTab';
 
 const MONTHS = [
@@ -103,23 +104,30 @@ export default function Sidebar({
   mobileExpanded = false, onMobileExpandedChange,
 }: SidebarProps) {
   const importFileRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
+  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news'>('cities');
   const setMobileExpanded = useCallback((v: boolean) => onMobileExpandedChange?.(v), [onMobileExpandedChange]);
 
-  // Portrait orientation warning when expanded on mobile
+  // Orientation detection
   const [isPortrait, setIsPortrait] = useState(
     typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false
   );
   useEffect(() => {
-    const handler = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    const handler = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+      // Auto-expand when rotating to landscape on touch devices
+      if (!portrait && navigator.maxTouchPoints > 0) {
+        onMobileExpandedChange?.(true);
+      }
+    };
     window.addEventListener('resize', handler);
     window.addEventListener('orientationchange', handler);
     return () => { window.removeEventListener('resize', handler); window.removeEventListener('orientationchange', handler); };
-  }, []);
+  }, [onMobileExpandedChange]);
 
   // Swipe between tabs
   const swipeTouchStartX = useRef<number | null>(null);
-  const TABS: ('cities' | 'operations' | 'missions')[] = ['cities', 'operations', 'missions'];
+  const TABS: ('cities' | 'operations' | 'missions' | 'news')[] = ['cities', 'operations', 'missions', 'news'];
   const handleTabSwipe = useCallback((e: React.TouchEvent) => {
     if (swipeTouchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
@@ -283,12 +291,13 @@ export default function Sidebar({
       {/* Tab Switcher */}
       <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-0.5 shrink-0">
         {([
-          { id: 'cities', label: '🗺️ Rotas', badge: false },
+          { id: 'cities',     label: '🗺️ Rotas',    badge: false },
           { id: 'operations', label: `👷 Equipe${constructionQueue.length > 0 ? ` (${constructionQueue.length})` : ''}`, badge: activeEvents.length > 0 },
-          { id: 'missions', label: '🎯 Objetivos', badge: missionResults.some(m => m.completed) && newsItems.length > 0 },
+          { id: 'missions',   label: '🎯 Missões',  badge: missionResults.some(m => m.completed) },
+          { id: 'news',       label: '📰 Notícias', badge: newsItems.length > 0 && activeTab !== 'news' },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 text-center py-2 rounded-lg text-[9.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
+            className={`flex-1 text-center py-2 rounded-lg text-[8.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
               activeTab === tab.id ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}>
             {tab.label}
@@ -333,8 +342,12 @@ export default function Sidebar({
       {activeTab === 'missions' && (
         <MissionsTab
           missionResults={missionResults} completedMissions={completedMissions}
-          newsItems={newsItems} expiredMissions={expiredMissions}
+          expiredMissions={expiredMissions}
         />
+      )}
+
+      {activeTab === 'news' && (
+        <NewsTab newsItems={newsItems} />
       )}
 
       {activeTab === 'cities' && (
