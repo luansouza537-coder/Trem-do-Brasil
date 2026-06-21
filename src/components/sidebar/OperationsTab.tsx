@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, InfraProject } from '../../types';
-import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant } from '../../utils/gameRules';
+import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, getSimultaneousPenalty } from '../../utils/gameRules';
 import { getAdvisorMessages, AdvisorPriority } from '../../utils/advisor';
 import { AlertTriangle, Users, CheckCircle, Info } from 'lucide-react';
 
@@ -321,14 +321,23 @@ export default function OperationsTab({
       {/* 2b. Obras em Andamento */}
       {constructionQueue.length > 0 && (
         <div className="p-3.5 flex flex-col gap-2 bg-orange-950/10 border-t border-orange-500/20">
-          <span className="text-[10px] text-orange-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-            🚧 Obras em Andamento ({constructionQueue.length})
-            {constructionQueue.length > 0 && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] text-orange-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
+              🚧 Obras em Andamento ({constructionQueue.length})
               <span className="text-[9px] text-slate-500 normal-case font-normal tracking-normal">
                 — média {Math.round(constructionQueue.reduce((s, p) => s + p.monthsRemaining, 0) / constructionQueue.length)} meses
               </span>
-            )}
-          </span>
+            </span>
+            {constructionQueue.length >= 2 && (() => {
+              const penalty = getSimultaneousPenalty(constructionQueue.length);
+              const pct = Math.round((1 - penalty) * 100);
+              return (
+                <span className="text-[8.5px] text-amber-400 font-bold">
+                  ⚠️ {constructionQueue.length} obras simultâneas — velocidade reduzida em {pct}% por canteiro
+                </span>
+              );
+            })()}
+          </div>
           <div className="flex flex-col gap-2">
             {constructionQueue.map(p => {
               const pct = Math.round(((p.totalMonths - p.monthsRemaining) / p.totalMonths) * 100);

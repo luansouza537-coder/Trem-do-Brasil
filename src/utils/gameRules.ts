@@ -178,12 +178,22 @@ export function getTrackWorkersRequired(
   needsExplosivos: boolean
 ): GameWorkers {
   return {
-    terraplanagem: type === 'balsa' ? 40 : Math.ceil(distance * 0.50),
-    assentamento:  type === 'balsa' ? 20 : Math.ceil(distance * 0.30),
-    sinalizacao:   Math.ceil(distance * 0.10),
-    explosivos:    needsExplosivos ? Math.max(10, Math.ceil(distance * 0.06)) : 0,
+    terraplanagem: type === 'balsa' ? 70 : Math.ceil(distance * 0.90),
+    assentamento:  type === 'balsa' ? 35 : Math.ceil(distance * 0.55),
+    sinalizacao:   Math.ceil(distance * 0.18),
+    explosivos:    needsExplosivos ? Math.max(15, Math.ceil(distance * 0.09)) : 0,
     manutencao:    0,
   };
+}
+
+// Returns the speed multiplier penalty based on simultaneous active constructions.
+// More concurrent projects = slower each one (logistics/engineering divided).
+export function getSimultaneousPenalty(activeProjectCount: number): number {
+  if (activeProjectCount <= 1) return 1.00;
+  if (activeProjectCount === 2) return 0.85;
+  if (activeProjectCount === 3) return 0.72;
+  if (activeProjectCount === 4) return 0.60;
+  return 0.50; // 5+ projects
 }
 
 /**
