@@ -22,6 +22,7 @@ import {
   RESOURCE_BUY_PRICES,
   getTrackWorkersRequired,
   getConstructionMonths,
+  getSimultaneousPenalty,
   WORKER_SALARIES,
   WORKER_HIRE_COST,
   WORKER_SEVERANCE,
@@ -1450,7 +1451,12 @@ export default function App() {
     const baseMths = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
     if (cimentoShortage) showToast('🏗️ Escassez de cimento: obra terá duração +50% mais longa!', 'info');
     const slowFactor = activeEvents.reduce((acc, e) => acc * (e.constructionSlowFactor ?? 1.0), 1.0);
-    const months = Math.ceil(baseMths * slowFactor);
+    const simultaneousPenalty = getSimultaneousPenalty(constructionQueue.length + 1);
+    if (constructionQueue.length >= 1) {
+      const pct = Math.round((1 - simultaneousPenalty) * 100);
+      showToast(`⚠️ ${constructionQueue.length + 1} obras simultâneas — velocidade desta obra reduzida em ${pct}%`, 'info');
+    }
+    const months = Math.ceil(baseMths * slowFactor / simultaneousPenalty);
 
     // Allocate workers to the project — they stay dedicated until completion
     const allocated: GameWorkers = {
