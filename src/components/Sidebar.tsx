@@ -215,33 +215,34 @@ export default function Sidebar({
       <div className="p-3 bg-slate-950/90 border-b border-slate-800 flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Concessão</span>
-            <span className="text-xs font-black text-slate-100">
+            <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Concessão</span>
+            <span className="text-sm md:text-xs font-black text-slate-100">
               {MONTHS[monthIdx]}/2077 de <span className="text-amber-400">{gameYear}</span>
             </span>
-            <span className={`text-[9px] font-bold ${2077 - gameYear <= 5 ? 'text-rose-400' : 2077 - gameYear <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
+            <span className={`text-[10px] md:text-[9px] font-bold ${2077 - gameYear <= 5 ? 'text-rose-400' : 2077 - gameYear <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
               ⏳ {2077 - gameYear} anos restantes
             </span>
           </div>
           <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 shrink-0">
             {(['paused', 'normal', 'fast'] as const).map(speed => (
               <button key={speed} onClick={() => onPlaySpeedChange(speed)}
-                className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                className={`px-2 py-1.5 md:px-1.5 md:py-0.5 rounded text-[10px] md:text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                   playSpeed === speed
                     ? speed === 'paused' ? 'bg-rose-500 text-slate-950 font-black'
                       : speed === 'normal' ? 'bg-amber-500 text-slate-950 font-black'
                       : 'bg-sky-500 text-slate-950 font-black'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}>
-                {speed === 'paused' ? '⏸️ Pausar' : speed === 'normal' ? '⏱️ 1x' : '⚡ Rápido'}
+                <span className="md:hidden">{speed === 'paused' ? '⏸' : speed === 'normal' ? '1x' : '⚡'}</span>
+                <span className="hidden md:inline">{speed === 'paused' ? '⏸️ Pausar' : speed === 'normal' ? '⏱️ 1x' : '⚡ Rápido'}</span>
               </button>
             ))}
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-xs">
           <div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Caixa</span>
-            <span className={`text-[12.5px] font-black font-sans flex items-center gap-1 ${
+            <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Caixa</span>
+            <span className={`text-[15px] md:text-[12.5px] font-black font-sans flex items-center gap-1 ${
               budgetState.currentBudget < 0 ? 'text-rose-500' :
               budgetState.currentBudget < 100000000000 ? 'text-rose-400' :
               budgetState.currentBudget < 250000000000 ? 'text-amber-400' : 'text-emerald-400'
@@ -260,22 +261,22 @@ export default function Sidebar({
               const flow = (budgetState.monthlyRevenue ?? 0) - payroll;
               const fmtFlow = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
               return (
-                <span className={`text-[9px] font-bold ${flow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <span className={`text-[11px] md:text-[9px] font-bold ${flow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {flow >= 0 ? '▲' : '▼'} R$ {fmtFlow(Math.abs(flow))}/mês
                 </span>
               );
             })()}
           </div>
           <div className="text-right flex flex-col items-end gap-0.5">
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Conexões</span>
-            <span className="text-[11px] font-black text-amber-400">
+            <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Conexões</span>
+            <span className="text-[13px] md:text-[11px] font-black text-amber-400">
               {activeConns} / {maxConnsCount} ({pctComplete}%)
             </span>
-            <div className="flex gap-0.5 mt-0.5">
+            <div className="flex gap-1 md:gap-0.5 mt-0.5">
               {[1, 2, 3].map(s => (
                 <button key={s} onClick={() => onSaveSlotChange(s)}
                   title={`Slot ${s}: ${slotDates[s - 1] ?? 'Vazio'}`}
-                  className={`w-5 h-5 rounded text-[8px] font-black border transition cursor-pointer ${
+                  className={`w-8 h-8 md:w-5 md:h-5 rounded text-[10px] md:text-[8px] font-black border transition cursor-pointer ${
                     saveSlot === s ? 'bg-amber-500 text-slate-950 border-amber-400'
                       : slotDates[s - 1] ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/40 hover:bg-emerald-800/60'
                       : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
@@ -291,16 +292,17 @@ export default function Sidebar({
       {/* Tab Switcher */}
       <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-0.5 shrink-0">
         {([
-          { id: 'cities',     label: '🗺️ Rotas',    badge: false },
-          { id: 'operations', label: `👷 Equipe${constructionQueue.length > 0 ? ` (${constructionQueue.length})` : ''}`, badge: activeEvents.length > 0 },
-          { id: 'missions',   label: '🎯 Missões',  badge: missionResults.some(m => m.completed) },
-          { id: 'news',       label: '📰 Notícias', badge: newsItems.length > 0 && activeTab !== 'news' },
+          { id: 'cities',     icon: '🗺️', label: 'Rotas',    badge: false },
+          { id: 'operations', icon: '👷', label: `Equipe${constructionQueue.length > 0 ? ` (${constructionQueue.length})` : ''}`, badge: activeEvents.length > 0 },
+          { id: 'missions',   icon: '🎯', label: 'Missões',  badge: missionResults.some(m => m.completed) },
+          { id: 'news',       icon: '📰', label: 'Notícias', badge: newsItems.length > 0 && activeTab !== 'news' },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 text-center py-2 rounded-lg text-[8.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
+            className={`flex-1 text-center py-2.5 md:py-2 rounded-lg text-[11px] md:text-[9.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
               activeTab === tab.id ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}>
-            {tab.label}
+            <span className="md:hidden text-[15px]">{tab.icon}</span>
+            <span className="hidden md:inline">{tab.icon} {tab.label}</span>
             {tab.badge && (
               <span className="absolute top-1 right-1 flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -366,7 +368,7 @@ export default function Sidebar({
 
       {/* Footer */}
       <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
-        <span>© 2027 TREM DO BRASIL · RENIF V1.0</span>
+        <span className="hidden md:inline">© 2027 TREM DO BRASIL · RENIF V1.0</span>
         <div className="flex gap-1.5 items-center">
           {onImportSave && (
             <>
