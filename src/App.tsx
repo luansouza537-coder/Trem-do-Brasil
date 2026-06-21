@@ -277,17 +277,7 @@ export default function App() {
       });
 
       const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent, gameYear, upgradedHubs);
-      const doubledBonus = cyberAttack ? 0 : edgesRef.current
-        .filter(e => e.status !== 'building' && e.doubled)
-        .reduce((s, e) => s + Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000) * 0.5), 0);
-      const trainBonus = cyberAttack ? 0 : edgesRef.current
-        .filter(e => e.status !== 'building' && e.trainLevel && e.trainLevel > 1)
-        .reduce((s, e) => {
-          const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
-          const mult = e.trainLevel === 2 ? 0.25 : e.trainLevel === 3 ? 0.60 : 0;
-          return s + Math.round(base * mult);
-        }, 0);
-      const monthlyRev = cyberAttack ? 0 : (Math.round((baseRev + doubledBonus + trainBonus) * compoundRevMult * seasonalRevFactor) + monthlyBonusTotal);
+      const monthlyRev = cyberAttack ? 0 : (Math.round(baseRev * compoundRevMult * seasonalRevFactor) + monthlyBonusTotal);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
       }
@@ -848,7 +838,12 @@ export default function App() {
 
     const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
     const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
-    const monthlyRevenue = getMonthlyRevenue(edges, workers, [], CITIES, false, gameYear, upgradedHubs);
+    const activeEffectsForDisplay = activeEvents.map(e => e.statusEffect);
+    const seasonalRevForDisplay = getActiveSeasonalEffects(monthIdx).reduce((acc, s) => acc * (s.revenueFactor ?? 1.0), 1.0);
+    const balsaFrozenForDisplay = activeEvents.some(e => e.balsaFrozen);
+    const monthlyRevenue = Math.round(
+      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs) * seasonalRevForDisplay
+    );
 
     return {
       totalSpent,
@@ -864,7 +859,7 @@ export default function App() {
       totalRevenue,
       monthlyRevenue,
     };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue, gameYear, workers]);
+  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue, gameYear, workers, activeEvents, monthIdx]);
 
   // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
   useEffect(() => {
@@ -1697,16 +1692,25 @@ export default function App() {
           const isUpgraded = upgradedHubs.includes(selectedCity.id);
           const hasYard = maintenanceYards.includes(selectedCity.id);
           const cityEdges = edges.filter(e => (e.from === selectedCity.id || e.to === selectedCity.id) && e.status !== 'building');
+          const TRAIN_LVL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
           const cityMonthlyRevenue = cityEdges.reduce((s, e) => {
             const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
             const otherCityId = e.from === selectedCity.id ? e.to : e.from;
             const otherCity = CITIES.find(c => c.id === otherCityId);
             const multA = getCityTypeRevenueMultiplier(selectedCity.type);
             const multB = otherCity ? getCityTypeRevenueMultiplier(otherCity.type) : 1.0;
-            return s + Math.round(base * (multA + multB) / 2);
+            const doubledMult = e.doubled ? 1.5 : 1.0;
+            const trainMult = TRAIN_LVL_MULT[(e.trainLevel ?? 1) as 1|2|3];
+            const passengerBonus = e.passenger ? ((selectedCity.type === 'capital' || selectedCity.type === 'polo_industrial' || otherCity?.type === 'capital' || otherCity?.type === 'polo_industrial') ? 1.4 : 1.15) : 1.0;
+            const hubBonus = upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to) ? 1.25 : 1.0;
+            const demandMult = getDemandGrowthMultiplier(gameYear);
+            return s + Math.round(base * (multA + multB) / 2 * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
           }, 0);
           const mDist = nearestYardDistances[selectedCity.id];
-          const maintOk = mDist !== undefined && mDist !== Infinity && mDist <= 800;
+          const nearestYardId = nearestYardIds[selectedCity.id];
+          const nearestYardLevel = nearestYardId ? (yardLevels[nearestYardId] ?? 1) : 1;
+          const yardCoverage = YARD_COVERAGE_KM[nearestYardLevel as 1|2|3] ?? 600;
+          const maintOk = mDist !== undefined && mDist !== Infinity && mDist <= yardCoverage;
           const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
 
           return (
