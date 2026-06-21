@@ -1677,7 +1677,7 @@ export default function App() {
       />
 
       {/* 3. Primary Leaflet Map Container */}
-      <main className="flex-1 h-[40vh] md:h-full relative overflow-hidden order-first md:order-none">
+      <main className="flex-1 h-[60vh] md:h-full relative overflow-hidden">
 
         {/* FAB — mobile only — opens sidebar panel */}
         {!mobileExpanded && (

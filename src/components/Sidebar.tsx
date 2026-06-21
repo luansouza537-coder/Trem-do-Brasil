@@ -138,7 +138,7 @@ export default function Sidebar({
     <div id="control-sidebar" className={`w-full md:w-96 text-slate-100 flex flex-col md:h-full overflow-hidden select-none shrink-0 ${
       mobileExpanded
         ? 'fixed inset-0 z-[9999] h-screen bg-slate-950'
-        : 'h-[60vh]'
+        : 'h-[40vh]'
     }`}>
       {/* Header */}
       <div className="p-4 bg-slate-900 border-b border-slate-700/80 flex items-center justify-between shadow-md">
