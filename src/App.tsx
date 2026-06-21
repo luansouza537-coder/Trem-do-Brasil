@@ -2326,41 +2326,6 @@ export default function App() {
                 >
                    Aceitar e Absorver ({currentEvent.durationMonths} Meses)
                 </button>
-                <button
-                  onClick={() => {
-                    // Ignore crisis — double its duration
-                    const ev = currentEvent;
-                    const doubledDuration = ev.durationMonths * 2;
-                    const ignoredEvent: GameEvent = { ...ev, durationMonths: doubledDuration, monthsLeft: doubledDuration };
-                    setActiveEvents(prev => [...prev, ignoredEvent]);
-                    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-                    setNewsItems(prev => [newsCrisis(ignoredEvent, ym), ...prev].slice(0, 60));
-                    setCurrentEvent(null);
-                    showToast(`⚠️ Crise ignorada — duração dobrada para ${doubledDuration} meses!`, 'error');
-                    sound.playError();
-                  }}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-rose-400 border border-rose-500/30 font-bold uppercase py-2 px-4 rounded-xl transition text-xs tracking-wider cursor-pointer"
-                >
-                  ⚠️ Ignorar (sofrer consequência — {currentEvent.durationMonths * 2} meses)
-                </button>
-
-                <button
-                  onClick={() => {
-                    const ev = { ...currentEvent, monthsLeft: currentEvent.durationMonths * 2, durationMonths: currentEvent.durationMonths * 2 };
-                    setActiveEvents(prev => [...prev, ev]);
-                    if (ev.workerLoss) {
-                      const { role, amount } = ev.workerLoss;
-                      setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - amount) }));
-                      setSpentOnWorkers(prev => prev + 8_000_000_000);
-                    }
-                    showToast(`⚠️ Crise ignorada — duração dobrada para ${ev.durationMonths} meses!`, 'error');
-                    setCurrentEvent(null);
-                    sound.playError();
-                  }}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 font-bold uppercase py-2 px-4 rounded-xl transition text-[10px] tracking-wider cursor-pointer border border-slate-700"
-                >
-                  ⚠️ Ignorar (duração dobrada)
-                </button>
               </div>
 
             </div>
