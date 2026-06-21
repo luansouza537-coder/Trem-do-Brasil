@@ -276,7 +276,7 @@ export default function App() {
             headline: s.headline,
             category: s.revenueFactor && s.revenueFactor < 1 ? 'crisis' : s.revenueFactor && s.revenueFactor > 1 ? 'grant' : 'infra',
             yearMonth: `${MONTHS_PT[monthIdx]}/${gameYear}`,
-          }, ...prev].slice(0, 40));
+          }, ...prev].slice(0, 60));
         }
       });
 
@@ -299,7 +299,7 @@ export default function App() {
 
       // Random monthly news
       const rnd = newsRandom(gameYear, monthIdx);
-      if (rnd) setNewsItems(prev => [rnd, ...prev].slice(0, 40));
+      if (rnd) setNewsItems(prev => [rnd, ...prev].slice(0, 60));
 
       // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
 
@@ -345,7 +345,7 @@ export default function App() {
             showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
             sound.playConnect();
             if (cityA && cityB) {
-              setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 40));
+              setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 60));
             }
           });
         }
@@ -452,7 +452,7 @@ export default function App() {
           headline: `🗳️ ${ev.title} — ${ev.description.slice(0, 80)}`,
           yearMonth,
           category: 'crisis',
-        }, ...prev].slice(0, 40));
+        }, ...prev].slice(0, 60));
         showToast(`🗳️ ${ev.title}`, 'info');
         continue;
       }
@@ -471,7 +471,7 @@ export default function App() {
           headline: `${ev.immediateCash! > 0 ? '💰' : '💸'} ${ev.title}`,
           yearMonth,
           category: ev.immediateCash! > 0 ? 'grant' : 'crisis',
-        }, ...prev].slice(0, 40));
+        }, ...prev].slice(0, 60));
       }
 
       // Apply game event effect
@@ -518,7 +518,7 @@ export default function App() {
               headline: `⚠️ ${ev.title}`,
               yearMonth,
               category: 'crisis',
-            }, ...prev].slice(0, 40));
+            }, ...prev].slice(0, 60));
           }
         } else {
           // POS/NEU events apply automatically, no popup
@@ -530,7 +530,7 @@ export default function App() {
             headline: `${icon} ${ev.title}`,
             yearMonth,
             category: ev.category === 'POS' ? 'grant' : 'economy',
-          }, ...prev].slice(0, 40));
+          }, ...prev].slice(0, 60));
         }
       }
     }
@@ -913,7 +913,7 @@ export default function App() {
     const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
     budgetState.unlockedGrants.filter(g => g.unlocked).forEach(g => {
       if (!prevGrantsRef.current.includes(g.id)) {
-        setNewsItems(prev => [newsGrant(g.title, g.value, ym), ...prev].slice(0, 40));
+        setNewsItems(prev => [newsGrant(g.title, g.value, ym), ...prev].slice(0, 60));
       }
     });
     prevGrantsRef.current = budgetState.unlockedGrants.filter(g => g.unlocked).map(g => g.id);
@@ -932,7 +932,7 @@ export default function App() {
         setTotalRevenue(prev => prev + m.reward);
         showToast(`🎯 Missão concluída: "${m.title.replace(/^[^ ]+ /, '')}" — Prêmio: R$ ${(m.reward/1e9).toFixed(0)}B`, 'success');
         sound.playConnect();
-        setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 40));
+        setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 60));
       }
       // Check deadline
       if (m.deadlineYear && gameYear > m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
@@ -1487,7 +1487,7 @@ export default function App() {
     const seasonalSlowFactor = activeSeasonal
       .filter(s => s.constructionSlowFactor && s.states?.some(st => [cityA.state, cityB.state].includes(st)))
       .reduce((acc, s) => acc * (s.constructionSlowFactor ?? 1.0), 1.0);
-    if (seasonalSlowFactor > 1.0 && NORTE_STATES.includes(cityA.state) || NORTE_STATES.includes(cityB.state)) {
+    if (seasonalSlowFactor > 1.0 && (NORTE_STATES.includes(cityA.state) || NORTE_STATES.includes(cityB.state))) {
       showToast(`🌧️ Chuvas amazônicas: obra no Norte terá duração +${Math.round((seasonalSlowFactor - 1) * 100)}% mais longa`, 'info');
     }
     const months = Math.ceil(baseMths * slowFactor * seasonalSlowFactor / simultaneousPenalty);
@@ -1730,7 +1730,7 @@ export default function App() {
             const doubledMult = e.doubled ? 1.5 : 1.0;
             const trainMult = TRAIN_LVL_MULT[(e.trainLevel ?? 1) as 1|2|3];
             const passengerBonus = e.passenger ? ((selectedCity.type === 'capital' || selectedCity.type === 'polo_industrial' || otherCity?.type === 'capital' || otherCity?.type === 'polo_industrial') ? 1.4 : 1.15) : 1.0;
-            const hubBonus = upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to) ? 1.25 : 1.0;
+            const hubBonus = upgradedHubs.includes(e.from) && upgradedHubs.includes(e.to) ? 1.40 : (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.20 : 1.0;
             const demandMult = getDemandGrowthMultiplier(gameYear);
             return s + Math.round(base * (multA + multB) / 2 * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
           }, 0);
@@ -1795,7 +1795,7 @@ export default function App() {
                   const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
                   const multA = getCityTypeRevenueMultiplier(selectedCity.type);
                   const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
-                  const hubBonus = upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to) ? 1.25 : 1.0;
+                  const hubBonus = upgradedHubs.includes(e.from) && upgradedHubs.includes(e.to) ? 1.40 : (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.20 : 1.0;
                   const demandMult = getDemandGrowthMultiplier(gameYear);
                   const edgeRevenue = Math.round(base * (multA + multB) / 2 * hubBonus * demandMult);
                   return { e, other, edgeRevenue };
@@ -2318,7 +2318,7 @@ export default function App() {
                     }
                     showToast(`Crise absorvida: ${ev.title} ativo por ${ev.durationMonths} meses!`, 'info');
                     const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-                    setNewsItems(prev => [newsCrisis(ev, ym), ...prev].slice(0, 40));
+                    setNewsItems(prev => [newsCrisis(ev, ym), ...prev].slice(0, 60));
                     setCurrentEvent(null);
                     sound.playSelect();
                   }}
@@ -2334,7 +2334,7 @@ export default function App() {
                     const ignoredEvent: GameEvent = { ...ev, durationMonths: doubledDuration, monthsLeft: doubledDuration };
                     setActiveEvents(prev => [...prev, ignoredEvent]);
                     const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-                    setNewsItems(prev => [newsCrisis(ignoredEvent, ym), ...prev].slice(0, 40));
+                    setNewsItems(prev => [newsCrisis(ignoredEvent, ym), ...prev].slice(0, 60));
                     setCurrentEvent(null);
                     showToast(`⚠️ Crise ignorada — duração dobrada para ${doubledDuration} meses!`, 'error');
                     sound.playError();

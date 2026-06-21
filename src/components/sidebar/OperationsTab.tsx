@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, InfraProject } from '../../types';
-import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, getSimultaneousPenalty } from '../../utils/gameRules';
+import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, getSimultaneousPenalty, getActiveSeasonalEffects } from '../../utils/gameRules';
 import { getAdvisorMessages, AdvisorPriority } from '../../utils/advisor';
 import { AlertTriangle, Users, CheckCircle, Info } from 'lucide-react';
 
@@ -462,6 +462,28 @@ export default function OperationsTab({
           </div>
         </div>
       )}
+
+      {/* 4b. Efeitos Sazonais Ativos */}
+      {(() => {
+        const seasonal = getActiveSeasonalEffects(monthIdx);
+        if (seasonal.length === 0) return null;
+        return (
+          <div className="p-3.5 bg-slate-900/10 flex flex-col gap-2">
+            <span className="text-[10px] text-amber-400 font-extrabold tracking-wider uppercase flex items-center gap-1.5">
+              <span>🌦</span>
+              Efeitos Sazonais ({seasonal.length}):
+            </span>
+            <div className="flex flex-col gap-1.5">
+              {seasonal.map((s) => (
+                <div key={s.id} className="bg-amber-950/20 border border-amber-500/20 rounded-lg p-2 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-black text-amber-300 leading-tight">{s.label}</span>
+                  <p className="text-[8.5px] text-slate-400 leading-snug italic">{s.headline}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 5. Regional Intermodal Export Grants */}
       <div className="p-3.5 flex flex-col gap-1.5">
