@@ -6,7 +6,6 @@ export interface ScheduledEventDef {
   triggerMonth: number; // 1-based: 4=Abr, 8=Ago, 12=Dez
   title: string;
   description: string;
-  lore?: string;
   category: 'POL' | 'CRI' | 'POS' | 'NEU';
   party?: 'PL' | 'PS' | 'PB';
   immediateCash?: number; // positivo=ganho, negativo=débito
