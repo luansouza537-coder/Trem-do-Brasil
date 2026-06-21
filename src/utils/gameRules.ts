@@ -542,8 +542,12 @@ export function getMonthlyRevenue(
     const hubBonus = upgradedHubs && (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.25 : 1.0;
     return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
   }, 0);
-  // Without any maintenance workers revenue decays by 15%
-  const maintPenalty = workers.manutencao === 0 && completedEdges.length > 0 ? 0.85 : 1.0;
+  // Maintenance penalty: gradual scale based on crew size vs network load
+  const maintPenalty = completedEdges.length === 0 ? 1.0
+    : workers.manutencao === 0 ? 0.85
+    : workers.manutencao < 20  ? 0.93
+    : workers.manutencao < 50  ? 0.97
+    : 1.0;
   // Big maintenance team bonus: +5% revenue per 50 workers above 100 (max +20%)
   const maintBonus = workers.manutencao >= 100
     ? Math.min(1.20, 1.0 + Math.floor((workers.manutencao - 100) / 50) * 0.05)

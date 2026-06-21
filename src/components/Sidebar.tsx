@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { SaveGame } from '../utils/persistence';
-import { FundGrant } from '../utils/gameRules';
+import { FundGrant, WORKER_SALARIES } from '../utils/gameRules';
 import { Volume2, VolumeX, RotateCw } from 'lucide-react';
 import OperationsTab from './sidebar/OperationsTab';
 import MissionsTab from './sidebar/MissionsTab';
@@ -211,9 +211,11 @@ export default function Sidebar({
             </span>
             {(() => {
               const payroll = workers ? (
-                (workers.terraplanagem ?? 0) * 850000 + (workers.assentamento ?? 0) * 1200000 +
-                (workers.sinalizacao ?? 0) * 2200000 + (workers.explosivos ?? 0) * 3500000 +
-                (workers.manutencao ?? 0) * 950000
+                (workers.terraplanagem ?? 0) * WORKER_SALARIES.terraplanagem +
+                (workers.assentamento ?? 0) * WORKER_SALARIES.assentamento +
+                (workers.sinalizacao ?? 0) * WORKER_SALARIES.sinalizacao +
+                (workers.explosivos ?? 0) * WORKER_SALARIES.explosivos +
+                (workers.manutencao ?? 0) * WORKER_SALARIES.manutencao
               ) : 0;
               const flow = (budgetState.monthlyRevenue ?? 0) - payroll;
               const fmtFlow = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
