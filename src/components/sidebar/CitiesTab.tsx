@@ -263,7 +263,7 @@ export default function CitiesTab({
           <Layers className="w-3 h-3" /> Estilo:
         </span>
         <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800">
-          {(['voyager', 'positron', 'dark', 'satellite'] as const).map((type) => (
+          {(['voyager', 'positron', 'dark', 'satellite', 'terrain'] as const).map((type) => (
             <button
                key={type}
                onClick={() => onTileLayerChange(type)}
@@ -273,7 +273,7 @@ export default function CitiesTab({
                    : 'text-slate-400 hover:text-slate-200'
                }`}
             >
-              {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : 'Satélite'}
+              {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : type === 'satellite' ? 'Satélite' : 'Relevo'}
             </button>
           ))}
         </div>

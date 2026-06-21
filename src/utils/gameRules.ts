@@ -538,8 +538,10 @@ export function getMonthlyRevenue(
           return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
         })()
       : 1.0;
-    // Hub bonus: +25% if either endpoint has an upgraded hub
-    const hubBonus = upgradedHubs && (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.25 : 1.0;
+    // Hub bonus: +20% one endpoint, +40% both endpoints
+    const hubA = upgradedHubs ? upgradedHubs.includes(e.from) : false;
+    const hubB = upgradedHubs ? upgradedHubs.includes(e.to) : false;
+    const hubBonus = hubA && hubB ? 1.40 : (hubA || hubB) ? 1.20 : 1.0;
     return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
   }, 0);
   // Maintenance penalty: gradual scale based on crew size vs network load
