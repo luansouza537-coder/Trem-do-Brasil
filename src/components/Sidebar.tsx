@@ -269,6 +269,7 @@ export default function Sidebar({
       </div>
 
       {/* Tab Content */}
+      <div className="flex-1 overflow-hidden flex flex-col" style={mobileExpanded ? { zoom: 1.35 } : undefined}>
       {activeTab === 'operations' && (
         <OperationsTab
           cities={cities} edges={edges} maintenanceYards={maintenanceYards}
@@ -302,6 +303,7 @@ export default function Sidebar({
           onBuildHub={onBuildHub} onBuildYard={onBuildYard}
         />
       )}
+      </div>
 
       {/* Footer */}
       <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
