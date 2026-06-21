@@ -110,7 +110,7 @@ export default function Sidebar({
   return (
     <div id="control-sidebar" className={`w-full md:w-96 text-slate-100 flex flex-col md:h-full overflow-hidden select-none shrink-0 ${
       mobileExpanded
-        ? 'fixed inset-0 z-[9999] h-screen'
+        ? 'fixed inset-0 z-[9999] h-screen bg-slate-950'
         : 'h-[40vh]'
     }`}>
       {/* Header */}
