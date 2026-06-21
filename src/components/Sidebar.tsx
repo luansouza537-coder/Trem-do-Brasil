@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { SaveGame } from '../utils/persistence';
@@ -72,6 +72,8 @@ interface SidebarProps {
   expiredMissions?: string[];
   completedMissions?: string[];
   onFlyToRegion?: (lat: number, lng: number) => void;
+  mobileExpanded?: boolean;
+  onMobileExpandedChange?: (v: boolean) => void;
 }
 
 export default function Sidebar({
@@ -98,10 +100,35 @@ export default function Sidebar({
   missionResults = [], newsItems = [], onImportSave,
   onDoubleTrack = () => {}, onUpgradeTrainLevel = () => {}, onPassengerUpgrade = () => {},
   expiredMissions = [], completedMissions = [], onFlyToRegion,
+  mobileExpanded = false, onMobileExpandedChange,
 }: SidebarProps) {
   const importFileRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
-  const [mobileExpanded, setMobileExpanded] = useState(false);
+  const setMobileExpanded = useCallback((v: boolean) => onMobileExpandedChange?.(v), [onMobileExpandedChange]);
+
+  // Portrait orientation warning when expanded on mobile
+  const [isPortrait, setIsPortrait] = useState(
+    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false
+  );
+  useEffect(() => {
+    const handler = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener('resize', handler);
+    window.addEventListener('orientationchange', handler);
+    return () => { window.removeEventListener('resize', handler); window.removeEventListener('orientationchange', handler); };
+  }, []);
+
+  // Swipe between tabs
+  const swipeTouchStartX = useRef<number | null>(null);
+  const TABS: ('cities' | 'operations' | 'missions')[] = ['cities', 'operations', 'missions'];
+  const handleTabSwipe = useCallback((e: React.TouchEvent) => {
+    if (swipeTouchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
+    if (Math.abs(dx) < 50) return;
+    const idx = TABS.indexOf(activeTab);
+    if (dx < 0 && idx < TABS.length - 1) setActiveTab(TABS[idx + 1]);
+    if (dx > 0 && idx > 0) setActiveTab(TABS[idx - 1]);
+    swipeTouchStartX.current = null;
+  }, [activeTab]);
 
   const activeConns = edges.length;
   const maxConnsCount = cities.length - 1;
@@ -111,7 +138,7 @@ export default function Sidebar({
     <div id="control-sidebar" className={`w-full md:w-96 text-slate-100 flex flex-col md:h-full overflow-hidden select-none shrink-0 ${
       mobileExpanded
         ? 'fixed inset-0 z-[9999] h-screen bg-slate-950'
-        : 'h-[40vh]'
+        : 'h-[60vh]'
     }`}>
       {/* Header */}
       <div className="p-4 bg-slate-900 border-b border-slate-700/80 flex items-center justify-between shadow-md">
@@ -163,7 +190,12 @@ export default function Sidebar({
             title={isMuted ? "Ativar som" : "Desativar som"}>
             {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
-          <button onClick={onReset}
+          <button
+            onClick={() => {
+              const isTouch = navigator.maxTouchPoints > 0;
+              if (isTouch && !window.confirm('Reiniciar o jogo? Todo progresso será perdido.')) return;
+              onReset();
+            }}
             className="p-2 rounded-lg border border-red-900/30 bg-red-950/20 text-red-400 hover:bg-red-900/40 hover:text-red-300 transition"
             title="Reiniciar jogo">
             <RotateCw className="w-4 h-4" />
@@ -270,8 +302,20 @@ export default function Sidebar({
         ))}
       </div>
 
+      {/* Portrait warning — mobile only */}
+      {mobileExpanded && isPortrait && (
+        <div className="md:hidden shrink-0 bg-amber-950/40 border-b border-amber-700/40 px-3 py-1.5 text-[9px] text-amber-300 font-bold text-center">
+          📱 Gire o celular para paisagem para melhor experiência
+        </div>
+      )}
+
       {/* Tab Content */}
-      <div className="flex-1 overflow-hidden flex flex-col" style={mobileExpanded ? { zoom: 1.35 } : undefined}>
+      <div
+        className="flex-1 overflow-hidden flex flex-col"
+        style={mobileExpanded ? { zoom: 1.35 } : undefined}
+        onTouchStart={e => { swipeTouchStartX.current = e.touches[0].clientX; }}
+        onTouchEnd={handleTabSwipe}
+      >
       {activeTab === 'operations' && (
         <OperationsTab
           cities={cities} edges={edges} maintenanceYards={maintenanceYards}
