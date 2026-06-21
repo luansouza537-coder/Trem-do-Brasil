@@ -367,39 +367,62 @@ export default function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
-        <span className="hidden md:inline">© 2027 TREM DO BRASIL · RENIF V1.0</span>
-        <div className="flex gap-1.5 items-center">
-          {onImportSave && (
-            <>
-              <input ref={importFileRef} type="file" accept=".json" className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    try {
-                      const data = JSON.parse(ev.target?.result as string) as SaveGame;
-                      if (!data.edges || !data.gameYear) throw new Error('Invalid save');
-                      onImportSave(data);
-                    } catch { alert('Arquivo de save inválido.'); }
-                  };
-                  reader.readAsText(file);
-                  e.target.value = '';
-                }}
-              />
-              <button onClick={() => importFileRef.current?.click()}
-                className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-emerald-400 hover:border-emerald-700 transition text-[9px] font-bold uppercase cursor-pointer"
-                title="Importar save de arquivo JSON">
-                📥 Import
+      <div className="bg-slate-950 border-t border-slate-900 shrink-0">
+        {/* Map type selector — always visible (hidden on desktop since it's on the map) */}
+        <div className="md:hidden px-2.5 pt-2 pb-1 flex items-center gap-1.5">
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider shrink-0">🗺️ Mapa:</span>
+          <div className="flex gap-1 flex-wrap">
+            {(['voyager', 'positron', 'dark', 'satellite', 'terrain'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => onTileLayerChange(type)}
+                className={`px-2 py-1 rounded text-[9px] font-bold uppercase transition-all ${
+                  tileLayerType === type
+                    ? 'bg-amber-500 text-slate-950 font-black'
+                    : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : type === 'satellite' ? 'Satélite' : 'Relevo'}
               </button>
-            </>
-          )}
-          <button onClick={onExportStats}
-            className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
-            title="Exportar estatísticas como JSON">
-            📊 Export
-          </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Export / Import + copyright */}
+        <div className="p-2.5 text-[10px] text-slate-500 flex justify-between items-center tracking-wide font-mono">
+          <span className="hidden md:inline">© 2027 TREM DO BRASIL · RENIF V1.0</span>
+          <div className="flex gap-1.5 items-center">
+            {onImportSave && (
+              <>
+                <input ref={importFileRef} type="file" accept=".json" className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      try {
+                        const data = JSON.parse(ev.target?.result as string) as SaveGame;
+                        if (!data.edges || !data.gameYear) throw new Error('Invalid save');
+                        onImportSave(data);
+                      } catch { alert('Arquivo de save inválido.'); }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                />
+                <button onClick={() => importFileRef.current?.click()}
+                  className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-emerald-400 hover:border-emerald-700 transition text-[9px] font-bold uppercase cursor-pointer"
+                  title="Importar save de arquivo JSON">
+                  📥 Import
+                </button>
+              </>
+            )}
+            <button onClick={onExportStats}
+              className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
+              title="Exportar estatísticas como JSON">
+              📊 Export
+            </button>
+          </div>
         </div>
       </div>
     </div>

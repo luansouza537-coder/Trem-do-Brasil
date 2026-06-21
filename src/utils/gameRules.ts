@@ -190,10 +190,14 @@ export function getTrackWorkersRequired(
 // More concurrent projects = slower each one (logistics/engineering divided).
 export function getSimultaneousPenalty(activeProjectCount: number): number {
   if (activeProjectCount <= 1) return 1.00;
-  if (activeProjectCount === 2) return 0.92;
-  if (activeProjectCount === 3) return 0.82;
-  if (activeProjectCount === 4) return 0.72;
-  return 0.62; // 5+ projects
+  if (activeProjectCount === 2) return 0.96;
+  if (activeProjectCount === 3) return 0.91;
+  if (activeProjectCount === 4) return 0.86;
+  if (activeProjectCount === 5) return 0.81;
+  if (activeProjectCount === 6) return 0.77;
+  if (activeProjectCount === 7) return 0.73;
+  if (activeProjectCount === 8) return 0.70;
+  return Math.max(0.55, 0.70 - (activeProjectCount - 8) * 0.03); // 9+ projects: -3% each, floor 55%
 }
 
 /**

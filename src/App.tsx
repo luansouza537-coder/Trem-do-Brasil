@@ -1690,8 +1690,8 @@ export default function App() {
           </button>
         )}
 
-        {/* Floating Map Format / Style Selector widget */}
-        <div className="absolute top-4 right-4 z-50 flex bg-slate-900/95 backdrop-blur-md p-1 px-1.5 rounded-xl border border-slate-800 shadow-2xl items-center gap-1.5 transition-all">
+        {/* Floating Map Format / Style Selector widget — hidden on mobile portrait, visible md+ */}
+        <div className="hidden md:flex absolute top-4 right-4 z-50 bg-slate-900/95 backdrop-blur-md p-1 px-1.5 rounded-xl border border-slate-800 shadow-2xl items-center gap-1.5 transition-all">
           <div className="px-1 text-[10px] font-bold text-slate-400 flex items-center gap-1.5 uppercase tracking-wider">
             <Layers className="w-3.5 h-3.5 text-amber-500" />
             <span className="hidden sm:inline">Mapa:</span>
