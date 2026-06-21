@@ -89,6 +89,7 @@ export default function App() {
   const [tileLayerType, setTileLayerType] = useState<'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain'>('dark');
   const [isMuted, setIsMuted] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [flyToSignal, setFlyToSignal] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
@@ -1671,11 +1672,24 @@ export default function App() {
         missionResults={missionResults}
         newsItems={newsItems}
         onFlyToRegion={(lat, lng) => setFlyToSignal({ lat, lng, timestamp: Date.now() })}
+        mobileExpanded={mobileExpanded}
+        onMobileExpandedChange={setMobileExpanded}
       />
 
       {/* 3. Primary Leaflet Map Container */}
-      <main className="flex-1 h-[60vh] md:h-full relative overflow-hidden">
-        
+      <main className="flex-1 h-[40vh] md:h-full relative overflow-hidden order-first md:order-none">
+
+        {/* FAB — mobile only — opens sidebar panel */}
+        {!mobileExpanded && (
+          <button
+            onClick={() => setMobileExpanded(true)}
+            className="md:hidden absolute bottom-4 left-4 z-[500] w-12 h-12 rounded-full bg-amber-500 text-slate-950 shadow-xl flex items-center justify-center text-xl font-black border-2 border-amber-300 active:scale-95 transition-transform"
+            title="Abrir painel"
+          >
+            ☰
+          </button>
+        )}
+
         {/* Floating Map Format / Style Selector widget */}
         <div className="absolute top-4 right-4 z-50 flex bg-slate-900/95 backdrop-blur-md p-1 px-1.5 rounded-xl border border-slate-800 shadow-2xl items-center gap-1.5 transition-all">
           <div className="px-1 text-[10px] font-bold text-slate-400 flex items-center gap-1.5 uppercase tracking-wider">
@@ -1728,7 +1742,7 @@ export default function App() {
           const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
 
           return (
-            <div className="absolute top-4 left-4 right-4 md:right-auto md:w-[480px] bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 rounded-xl shadow-2xl z-50 flex flex-col gap-3">
+            <div className="fixed bottom-0 left-0 right-0 max-h-[72vh] overflow-y-auto rounded-t-2xl md:absolute md:bottom-auto md:top-4 md:left-4 md:right-auto md:rounded-xl md:max-h-none md:overflow-visible md:w-[480px] bg-slate-900 md:bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 shadow-2xl z-50 flex flex-col gap-3">
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
