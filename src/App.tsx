@@ -35,6 +35,8 @@ import {
   getCityTypeRevenueMultiplier,
   YARD_CONFIGS,
   HUB_CONFIG,
+  WAREHOUSE_CONFIG,
+  SILO_CONFIG,
   YARD_COVERAGE_KM
 } from './utils/gameRules';
 import { 
@@ -97,6 +99,8 @@ export default function App() {
   // Tycoon expansions
   const [upgradedHubs, setUpgradedHubs] = useState<string[]>([]);
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
+  const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [silos, setSilos] = useState<string[]>([]);
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
@@ -192,7 +196,7 @@ export default function App() {
         completedMissions, newsItems,
         triggeredEventIds,
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
-        infraQueue, yardLevels,
+        infraQueue, yardLevels, warehouses, silos,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -203,7 +207,7 @@ export default function App() {
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
-      infraQueue, yardLevels]);
+      infraQueue, yardLevels, warehouses, silos]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -263,7 +267,8 @@ export default function App() {
       let compoundRevMult = activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
       if (compoundRevMult > 1.0) compoundRevMult = Math.min(1.35, compoundRevMult);
       const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
-      const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0);
+      const warehouseBonus = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
+      const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0) + warehouseBonus;
 
       // Seasonal effects
       const seasonalEffects = getActiveSeasonalEffects(monthIdx);
@@ -280,7 +285,7 @@ export default function App() {
         }
       });
 
-      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent, gameYear, upgradedHubs);
+      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent, gameYear, upgradedHubs, silos);
       const monthlyRev = cyberAttack ? 0 : (Math.round(baseRev * compoundRevMult * seasonalRevFactor) + monthlyBonusTotal);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
@@ -365,6 +370,12 @@ export default function App() {
           if (p.type === 'hub') {
             setUpgradedHubs(prev2 => [...prev2, p.cityId]);
             showToast(`★ Terminal Central em ${cityName} concluído! +1 slot de conexão.`, 'success');
+          } else if (p.type === 'warehouse') {
+            setWarehouses(prev2 => [...prev2, p.cityId]);
+            showToast(`🏭 Armazém Geral em ${cityName} concluído! +R$500M/mês.`, 'success');
+          } else if (p.type === 'silo') {
+            setSilos(prev2 => [...prev2, p.cityId]);
+            showToast(`🌾 Silo Graneleiro em ${cityName} concluído! +30% receita nas rotas.`, 'success');
           } else {
             setMaintenanceYards(prev2 => [...prev2, p.cityId]);
             setYardLevels(prev2 => ({ ...prev2, [p.cityId]: p.yardLevel ?? 1 }));
@@ -640,6 +651,8 @@ export default function App() {
     triggeredEventIdsRef.current = save.triggeredEventIds ?? [];
     setInfraQueue(save.infraQueue ?? []);
     setYardLevels(save.yardLevels ?? {});
+    setWarehouses(save.warehouses ?? []);
+    setSilos(save.silos ?? []);
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -682,6 +695,8 @@ export default function App() {
       setTriggeredEventIds(data.triggeredEventIds ?? []);
       setInfraQueue(data.infraQueue ?? []);
       setYardLevels(data.yardLevels ?? {});
+      setWarehouses(data.warehouses ?? []);
+      setSilos(data.silos ?? []);
       showToast('📥 Save importado com sucesso!', 'success');
     } catch {
       showToast('❌ Arquivo inválido — não foi possível importar.', 'error');
@@ -853,9 +868,10 @@ export default function App() {
     const activeEffectsForDisplay = activeEvents.map(e => e.statusEffect);
     const seasonalRevForDisplay = getActiveSeasonalEffects(monthIdx).reduce((acc, s) => acc * (s.revenueFactor ?? 1.0), 1.0);
     const balsaFrozenForDisplay = activeEvents.some(e => e.balsaFrozen);
+    const warehouseBonusDisplay = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
     const monthlyRevenue = Math.round(
-      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs) * seasonalRevForDisplay
-    );
+      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs, silos) * seasonalRevForDisplay
+    ) + warehouseBonusDisplay;
 
     return {
       totalSpent,
@@ -1056,6 +1072,110 @@ export default function App() {
     };
     setInfraQueue(prev => [...prev, project]);
     showToast(`★ Terminal Central em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
+  };
+
+  const handleBuildWarehouse = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+    if (warehouses.includes(cityId)) {
+      setWarehouses(prev => prev.filter(id => id !== cityId));
+      setSpentOnResources(prev => Math.max(0, prev - WAREHOUSE_CONFIG.cost));
+      showToast(`🏭 Armazém em ${city.name} demolido. Reembolso parcial aplicado.`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const existing = infraQueue.find(p => p.cityId === cityId && p.type === 'warehouse');
+    if (existing) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existing.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(WAREHOUSE_CONFIG.cost * 0.5)));
+      setWorkers(prev => ({ ...prev, assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0) }));
+      showToast(`🏭 Construção do Armazém em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const cfg = WAREHOUSE_CONFIG;
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Assentamento insuficiente para Armazém (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost) {
+      showToast(`Orçamento insuficiente para Armazém (R$ ${(cfg.cost/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost);
+    setWorkers(prev => ({ ...prev, assentamento: prev.assentamento - (cfg.workers.assentamento ?? 0) }));
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setInfraQueue(prev => [...prev, {
+      id: `warehouse_${cityId}_${Date.now()}`, cityId, type: 'warehouse',
+      monthsRemaining: cfg.months, totalMonths: cfg.months,
+      workersAllocated: { assentamento: cfg.workers.assentamento ?? 0 },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear, startedMonth: monthIdx, cost: cfg.cost,
+    }]);
+    showToast(`🏭 Armazém Geral em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
+  };
+
+  const handleBuildSilo = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+    if (city.type !== 'polo_agricola') {
+      showToast('🌾 Silo só pode ser construído em cidades Polo Agrícola.', 'error');
+      sound.playError(); return;
+    }
+    if (silos.includes(cityId)) {
+      setSilos(prev => prev.filter(id => id !== cityId));
+      setSpentOnResources(prev => Math.max(0, prev - SILO_CONFIG.cost));
+      showToast(`🌾 Silo em ${city.name} demolido. Reembolso parcial aplicado.`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const existing = infraQueue.find(p => p.cityId === cityId && p.type === 'silo');
+    if (existing) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existing.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(SILO_CONFIG.cost * 0.5)));
+      setWorkers(prev => ({
+        ...prev,
+        assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0),
+        terraplanagem: prev.terraplanagem + (existing.workersAllocated.terraplanagem ?? 0),
+      }));
+      showToast(`🌾 Construção do Silo em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const cfg = SILO_CONFIG;
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Assentamento insuficiente para Silo (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if ((workers.terraplanagem ?? 0) < (cfg.workers.terraplanagem ?? 0)) {
+      showToast(`⚠️ Terraplanagem insuficiente para Silo (${cfg.workers.terraplanagem} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost) {
+      showToast(`Orçamento insuficiente para Silo (R$ ${(cfg.cost/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost);
+    setWorkers(prev => ({
+      ...prev,
+      assentamento: prev.assentamento - (cfg.workers.assentamento ?? 0),
+      terraplanagem: prev.terraplanagem - (cfg.workers.terraplanagem ?? 0),
+    }));
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setInfraQueue(prev => [...prev, {
+      id: `silo_${cityId}_${Date.now()}`, cityId, type: 'silo',
+      monthsRemaining: cfg.months, totalMonths: cfg.months,
+      workersAllocated: { assentamento: cfg.workers.assentamento ?? 0, terraplanagem: cfg.workers.terraplanagem ?? 0 },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear, startedMonth: monthIdx, cost: cfg.cost,
+    }]);
+    showToast(`🌾 Silo Graneleiro em ${city.name} em construção — ${cfg.months} meses. +30% receita nas rotas.`, 'success');
     sound.playConnect();
   };
 
@@ -1896,6 +2016,38 @@ export default function App() {
                   <Wrench className="w-3 h-3 text-emerald-400" />
                   {hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 15B)'}
                 </button>
+                {(() => {
+                  const hasWarehouse = warehouses.includes(selectedCity.id);
+                  const buildingWarehouse = infraQueue.some(p => p.cityId === selectedCity.id && p.type === 'warehouse');
+                  return (
+                    <button
+                      onClick={() => handleBuildWarehouse(selectedCity.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
+                        hasWarehouse ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30'
+                        : buildingWarehouse ? 'bg-slate-700/60 text-slate-400 border border-slate-600'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                      }`}
+                    >
+                      {hasWarehouse ? '🏭 Armazém Ativo (+R$500M/mês)' : buildingWarehouse ? '🏭 Armazém em construção…' : '🏭 Armazém Geral (R$ 8B)'}
+                    </button>
+                  );
+                })()}
+                {selectedCity.type === 'polo_agricola' && (() => {
+                  const hasSilo = silos.includes(selectedCity.id);
+                  const buildingSilo = infraQueue.some(p => p.cityId === selectedCity.id && p.type === 'silo');
+                  return (
+                    <button
+                      onClick={() => handleBuildSilo(selectedCity.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
+                        hasSilo ? 'bg-green-500/20 text-green-300 border border-green-500/40 hover:bg-green-500/30'
+                        : buildingSilo ? 'bg-slate-700/60 text-slate-400 border border-slate-600'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                      }`}
+                    >
+                      {hasSilo ? '🌾 Silo Ativo (+30% receita rotas)' : buildingSilo ? '🌾 Silo em construção…' : '🌾 Silo Graneleiro (R$ 12B)'}
+                    </button>
+                  );
+                })()}
               </div>
               {/* Per-edge upgrade actions */}
               {cityEdges.length > 0 && (

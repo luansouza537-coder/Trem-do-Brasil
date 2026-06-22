@@ -92,7 +92,7 @@ export type PoliticalParty = 'PL' | 'PS' | 'PB';
 export interface InfraProject {
   id: string;
   cityId: string;
-  type: 'hub' | 'yard';
+  type: 'hub' | 'yard' | 'warehouse' | 'silo';
   yardLevel?: 1 | 2 | 3;
   monthsRemaining: number;
   totalMonths: number;

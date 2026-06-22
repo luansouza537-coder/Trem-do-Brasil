@@ -22,6 +22,8 @@ export interface SaveGame {
   currentPartyStatusEffect: string | null;
   infraQueue?: InfraProject[];
   yardLevels?: Record<string, number>;
+  warehouses?: string[];
+  silos?: string[];
 }
 
 const getSaveKey = (slot: number) =>
@@ -49,6 +51,8 @@ export function loadGame(slot = 1): SaveGame | null {
     if (save.currentPartyStatusEffect === undefined) save.currentPartyStatusEffect = null;
     if (!save.infraQueue) save.infraQueue = [];
     if (!save.yardLevels) save.yardLevels = {};
+    if (!save.warehouses) save.warehouses = [];
+    if (!save.silos) save.silos = [];
     // Patch edge fields added in later versions
     if (save.edges) {
       save.edges = save.edges.map(e => ({

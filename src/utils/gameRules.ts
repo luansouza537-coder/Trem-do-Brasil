@@ -519,7 +519,8 @@ export function getMonthlyRevenue(
   cities: City[] = [],
   balsaFrozenOverride?: boolean,
   gameYear?: number,
-  upgradedHubs?: string[]
+  upgradedHubs?: string[],
+  silos?: string[]
 ): number {
   const completedEdges = edges.filter(e => e.status !== 'building');
   const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
@@ -546,7 +547,11 @@ export function getMonthlyRevenue(
     const hubA = upgradedHubs ? upgradedHubs.includes(e.from) : false;
     const hubB = upgradedHubs ? upgradedHubs.includes(e.to) : false;
     const hubBonus = hubA && hubB ? 1.40 : (hubA || hubB) ? 1.20 : 1.0;
-    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
+    // Silo bonus: +30% if either endpoint has a silo (polo_agricola cities)
+    const siloA = silos ? silos.includes(e.from) : false;
+    const siloB = silos ? silos.includes(e.to) : false;
+    const siloBonus = (siloA || siloB) ? SILO_CONFIG.revenueMultiplier : 1.0;
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * demandMult);
   }, 0);
   // Maintenance penalty: gradual scale based on crew size vs network load
   const maintPenalty = completedEdges.length === 0 ? 1.0
@@ -608,6 +613,24 @@ export const YARD_CONFIGS: Record<1|2|3, {
     workers: { terraplanagem: 80, assentamento: 40, sinalizacao: 20 },
     resources: { aco: 800, brita: 1200, cimento: 600, cobre: 100, madeira: 200 },
   },
+};
+
+// Armazém Geral config — monthly passive bonus
+export const WAREHOUSE_CONFIG = {
+  cost: 8_000_000_000,
+  months: 4,
+  monthlyBonus: 500_000_000,
+  workers: { assentamento: 10 } as Partial<GameWorkers>,
+  resources: { aco: 100, cimento: 150, madeira: 100 } as Partial<GameResources>,
+};
+
+// Silo Graneleiro config — revenue multiplier for polo_agricola cities
+export const SILO_CONFIG = {
+  cost: 12_000_000_000,
+  months: 5,
+  revenueMultiplier: 1.30,
+  workers: { assentamento: 15, terraplanagem: 10 } as Partial<GameWorkers>,
+  resources: { aco: 150, cimento: 200, madeira: 150 } as Partial<GameResources>,
 };
 
 // Hub (Terminal Central) config
