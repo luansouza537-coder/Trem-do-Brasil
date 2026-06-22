@@ -190,4 +190,68 @@ export const CITIES: City[] = [
   { id: '160', name: 'Humaitá', state: 'AM', lat: -7.5058, lng: -63.0144, type: 'cidade', portType: 'fluvial' },
   { id: '161', name: 'Parintins', state: 'AM', lat: -2.6295, lng: -56.7357, type: 'cidade', portType: 'fluvial' },
   { id: '162', name: 'Tefé', state: 'AM', lat: -3.3836, lng: -64.7106, type: 'cidade', portType: 'fluvial' },
+
+  // --- Expansão: mínimo 5 cidades por estado ---
+
+  // AC (Acre): +3
+  { id: '163', name: 'Cruzeiro do Sul', state: 'AC', lat: -7.6297, lng: -72.6726, type: 'polo_agricola', portType: 'fluvial' },
+  { id: '164', name: 'Sena Madureira', state: 'AC', lat: -9.0664, lng: -68.6583, type: 'cidade' },
+  { id: '165', name: 'Tarauacá', state: 'AC', lat: -8.1589, lng: -70.7742, type: 'fronteira' },
+
+  // AL (Alagoas): +3
+  { id: '166', name: 'Palmeira dos Índios', state: 'AL', lat: -9.4089, lng: -36.6264, type: 'cidade' },
+  { id: '167', name: 'Delmiro Gouveia', state: 'AL', lat: -9.3892, lng: -37.9983, type: 'polo_industrial' },
+  { id: '168', name: 'União dos Palmares', state: 'AL', lat: -9.1644, lng: -36.0328, type: 'polo_agricola' },
+
+  // AP (Amapá): +2
+  { id: '169', name: 'Laranjal do Jarí', state: 'AP', lat: -0.7993, lng: -52.4669, type: 'polo_agricola', portType: 'fluvial' },
+  { id: '170', name: 'Amapá', state: 'AP', lat: 2.0531, lng: -50.7963, type: 'fronteira' },
+
+  // DF (Distrito Federal): +4
+  { id: '171', name: 'Taguatinga', state: 'DF', lat: -15.8311, lng: -48.0591, type: 'polo_industrial' },
+  { id: '172', name: 'Ceilândia', state: 'DF', lat: -15.8139, lng: -48.1119, type: 'cidade' },
+  { id: '173', name: 'Gama', state: 'DF', lat: -16.0114, lng: -48.0613, type: 'polo_industrial' },
+  { id: '174', name: 'Sobradinho', state: 'DF', lat: -15.6519, lng: -47.7947, type: 'cidade' },
+
+  // ES (Espírito Santo): +2
+  { id: '175', name: 'Cachoeiro de Itapemirim', state: 'ES', lat: -20.8488, lng: -41.1126, type: 'polo_industrial' },
+  { id: '176', name: 'Colatina', state: 'ES', lat: -19.5388, lng: -40.6303, type: 'polo_agricola' },
+
+  // GO (Goiás): +1
+  { id: '177', name: 'Catalão', state: 'GO', lat: -18.1661, lng: -47.9447, type: 'mineracao' },
+
+  // MA (Maranhão): +1
+  { id: '178', name: 'Caxias', state: 'MA', lat: -4.8658, lng: -43.3589, type: 'polo_agricola' },
+
+  // PB (Paraíba): +3
+  { id: '179', name: 'Campina Grande', state: 'PB', lat: -7.2306, lng: -35.8811, type: 'polo_industrial' },
+  { id: '180', name: 'Patos', state: 'PB', lat: -7.0244, lng: -37.2797, type: 'polo_agricola' },
+  { id: '181', name: 'Sousa', state: 'PB', lat: -6.7597, lng: -38.2289, type: 'cidade' },
+
+  // PE (Pernambuco): +1
+  { id: '182', name: 'Serra Talhada', state: 'PE', lat: -7.9878, lng: -38.2953, type: 'cidade' },
+
+  // PI (Piauí): +1
+  { id: '183', name: 'Floriano', state: 'PI', lat: -6.7672, lng: -43.0239, type: 'polo_agricola' },
+
+  // RN (Rio Grande do Norte): +1
+  { id: '184', name: 'São Gonçalo do Amarante', state: 'RN', lat: -5.7972, lng: -35.3311, type: 'polo_industrial', portType: 'maritime' },
+
+  // RO (Rondônia): +2
+  { id: '185', name: 'Vilhena', state: 'RO', lat: -12.7406, lng: -60.1456, type: 'polo_agricola' },
+  { id: '186', name: 'Cacoal', state: 'RO', lat: -11.4381, lng: -61.4472, type: 'polo_agricola' },
+
+  // RR (Roraima): +3
+  { id: '187', name: 'Caracaraí', state: 'RR', lat: 1.8186, lng: -61.1283, type: 'cidade', portType: 'fluvial' },
+  { id: '188', name: 'Mucajaí', state: 'RR', lat: 2.4503, lng: -60.9211, type: 'polo_agricola' },
+  { id: '189', name: 'Alto Alegre', state: 'RR', lat: 2.9897, lng: -61.3178, type: 'fronteira' },
+
+  // SE (Sergipe): +3
+  { id: '190', name: 'Estância', state: 'SE', lat: -11.2681, lng: -37.4417, type: 'polo_agricola' },
+  { id: '191', name: 'Lagarto', state: 'SE', lat: -10.9167, lng: -37.6578, type: 'cidade' },
+  { id: '192', name: 'Propriá', state: 'SE', lat: -10.2131, lng: -36.8414, type: 'cidade', portType: 'fluvial' },
+
+  // TO (Tocantins): +2
+  { id: '193', name: 'Gurupi', state: 'TO', lat: -11.7297, lng: -49.0678, type: 'polo_agricola' },
+  { id: '194', name: 'Porto Nacional', state: 'TO', lat: -10.7064, lng: -48.4164, type: 'cidade', portType: 'fluvial' },
 ];
