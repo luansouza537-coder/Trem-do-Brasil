@@ -2100,6 +2100,8 @@ export default function App() {
           showSuggestions={showSuggestions}
           upgradedHubs={upgradedHubs}
           maintenanceYards={maintenanceYards}
+          warehouses={warehouses}
+          silos={silos}
           nearestYardDistances={nearestYardDistances}
           constructionQueue={constructionQueue}
           activeEvents={activeEvents}
@@ -2107,21 +2109,21 @@ export default function App() {
       </main>
 
       {/* --- Toasts Stacks HUD Overlay --- */}
-      <div className="absolute bottom-6 right-6 z-[2000] flex flex-col gap-2 max-w-sm pointer-events-none">
+      <div className="fixed top-4 right-4 z-[9998] flex flex-col gap-1.5 max-w-[280px] md:max-w-sm pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`p-3.5 rounded-xl border text-xs font-medium shadow-2xl flex items-center gap-2.5 transition-all duration-300 transform translate-y-0 opacity-100 pointer-events-auto ${
+            className={`px-3 py-2 rounded-lg border text-[11px] font-medium shadow-xl flex items-center gap-2 transition-all duration-300 pointer-events-auto ${
               toast.type === 'success'
-                ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200'
+                ? 'bg-emerald-950/97 border-emerald-600/60 text-emerald-200'
                 : toast.type === 'error'
-                  ? 'bg-rose-950/95 border-rose-500/50 text-rose-200'
-                  : 'bg-slate-900/95 border-slate-700/60 text-slate-200'
+                  ? 'bg-rose-950/97 border-rose-600/60 text-rose-200'
+                  : 'bg-slate-900/97 border-slate-600/60 text-slate-200'
             }`}
           >
-            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-            {toast.type === 'error' && <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
-            {toast.type === 'info' && <Info className="w-4 h-4 text-amber-400 shrink-0" />}
+            {toast.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+            {toast.type === 'error' && <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+            {toast.type === 'info' && <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
             <span className="leading-snug">{toast.message}</span>
           </div>
         ))}

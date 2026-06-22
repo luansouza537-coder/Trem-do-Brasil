@@ -17,6 +17,8 @@ interface GameMapProps {
   showSuggestions: boolean;
   upgradedHubs: string[];
   maintenanceYards: string[];
+  warehouses?: string[];
+  silos?: string[];
   nearestYardDistances: Record<string, number>;
   constructionQueue?: ConstructionProject[];
   activeEvents?: GameEvent[];
@@ -59,6 +61,8 @@ export default function GameMap({
   showSuggestions,
   upgradedHubs = [],
   maintenanceYards = [],
+  warehouses = [],
+  silos = [],
   nearestYardDistances = {},
   constructionQueue = [],
   activeEvents = [],
@@ -329,7 +333,9 @@ export default function GameMap({
     isSelected: boolean, 
     isHovered: boolean,
     isUpgradedHub: boolean = false,
-    hasMaintenanceYard: boolean = false
+    hasMaintenanceYard: boolean = false,
+    hasWarehouse: boolean = false,
+    hasSilo: boolean = false
   ) => {
     const isCapital = city.type === 'capital';
     const maxConns = isUpgradedHub ? 3 : 2;
@@ -392,6 +398,14 @@ export default function GameMap({
       ? `<span class="absolute -bottom-1.5 -left-1.5 text-[8px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-emerald-600 border border-slate-950 text-white font-bold shadow-md z-[60]" title="Pátio de Manutenção Ativo">🔧</span>`
       : '';
 
+    const warehouseBadge = hasWarehouse
+      ? `<span class="absolute -bottom-1.5 -right-1.5 text-[8px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-sky-600 border border-slate-950 text-white font-bold shadow-md z-[60]" title="Armazém Geral Ativo">🏭</span>`
+      : '';
+
+    const siloBadge = hasSilo
+      ? `<span class="absolute top-0 -right-2 text-[8px] w-[17px] h-[17px] flex items-center justify-center rounded-full bg-green-600 border border-slate-950 text-white font-bold shadow-md z-[60]" title="Silo Graneleiro Ativo">🌾</span>`
+      : '';
+
     const crisisBadge = (hasBlockConstruction || hasStrike)
       ? `<span class="absolute -top-1.5 -right-1.5 text-[9px] w-[15px] h-[15px] flex items-center justify-center rounded-full bg-rose-600 border border-slate-950 text-white font-black shadow-md z-[60] animate-pulse" title="Crise ativa">⚠</span>`
       : '';
@@ -402,6 +416,8 @@ export default function GameMap({
         ${isHovered && !isSelected ? '<span class="absolute inline-flex h-8 w-8 rounded-full bg-slate-300/20"></span>' : ''}
         ${hubBadge}
         ${yardBadge}
+        ${warehouseBadge}
+        ${siloBadge}
         ${crisisBadge}
         <div class="w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 bg-slate-900 ${statusClass} transition-all" style="font-size: 11px;">
           ${cityIcon}
@@ -559,8 +575,10 @@ export default function GameMap({
       const isGov = hoveredCityId === city.id;
       const isUpgraded = upgradedHubs?.includes(city.id) || false;
       const hasYard = maintenanceYards?.includes(city.id) || false;
+      const hasWarehouse = warehouses?.includes(city.id) || false;
+      const hasSilo = silos?.includes(city.id) || false;
 
-      const markerHtml = getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard);
+      const markerHtml = getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo);
       const customIcon = L.divIcon({
         html: markerHtml,
         className: 'custom-city-marker',
@@ -671,6 +689,8 @@ export default function GameMap({
       const isGov = hoveredCityId === city.id;
       const isUpgraded = upgradedHubs?.includes(city.id) || false;
       const hasYard = maintenanceYards?.includes(city.id) || false;
+      const hasWarehouse = warehouses?.includes(city.id) || false;
+      const hasSilo = silos?.includes(city.id) || false;
 
       const wasUpgraded = prevHubs.includes(city.id);
       const hadYard = prevYards.includes(city.id);
@@ -684,7 +704,7 @@ export default function GameMap({
       if (!changed) return;
 
       marker.setIcon(L.divIcon({
-        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard),
+        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo),
         className: 'custom-city-marker',
         iconSize: [28, 28],
         iconAnchor: [14, 14]
@@ -892,6 +912,13 @@ export default function GameMap({
 
           // 4. Center split
           const railsSplit = L.polyline(latlngs, { color: '#0f172a', weight: 1.4, opacity: 1.0, lineCap: 'round' });
+
+          // Train level / quality glow
+          if ((edge.trainLevel ?? 1) >= 2 || edge.passenger) {
+            const glowColor = (edge.trainLevel ?? 1) >= 3 ? '#22d3ee' : edge.passenger ? '#a78bfa' : '#60a5fa';
+            const glowLayer = L.polyline(latlngs, { color: glowColor, weight: 2, opacity: 0.6, lineCap: 'round' });
+            trackGroupRef.current?.addLayer(glowLayer);
+          }
 
           // 5. Interactive hitbox
           const interactiveLayer = L.polyline(latlngs, { color: 'transparent', weight: 15, opacity: 0.0 });

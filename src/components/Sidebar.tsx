@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { SaveGame } from '../utils/persistence';
-import { FundGrant, WORKER_SALARIES } from '../utils/gameRules';
+import { FundGrant, WORKER_SALARIES, getSimultaneousPenalty } from '../utils/gameRules';
 import { Volume2, VolumeX, RotateCw } from 'lucide-react';
 import OperationsTab from './sidebar/OperationsTab';
 import MissionsTab from './sidebar/MissionsTab';
@@ -272,6 +272,15 @@ export default function Sidebar({
             <span className="text-[13px] md:text-[11px] font-black text-amber-400">
               {activeConns} / {maxConnsCount} ({pctComplete}%)
             </span>
+            {constructionQueue.length > 1 && (() => {
+              const penalty = getSimultaneousPenalty(constructionQueue.length);
+              const pct = Math.round((1 - penalty) * 100);
+              return (
+                <span className="text-[9px] font-bold text-rose-400 bg-rose-950/60 border border-rose-800/50 px-1.5 py-0.5 rounded-full">
+                  ⚡ {constructionQueue.length} obras −{pct}% vel.
+                </span>
+              );
+            })()}
             <div className="flex gap-1 md:gap-0.5 mt-0.5">
               {[1, 2, 3].map(s => (
                 <button key={s} onClick={() => onSaveSlotChange(s)}
@@ -290,19 +299,26 @@ export default function Sidebar({
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-0.5 shrink-0">
+      <div className="flex border-b border-slate-800 bg-slate-900/95 px-1 pt-1 gap-0.5 shrink-0">
         {([
           { id: 'cities',     icon: '🗺️', label: 'Rotas',    badge: false },
-          { id: 'operations', icon: '👷', label: `Equipe${constructionQueue.length > 0 ? ` (${constructionQueue.length})` : ''}`, badge: activeEvents.length > 0 },
-          { id: 'missions',   icon: '🎯', label: 'Missões',  badge: missionResults.some(m => m.completed) },
-          { id: 'news',       icon: '📰', label: 'Notícias', badge: newsItems.length > 0 && activeTab !== 'news' },
+          { id: 'operations', icon: '👷', label: 'Equipe',   badge: activeEvents.length > 0, count: constructionQueue.length > 0 ? constructionQueue.length : 0 },
+          { id: 'missions',   icon: '🎯', label: 'Missões',  badge: missionResults.some(m => m.completed), count: 0 },
+          { id: 'news',       icon: '📰', label: 'Notícias', badge: newsItems.length > 0 && activeTab !== 'news', count: 0 },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 text-center py-2.5 md:py-2 rounded-lg text-[11px] md:text-[9.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
-              activeTab === tab.id ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            className={`flex-1 text-center py-2.5 rounded-t-lg text-[10px] font-black tracking-wide transition flex flex-col items-center justify-center gap-0.5 cursor-pointer relative border-b-2 ${
+              activeTab === tab.id
+                ? 'bg-slate-800 text-amber-400 border-amber-500 shadow-inner'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent'
             }`}>
-            <span className="md:hidden text-[15px]">{tab.icon}</span>
-            <span className="hidden md:inline">{tab.icon} {tab.label}</span>
+            <span className="text-[16px] leading-none">{tab.icon}</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">{tab.label}</span>
+            {'count' in tab && tab.count > 0 && (
+              <span className="absolute top-1 right-1 text-[8px] font-black bg-sky-500 text-white rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                {tab.count}
+              </span>
+            )}
             {tab.badge && (
               <span className="absolute top-1 right-1 flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
