@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
 import PauseScreen from './components/PauseScreen';
 import SplashScreen from './components/SplashScreen';
+import CutsceneModal from './components/CutsceneModal';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -101,6 +102,8 @@ export default function App() {
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [silos, setSilos] = useState<string[]>([]);
+  const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | null>(null);
+  const [shownCutscenes, setShownCutscenes] = useState<Set<string>>(new Set());
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
@@ -318,10 +321,35 @@ export default function App() {
         });
         if (completed.length > 0) {
           const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-          setEdges(prevEdges => prevEdges.map(e => {
-            const done = completed.find(p => p.edgeId === e.id);
-            return done ? { ...e, status: 'complete' as const } : e;
-          }));
+          setEdges(prevEdges => {
+            const nextEdges = prevEdges.map(e => {
+              const done = completed.find(p => p.edgeId === e.id);
+              return done ? { ...e, status: 'complete' as const } : e;
+            });
+            const completedCount = nextEdges.filter(e => e.status === 'complete').length;
+            // First railway cutscene
+            if (completedCount === 1) {
+              setShownCutscenes(prev => {
+                if (!prev.has('first_rail')) {
+                  setTimeout(() => setActiveCutscene('first_rail'), 800);
+                  return new Set([...prev, 'first_rail']);
+                }
+                return prev;
+              });
+            }
+            // 50% network cutscene (50% of cities connected)
+            const halfTarget = Math.floor(CITIES.length / 2);
+            if (completedCount >= halfTarget) {
+              setShownCutscenes(prev => {
+                if (!prev.has('half_network')) {
+                  setTimeout(() => setActiveCutscene('half_network'), 800);
+                  return new Set([...prev, 'half_network']);
+                }
+                return prev;
+              });
+            }
+            return nextEdges;
+          });
           // Return allocated workers to the free pool
           const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
           completed.forEach(p => {
@@ -1725,6 +1753,26 @@ export default function App() {
 
   return (
     <>
+    {activeCutscene === 'first_rail' && (
+      <CutsceneModal
+        videoSrc="/cutscene_primeira_ferrovia.mp4"
+        icon="🚂"
+        title="Primeira Ferrovia Concluída"
+        subtitle="Marco Histórico da RENIF"
+        description="Sua primeira ferrovia está operando! Este é o ponto de partida de uma malha que vai transformar o Brasil. Cada trilho posto é um passo rumo à integração nacional."
+        onFinished={() => setActiveCutscene(null)}
+      />
+    )}
+    {activeCutscene === 'half_network' && (
+      <CutsceneModal
+        videoSrc="/cutscene_50_porcento.mp4"
+        icon="🗺️"
+        title="Metade do Brasil Conectada"
+        subtitle="50% da Malha Concluída"
+        description="Você alcançou um marco extraordinário: metade das cidades do Brasil agora estão ligadas pela malha ferroviária da RENIF. A integração nacional está a meio caminho de se tornar realidade."
+        onFinished={() => setActiveCutscene(null)}
+      />
+    )}
     {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
     <audio ref={audioRef} src="/soundtrack.mp3" loop preload="auto" />
     <div id="game-workspace" className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-slate-950 font-sans" style={{ contentVisibility: 'auto' }}>
