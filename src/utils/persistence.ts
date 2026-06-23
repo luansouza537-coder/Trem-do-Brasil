@@ -24,6 +24,7 @@ export interface SaveGame {
   yardLevels?: Record<string, number>;
   warehouses?: string[];
   silos?: string[];
+  shownCutscenes?: string[];
 }
 
 const getSaveKey = (slot: number) =>
@@ -53,6 +54,7 @@ export function loadGame(slot = 1): SaveGame | null {
     if (!save.yardLevels) save.yardLevels = {};
     if (!save.warehouses) save.warehouses = [];
     if (!save.silos) save.silos = [];
+    if (!save.shownCutscenes) save.shownCutscenes = [];
     // Patch edge fields added in later versions
     if (save.edges) {
       save.edges = save.edges.map(e => ({

@@ -103,7 +103,7 @@ export default function App() {
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [silos, setSilos] = useState<string[]>([]);
   const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | null>(null);
-  const [shownCutscenes, setShownCutscenes] = useState<Set<string>>(new Set());
+  const [shownCutscenes, setShownCutscenes] = useState<string[]>([]);
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
@@ -200,6 +200,7 @@ export default function App() {
         triggeredEventIds,
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
         infraQueue, yardLevels, warehouses, silos,
+        shownCutscenes,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -211,6 +212,22 @@ export default function App() {
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
       infraQueue, yardLevels, warehouses, silos]);
+
+  // Cutscene triggers — runs whenever edges change, outside any state updater
+  useEffect(() => {
+    const completedCount = edges.filter(e => e.status === 'complete').length;
+    if (completedCount === 0) return;
+    if (completedCount === 1 && !shownCutscenes.includes('first_rail')) {
+      setShownCutscenes(prev => [...prev, 'first_rail']);
+      setTimeout(() => setActiveCutscene('first_rail'), 800);
+    }
+    const halfTarget = Math.floor(CITIES.length / 2);
+    if (completedCount >= halfTarget && !shownCutscenes.includes('half_network')) {
+      setShownCutscenes(prev => [...prev, 'half_network']);
+      setTimeout(() => setActiveCutscene('half_network'), 800);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edges]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -321,35 +338,10 @@ export default function App() {
         });
         if (completed.length > 0) {
           const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-          setEdges(prevEdges => {
-            const nextEdges = prevEdges.map(e => {
-              const done = completed.find(p => p.edgeId === e.id);
-              return done ? { ...e, status: 'complete' as const } : e;
-            });
-            const completedCount = nextEdges.filter(e => e.status === 'complete').length;
-            // First railway cutscene
-            if (completedCount === 1) {
-              setShownCutscenes(prev => {
-                if (!prev.has('first_rail')) {
-                  setTimeout(() => setActiveCutscene('first_rail'), 800);
-                  return new Set([...prev, 'first_rail']);
-                }
-                return prev;
-              });
-            }
-            // 50% network cutscene (50% of cities connected)
-            const halfTarget = Math.floor(CITIES.length / 2);
-            if (completedCount >= halfTarget) {
-              setShownCutscenes(prev => {
-                if (!prev.has('half_network')) {
-                  setTimeout(() => setActiveCutscene('half_network'), 800);
-                  return new Set([...prev, 'half_network']);
-                }
-                return prev;
-              });
-            }
-            return nextEdges;
-          });
+          setEdges(prevEdges => prevEdges.map(e => {
+            const done = completed.find(p => p.edgeId === e.id);
+            return done ? { ...e, status: 'complete' as const } : e;
+          }));
           // Return allocated workers to the free pool
           const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
           completed.forEach(p => {
@@ -681,6 +673,7 @@ export default function App() {
     setYardLevels(save.yardLevels ?? {});
     setWarehouses(save.warehouses ?? []);
     setSilos(save.silos ?? []);
+    setShownCutscenes(save.shownCutscenes ?? []);
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -725,6 +718,7 @@ export default function App() {
       setYardLevels(data.yardLevels ?? {});
       setWarehouses(data.warehouses ?? []);
       setSilos(data.silos ?? []);
+      setShownCutscenes(data.shownCutscenes ?? []);
       showToast('📥 Save importado com sucesso!', 'success');
     } catch {
       showToast('❌ Arquivo inválido — não foi possível importar.', 'error');
