@@ -1,9 +1,10 @@
 import React from 'react';
-import { Edge, GameEvent, GameResources, GameWorkers } from '../../types';
+import { City, Edge, GameEvent, GameResources, GameWorkers } from '../../types';
 import { WORKER_SALARIES, FundGrant } from '../../utils/gameRules';
 
 interface FinancialTabProps {
   edges: Edge[];
+  cities: City[];
   workers: GameWorkers;
   activeEvents: GameEvent[];
   budgetState: {
@@ -23,7 +24,8 @@ interface FinancialTabProps {
   budgetHistory: { label: string; budget: number }[];
 }
 
-export default function FinancialTab({ edges, workers, activeEvents, budgetState, budgetHistory }: FinancialTabProps) {
+export default function FinancialTab({ edges, cities, workers, activeEvents, budgetState, budgetHistory }: FinancialTabProps) {
+  const cityName = (id: string) => cities.find(c => c.id === id)?.name ?? id;
   const fmt = (v: number) => v >= 1e12 ? `R$ ${(v/1e12).toFixed(2)}T` : v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
   const fmtShort = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(0)}B` : `${(v/1e6).toFixed(0)}M`;
 
@@ -180,7 +182,7 @@ export default function FinancialTab({ edges, workers, activeEvents, budgetState
               return (
                 <div key={e.id} className="flex items-center justify-between text-[9.5px] px-2 py-1 bg-slate-900/50 rounded border border-slate-800">
                   <span className="text-slate-300 font-bold truncate max-w-[60%]">
-                    {e.type === 'balsa' ? '🚢' : '🚂'} {e.from} ↔ {e.to}
+                    {e.type === 'balsa' ? '🚢' : '🚂'} {cityName(e.from)} ↔ {cityName(e.to)}
                   </span>
                   <span className="text-emerald-400 font-mono shrink-0">+{fmtShort(rev)}/mês</span>
                 </div>

@@ -373,6 +373,7 @@ export default function Sidebar({
       {activeTab === 'financial' && (
         <FinancialTab
           edges={edges}
+          cities={cities}
           workers={workers}
           activeEvents={activeEvents}
           budgetState={budgetState ?? { totalSpent: 0, spentRail: 0, spentBalsa: 0, spentYards: 0, spentHubs: 0, grantIncome: 0, currentBudget: 0, unlockedGrants: [] }}

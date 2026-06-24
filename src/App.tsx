@@ -366,7 +366,7 @@ export default function App() {
               assentamento:  prev.assentamento  + totalReturned.assentamento,
               sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
               explosivos:    prev.explosivos    + totalReturned.explosivos,
-              manutencao:    prev.manutencao,
+              manutencao:    prev.manutencao    + totalReturned.manutencao,
             }));
           }
           completed.forEach(p => {
@@ -416,8 +416,8 @@ export default function App() {
             terraplanagem: prev2.terraplanagem + (p.workersAllocated.terraplanagem ?? 0),
             assentamento: prev2.assentamento + (p.workersAllocated.assentamento ?? 0),
             sinalizacao: prev2.sinalizacao + (p.workersAllocated.sinalizacao ?? 0),
-            explosivos: prev2.explosivos,
-            manutencao: prev2.manutencao,
+            explosivos: prev2.explosivos + (p.workersAllocated.explosivos ?? 0),
+            manutencao: prev2.manutencao + (p.workersAllocated.manutencao ?? 0),
           }));
           sound.playConnect();
         });
@@ -996,7 +996,7 @@ export default function App() {
         setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 60));
       }
       // Check deadline
-      if (m.deadlineYear && gameYear > m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
+      if (m.deadlineYear && gameYear >= m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
         setExpiredMissions(prev => [...prev, m.id]);
         showToast(`⏰ Missão expirada: ${m.title}`, 'error');
       }
@@ -1046,11 +1046,11 @@ export default function App() {
         return u;
       });
       setWorkers(prev => ({
-        terraplanagem: prev.terraplanagem,
+        terraplanagem: prev.terraplanagem + (existingProject.workersAllocated.terraplanagem ?? 0),
         assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
         sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
-        explosivos: prev.explosivos,
-        manutencao: prev.manutencao,
+        explosivos: prev.explosivos + (existingProject.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existingProject.workersAllocated.manutencao ?? 0),
       }));
       showToast(`★ Construção do Terminal Central em ${city.name} cancelada (50% reembolsado).`, 'info');
       sound.playDisconnect();
@@ -1133,7 +1133,13 @@ export default function App() {
     if (existing) {
       setInfraQueue(prev => prev.filter(p => p.id !== existing.id));
       setSpentOnResources(prev => Math.max(0, prev - Math.round(WAREHOUSE_CONFIG.cost * 0.5)));
-      setWorkers(prev => ({ ...prev, assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0) }));
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem + (existing.workersAllocated.terraplanagem ?? 0),
+        assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existing.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos + (existing.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existing.workersAllocated.manutencao ?? 0),
+      }));
       showToast(`🏭 Construção do Armazém em ${city.name} cancelada (50% reembolsado).`, 'info');
       sound.playDisconnect(); return;
     }
@@ -1182,9 +1188,11 @@ export default function App() {
       setInfraQueue(prev => prev.filter(p => p.id !== existing.id));
       setSpentOnResources(prev => Math.max(0, prev - Math.round(SILO_CONFIG.cost * 0.5)));
       setWorkers(prev => ({
-        ...prev,
-        assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0),
         terraplanagem: prev.terraplanagem + (existing.workersAllocated.terraplanagem ?? 0),
+        assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existing.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos + (existing.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existing.workersAllocated.manutencao ?? 0),
       }));
       showToast(`🌾 Construção do Silo em ${city.name} cancelada (50% reembolsado).`, 'info');
       sound.playDisconnect(); return;
@@ -1303,8 +1311,8 @@ export default function App() {
         terraplanagem: prev.terraplanagem + (existingProject.workersAllocated.terraplanagem ?? 0),
         assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
         sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
-        explosivos: prev.explosivos,
-        manutencao: prev.manutencao,
+        explosivos: prev.explosivos + (existingProject.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existingProject.workersAllocated.manutencao ?? 0),
       }));
       showToast(`🔧 Construção do Pátio em ${city.name} cancelada (50% reembolsado).`, 'info');
       sound.playDisconnect();

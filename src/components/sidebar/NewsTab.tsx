@@ -11,7 +11,7 @@ const CATEGORY_FILTERS = [
   { key: 'grant', label: '🟢 Subsídios' },
   { key: 'infra', label: '🔵 Obras' },
   { key: 'mission', label: '🟡 Missões' },
-  { key: 'event', label: '⚡ Eventos' },
+  { key: 'economy', label: '💼 Economia' },
 ] as const;
 
 type FilterKey = typeof CATEGORY_FILTERS[number]['key'];
