@@ -255,3 +255,6 @@ export const CITIES: City[] = [
   { id: '193', name: 'Gurupi', state: 'TO', lat: -11.7297, lng: -49.0678, type: 'polo_agricola' },
   { id: '194', name: 'Porto Nacional', state: 'TO', lat: -10.7064, lng: -48.4164, type: 'cidade', portType: 'fluvial' },
 ];
+
+// O(1) city lookup — use instead of CITIES.find(c => c.id === id)
+export const CITY_MAP: ReadonlyMap<string, City> = new Map(CITIES.map(c => [c.id, c]));

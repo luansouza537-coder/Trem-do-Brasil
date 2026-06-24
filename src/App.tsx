@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CITIES } from './data/cities';
+import { CITIES, CITY_MAP } from './data/cities';
 import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from './types';
 import { MISSIONS } from './utils/missions';
 import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } from './utils/news';
@@ -84,6 +84,9 @@ export default function App() {
   const lastPaidMonthRef = React.useRef('');
   const lowBudgetAlertedRef = React.useRef(false);
   const edgesRef = React.useRef<Edge[]>([]);
+  const constructionQueueRef = React.useRef<ConstructionProject[]>([]);
+  const infraQueueRef = React.useRef<InfraProject[]>([]);
+  const activeEventsRef = React.useRef<GameEvent[]>([]);
 
   // Game States
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -165,8 +168,11 @@ export default function App() {
   const [triggeredEventIds, setTriggeredEventIds] = useState<string[]>([]);
   const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
-  // Keep edgesRef in sync for use inside non-edges-dependent effects
+  // Keep refs in sync so the monthly useEffect always reads current values without adding them as deps
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { constructionQueueRef.current = constructionQueue; }, [constructionQueue]);
+  useEffect(() => { infraQueueRef.current = infraQueue; }, [infraQueue]);
+  useEffect(() => { activeEventsRef.current = activeEvents; }, [activeEvents]);
   useEffect(() => { triggeredEventIdsRef.current = triggeredEventIds; }, [triggeredEventIds]);
   useEffect(() => { currentEventRef.current = currentEvent; }, [currentEvent]);
 
@@ -229,8 +235,11 @@ export default function App() {
       setTimeout(() => setActiveCutscene('first_rail'), 800);
       return; // don't check half_network in same tick — let it fire on next change
     }
+    const connectedCities = new Set(
+      edges.filter(e => e.status === 'complete').flatMap(e => [e.from, e.to])
+    );
     const halfTarget = Math.floor(CITIES.length / 2);
-    if (completedCount >= halfTarget && !shown.includes('half_network') && !shownCutscenesRef.current.includes('half_network')) {
+    if (connectedCities.size >= halfTarget && !shown.includes('half_network') && !shownCutscenesRef.current.includes('half_network')) {
       shownCutscenesRef.current = [...shownCutscenesRef.current, 'half_network'];
       setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => setActiveCutscene('half_network'), 800);
@@ -283,20 +292,21 @@ export default function App() {
                              (workers.manutencao    * WORKER_SALARIES.manutencao);
 
       const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
-      const payrollMultiplier = activeEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
+      const curEvents = activeEventsRef.current;
+      const payrollMultiplier = curEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
       const adjustedPayroll = Math.round(monthlyPayroll * payrollMultiplier);
       if (adjustedPayroll > 0) {
         setSpentOnWorkers((prev) => prev + adjustedPayroll);
       }
 
       // Collect revenue from all completed routes
-      const activeEffects = activeEvents.map(e => e.statusEffect);
+      const activeEffects = curEvents.map(e => e.statusEffect);
       const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
-      let compoundRevMult = activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
-      if (compoundRevMult > 1.0) compoundRevMult = Math.min(2.0, compoundRevMult);
-      const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
+      let compoundRevMult = curEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
+      compoundRevMult = Math.max(0, Math.min(2.0, compoundRevMult));
+      const balsaFrozenByEvent = curEvents.some(e => e.balsaFrozen);
       const warehouseBonus = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
-      const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0) + warehouseBonus;
+      const monthlyBonusTotal = curEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0) + warehouseBonus;
 
       // Seasonal effects
       const seasonalEffects = getActiveSeasonalEffects(monthIdx);
@@ -336,65 +346,59 @@ export default function App() {
 
       // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
 
-      // Advance construction queue
-      setConstructionQueue(prev => {
-        const stillBuilding: ConstructionProject[] = [];
-        const completed: ConstructionProject[] = [];
-        prev.forEach(p => {
-          if (p.monthsRemaining <= 1) completed.push(p);
-          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
-        });
-        if (completed.length > 0) {
-          const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-          setEdges(prevEdges => prevEdges.map(e => {
-            const done = completed.find(p => p.edgeId === e.id);
-            return done ? { ...e, status: 'complete' as const } : e;
-          }));
-          // Return allocated workers to the free pool
-          const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
-          completed.forEach(p => {
-            if (p.workersAllocated) {
-              (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
-                totalReturned[k] += p.workersAllocated[k];
-              });
-            }
-          });
-          const anyReturned = Object.values(totalReturned).some(v => v > 0);
-          if (anyReturned) {
-            setWorkers(prev => ({
-              terraplanagem: prev.terraplanagem + totalReturned.terraplanagem,
-              assentamento:  prev.assentamento  + totalReturned.assentamento,
-              sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
-              explosivos:    prev.explosivos    + totalReturned.explosivos,
-              manutencao:    prev.manutencao    + totalReturned.manutencao,
-            }));
+      // Advance construction queue — pre-calculate from ref (avoids stale closure / dep array issue)
+      const completedProjects = constructionQueueRef.current.filter(p => p.monthsRemaining <= 1);
+      setConstructionQueue(prev => prev
+        .filter(p => p.monthsRemaining > 1)
+        .map(p => ({ ...p, monthsRemaining: p.monthsRemaining - 1 }))
+      );
+      if (completedProjects.length > 0) {
+        const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+        setEdges(prevEdges => prevEdges.map(e => {
+          const done = completedProjects.find(p => p.edgeId === e.id);
+          return done ? { ...e, status: 'complete' as const } : e;
+        }));
+        const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
+        completedProjects.forEach(p => {
+          if (p.workersAllocated) {
+            (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
+              totalReturned[k] += p.workersAllocated[k];
+            });
           }
-          completed.forEach(p => {
-            const cityA = CITIES.find(c => c.id === p.from);
-            const cityB = CITIES.find(c => c.id === p.to);
-            const workerReturn = p.workersAllocated
-              ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
-              : '';
-            showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
-            sound.playConnect();
-            if (cityA && cityB) {
-              setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 60));
-            }
-          });
-        }
-        return stillBuilding;
-      });
-
-      // Process infrastructure build queue
-      setInfraQueue(prev => {
-        const stillBuilding: InfraProject[] = [];
-        const completedInfra: InfraProject[] = [];
-        prev.forEach(p => {
-          if (p.monthsRemaining <= 1) completedInfra.push(p);
-          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
         });
-        completedInfra.forEach(p => {
-          const cityName = CITIES.find(c => c.id === p.cityId)?.name ?? p.cityId;
+        if (Object.values(totalReturned).some(v => v > 0)) {
+          setWorkers(prev => ({
+            terraplanagem: prev.terraplanagem + totalReturned.terraplanagem,
+            assentamento:  prev.assentamento  + totalReturned.assentamento,
+            sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
+            explosivos:    prev.explosivos    + totalReturned.explosivos,
+            manutencao:    prev.manutencao    + totalReturned.manutencao,
+          }));
+        }
+        completedProjects.forEach(p => {
+          const cityA = CITY_MAP.get(p.from);
+          const cityB = CITY_MAP.get(p.to);
+          const workerReturn = p.workersAllocated
+            ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
+            : '';
+          showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
+          sound.playConnect();
+          if (cityA && cityB) {
+            setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 60));
+          }
+        });
+      }
+
+      // Process infrastructure build queue — pre-calculate from ref
+      const completedInfraProjects = infraQueueRef.current.filter(p => p.monthsRemaining <= 1);
+      setInfraQueue(prev => prev
+        .filter(p => p.monthsRemaining > 1)
+        .map(p => ({ ...p, monthsRemaining: p.monthsRemaining - 1 }))
+      );
+      if (completedInfraProjects.length > 0) {
+        const infraWorkerReturn: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
+        completedInfraProjects.forEach(p => {
+          const cityName = CITY_MAP.get(p.cityId)?.name ?? p.cityId;
           if (p.type === 'hub') {
             setUpgradedHubs(prev2 => [...prev2, p.cityId]);
             showToast(`★ Terminal Central em ${cityName} concluído! +1 slot de conexão.`, 'success');
@@ -407,46 +411,42 @@ export default function App() {
           } else {
             setMaintenanceYards(prev2 => [...prev2, p.cityId]);
             setYardLevels(prev2 => ({ ...prev2, [p.cityId]: p.yardLevel ?? 1 }));
-            const lvlName = YARD_CONFIGS[p.yardLevel ?? 1].name;
-            const cov = YARD_CONFIGS[p.yardLevel ?? 1].coverage;
+            const yLevel = (p.yardLevel ?? 1) as 1 | 2 | 3;
+            const lvlName = YARD_CONFIGS[yLevel]?.name ?? 'Básico';
+            const cov = YARD_CONFIGS[yLevel]?.coverage ?? 0;
             showToast(`🔧 Pátio ${lvlName} em ${cityName} concluído! Cobertura: ${cov}km.`, 'success');
           }
-          // Return allocated workers
-          setWorkers(prev2 => ({
-            terraplanagem: prev2.terraplanagem + (p.workersAllocated.terraplanagem ?? 0),
-            assentamento: prev2.assentamento + (p.workersAllocated.assentamento ?? 0),
-            sinalizacao: prev2.sinalizacao + (p.workersAllocated.sinalizacao ?? 0),
-            explosivos: prev2.explosivos + (p.workersAllocated.explosivos ?? 0),
-            manutencao: prev2.manutencao + (p.workersAllocated.manutencao ?? 0),
-          }));
+          (Object.keys(infraWorkerReturn) as Array<keyof GameWorkers>).forEach(k => {
+            infraWorkerReturn[k] += p.workersAllocated[k] ?? 0;
+          });
           sound.playConnect();
         });
-        return stillBuilding;
-      });
+        if (Object.values(infraWorkerReturn).some(v => v > 0)) {
+          setWorkers(prev2 => ({
+            terraplanagem: prev2.terraplanagem + infraWorkerReturn.terraplanagem,
+            assentamento:  prev2.assentamento  + infraWorkerReturn.assentamento,
+            sinalizacao:   prev2.sinalizacao   + infraWorkerReturn.sinalizacao,
+            explosivos:    prev2.explosivos    + infraWorkerReturn.explosivos,
+            manutencao:    prev2.manutencao    + infraWorkerReturn.manutencao,
+          }));
+        }
+      }
     }
 
-    // 1. Durations Tick + monthly fine deductions
-    setActiveEvents((prev) => {
-      const updated = prev.map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }));
-      const expired = updated.filter(e => e.monthsLeft <= 0);
-      const active = updated.filter(e => e.monthsLeft > 0);
-
-      // Deduct monthly crisis fines
-      let totalFines = 0;
-      prev.forEach(e => {
-        if (e.costPerMonth && e.monthsLeft > 0) totalFines += e.costPerMonth;
-      });
-      if (totalFines > 0) {
-        setSpentOnResources(p => p + totalFines);
-        const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
-        showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
-      }
-
-      expired.forEach(e => {
-        showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');
-      });
-
-      return active;
+    // 1. Durations Tick — pre-calculate from ref, then pure state update
+    const totalFines = activeEventsRef.current.reduce((acc, e) => acc + (e.costPerMonth && e.monthsLeft > 0 ? e.costPerMonth : 0), 0);
+    const expiredEvents = activeEventsRef.current.filter(e => e.monthsLeft <= 1);
+    setActiveEvents(prev => prev
+      .map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }))
+      .filter(e => e.monthsLeft > 0)
+    );
+    if (totalFines > 0) {
+      setSpentOnResources(p => p + totalFines);
+      const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+      showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
+    }
+    expiredEvents.forEach(e => {
+      showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');
     });
 
     // 2. Calendar-based scheduled event trigger
@@ -889,8 +889,8 @@ export default function App() {
     let spentBalsa = 0;
 
     edges.forEach(edge => {
-      const cityA = CITIES.find(c => c.id === edge.from);
-      const cityB = CITIES.find(c => c.id === edge.to);
+      const cityA = CITY_MAP.get(edge.from);
+      const cityB = CITY_MAP.get(edge.to);
       if (cityA && cityB) {
         if (edge.type === 'balsa') {
           spentBalsa += Math.round(edge.distance * 12000000);
