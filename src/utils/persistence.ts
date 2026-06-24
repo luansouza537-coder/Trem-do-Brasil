@@ -25,6 +25,8 @@ export interface SaveGame {
   warehouses?: string[];
   silos?: string[];
   shownCutscenes?: string[];
+  autoBuyResources?: boolean;
+  expiredMissions?: string[];
 }
 
 const getSaveKey = (slot: number) =>
@@ -55,6 +57,8 @@ export function loadGame(slot = 1): SaveGame | null {
     if (!save.warehouses) save.warehouses = [];
     if (!save.silos) save.silos = [];
     if (!save.shownCutscenes) save.shownCutscenes = [];
+    if (save.autoBuyResources === undefined) save.autoBuyResources = true;
+    if (!save.expiredMissions) save.expiredMissions = [];
     // Patch edge fields added in later versions
     if (save.edges) {
       save.edges = save.edges.map(e => ({

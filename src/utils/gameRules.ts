@@ -3,10 +3,10 @@ import { City, Edge, GameResources, GameWorkers } from '../types';
 export const RESOURCE_BUY_PRICES: Record<keyof GameResources, number> = {
   aco: 6000000,        // R$ 6.000.000 por ton
   brita: 1500000,      // R$ 1.500.000 por ton
-  madeira: 2500050,    // R$ 2.500.050 por ton
+  madeira: 2500000,    // R$ 2.500.000 por ton
   cimento: 3500000,    // R$ 3.500.000 por ton
   cobre: 10000000,     // R$ 10.000.000 por ton
-  explosivos: 20000100 // R$ 20.000.100 por ton
+  explosivos: 20000000 // R$ 20.000.000 por ton
 };
 
 export const RESOURCE_NAMES: Record<keyof GameResources, string> = {
@@ -125,7 +125,7 @@ export const WORKER_NAMES: Record<keyof GameWorkers, string> = {
   assentamento:  'Assentamento de Trilhos',
   sinalizacao:   'Sinalização & Elétrica',
   explosivos:    'Explosivos & Túneis',
-  manutencao:    'Manutenção',
+  manutencao:    'Manutenção de Via',
 };
 
 export function getConstructionMonths(

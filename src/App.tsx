@@ -104,6 +104,7 @@ export default function App() {
   const [silos, setSilos] = useState<string[]>([]);
   const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | null>(null);
   const [shownCutscenes, setShownCutscenes] = useState<string[]>([]);
+  const shownCutscenesRef = React.useRef<string[]>([]);
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
@@ -200,7 +201,7 @@ export default function App() {
         triggeredEventIds,
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
         infraQueue, yardLevels, warehouses, silos,
-        shownCutscenes,
+        shownCutscenes, autoBuyResources, expiredMissions,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -211,22 +212,27 @@ export default function App() {
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
-      infraQueue, yardLevels, warehouses, silos]);
+      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions]);
 
-  // Cutscene triggers — runs whenever edges change, outside any state updater
+  // Keep ref in sync so cutscene useEffect always reads current value
+  useEffect(() => { shownCutscenesRef.current = shownCutscenes; }, [shownCutscenes]);
+
+  // Cutscene triggers — runs whenever edges change, reads ref to avoid stale closure
   useEffect(() => {
     const completedCount = edges.filter(e => e.status === 'complete').length;
     if (completedCount === 0) return;
-    if (completedCount === 1 && !shownCutscenes.includes('first_rail')) {
-      setShownCutscenes(prev => [...prev, 'first_rail']);
+    const shown = shownCutscenesRef.current;
+    if (completedCount === 1 && !shown.includes('first_rail')) {
+      shownCutscenesRef.current = [...shown, 'first_rail'];
+      setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => setActiveCutscene('first_rail'), 800);
     }
     const halfTarget = Math.floor(CITIES.length / 2);
-    if (completedCount >= halfTarget && !shownCutscenes.includes('half_network')) {
-      setShownCutscenes(prev => [...prev, 'half_network']);
+    if (completedCount >= halfTarget && !shown.includes('half_network') && !shownCutscenesRef.current.includes('half_network')) {
+      shownCutscenesRef.current = [...shownCutscenesRef.current, 'half_network'];
+      setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => setActiveCutscene('half_network'), 800);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges]);
 
   // Dynamic time progression with configurable speeds:
@@ -285,7 +291,7 @@ export default function App() {
       const activeEffects = activeEvents.map(e => e.statusEffect);
       const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
       let compoundRevMult = activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
-      if (compoundRevMult > 1.0) compoundRevMult = Math.min(1.35, compoundRevMult);
+      if (compoundRevMult > 1.0) compoundRevMult = Math.min(2.0, compoundRevMult);
       const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
       const warehouseBonus = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
       const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0) + warehouseBonus;
@@ -642,6 +648,13 @@ export default function App() {
     triggeredEventIdsRef.current = [];
     setInfraQueue([]);
     setYardLevels({});
+    setWarehouses([]);
+    setSilos([]);
+    setShownCutscenes([]);
+    shownCutscenesRef.current = [];
+    setActiveCutscene(null);
+    setExpiredMissions([]);
+    setAutoBuyResources(true);
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -673,7 +686,11 @@ export default function App() {
     setYardLevels(save.yardLevels ?? {});
     setWarehouses(save.warehouses ?? []);
     setSilos(save.silos ?? []);
-    setShownCutscenes(save.shownCutscenes ?? []);
+    const loadedCutscenes = save.shownCutscenes ?? [];
+    setShownCutscenes(loadedCutscenes);
+    shownCutscenesRef.current = loadedCutscenes;
+    setAutoBuyResources(save.autoBuyResources ?? true);
+    setExpiredMissions(save.expiredMissions ?? []);
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -718,7 +735,11 @@ export default function App() {
       setYardLevels(data.yardLevels ?? {});
       setWarehouses(data.warehouses ?? []);
       setSilos(data.silos ?? []);
-      setShownCutscenes(data.shownCutscenes ?? []);
+      const importedCutscenes = data.shownCutscenes ?? [];
+      setShownCutscenes(importedCutscenes);
+      shownCutscenesRef.current = importedCutscenes;
+      setAutoBuyResources(data.autoBuyResources ?? true);
+      setExpiredMissions(data.expiredMissions ?? []);
       showToast('📥 Save importado com sucesso!', 'success');
     } catch {
       showToast('❌ Arquivo inválido — não foi possível importar.', 'error');
