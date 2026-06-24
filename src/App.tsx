@@ -222,10 +222,12 @@ export default function App() {
     const completedCount = edges.filter(e => e.status === 'complete').length;
     if (completedCount === 0) return;
     const shown = shownCutscenesRef.current;
-    if (completedCount === 1 && !shown.includes('first_rail')) {
+    // First rail: fires as soon as ≥1 edge is complete (handles simultaneous completions)
+    if (completedCount >= 1 && !shown.includes('first_rail')) {
       shownCutscenesRef.current = [...shown, 'first_rail'];
       setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => setActiveCutscene('first_rail'), 800);
+      return; // don't check half_network in same tick — let it fire on next change
     }
     const halfTarget = Math.floor(CITIES.length / 2);
     if (completedCount >= halfTarget && !shown.includes('half_network') && !shownCutscenesRef.current.includes('half_network')) {
@@ -1415,11 +1417,14 @@ export default function App() {
     const existingEdge = edges.find((e) => e.id === edgeId1 || e.id === edgeId2);
 
     if (existingEdge) {
+      const isBuilding = existingEdge.status === 'building';
+      if (!isBuilding) {
+        const confirmed = window.confirm(`Demolir a ferrovia ${cityA.name} ↔ ${cityB.name}?\n\nVocê receberá reembolso total de materiais e custo. Esta ação não pode ser desfeita.`);
+        if (!confirmed) return;
+      }
       setEdges((prev) => prev.filter((e) => e.id !== existingEdge.id));
       setSelectedCityId(null);
       sound.playDisconnect();
-
-      const isBuilding = existingEdge.status === 'building';
       if (isBuilding) {
         // Return allocated workers when cancelling a build
         const cancelledProject = constructionQueue.find(p => p.edgeId === existingEdge.id);

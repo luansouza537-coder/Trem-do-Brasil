@@ -217,10 +217,10 @@ export default function Sidebar({
           <div>
             <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Concessão</span>
             <span className="text-sm md:text-xs font-black text-slate-100">
-              {MONTHS[monthIdx]}/2077 de <span className="text-amber-400">{gameYear}</span>
+              {MONTHS[monthIdx]}/{gameYear} <span className="text-slate-500 font-normal text-[10px]">de 2027</span>
             </span>
             <span className={`text-[10px] md:text-[9px] font-bold ${2077 - gameYear <= 5 ? 'text-rose-400' : 2077 - gameYear <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
-              ⏳ {2077 - gameYear} anos restantes
+              ⏳ {Math.max(0, 2077 - gameYear)} anos restantes
             </span>
           </div>
           <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 shrink-0">
