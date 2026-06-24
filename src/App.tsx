@@ -1930,7 +1930,7 @@ export default function App() {
           const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
 
           return (
-            <div className="fixed bottom-0 left-0 right-0 max-h-[72vh] overflow-y-auto rounded-t-2xl md:absolute md:bottom-auto md:top-4 md:left-4 md:right-auto md:rounded-xl md:max-h-none md:overflow-visible md:w-[480px] bg-slate-900 md:bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 shadow-2xl z-50 flex flex-col gap-3">
+            <div className="fixed bottom-0 left-0 right-0 max-h-[55vh] overflow-y-auto rounded-t-2xl md:absolute md:bottom-auto md:top-4 md:left-4 md:right-auto md:rounded-xl md:max-h-none md:overflow-visible md:w-[480px] bg-slate-900 md:bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 shadow-2xl z-50 flex flex-col gap-3">
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1942,16 +1942,22 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] text-slate-500 font-mono block">Clique no mapa para cancelar</span>
-                  <span className="text-[8.5px] text-slate-600">
-                    {(() => {
-                      const nat = getCityNativeMaxConns(selectedCity.id);
-                      const tot = nat + (isUpgraded ? 1 : 0);
-                      const cur = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
-                      return `${cur}/${tot} conexões${isUpgraded ? ' (hub)' : ''}`;
-                    })()}
-                  </span>
+                <div className="flex items-start gap-2">
+                  <div className="text-right">
+                    <span className="text-[8.5px] text-slate-600">
+                      {(() => {
+                        const nat = getCityNativeMaxConns(selectedCity.id);
+                        const tot = nat + (isUpgraded ? 1 : 0);
+                        const cur = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
+                        return `${cur}/${tot} conexões${isUpgraded ? ' (hub)' : ''}`;
+                      })()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedCityId(null)}
+                    className="w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white flex items-center justify-center text-sm font-black transition shrink-0"
+                    title="Fechar"
+                  >✕</button>
                 </div>
               </div>
 

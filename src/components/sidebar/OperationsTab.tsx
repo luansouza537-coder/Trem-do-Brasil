@@ -155,74 +155,7 @@ export default function OperationsTab({
         </div>
       )}
 
-      {/* 1. Finanças detalhadas (Demonstrativo) */}
-      <div className="p-3.5 bg-slate-900/30 flex flex-col gap-2">
-        <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-          📊 Demonstrativo de Finanças:
-        </span>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-400 bg-slate-950/50 p-2 rounded-lg border border-slate-850">
-          <div className="flex justify-between"><span>Vias Férreas:</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentRail.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between"><span>Pátios (🔧):</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentYards.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between"><span>Balsas (🚢):</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentBalsa.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between"><span>Cen. Hubs (★):</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentHubs.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between col-span-2 border-t border-slate-850 pt-1 mt-1 text-[9.5px]">
-            <span className="text-amber-500 font-semibold">Salários de RH Pagos:</span>
-            <span className="text-amber-400 font-mono font-bold">R$ {(budgetState.spentOnWorkers ?? 0).toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="flex justify-between col-span-2 border-t border-slate-850 pt-1 mt-1 text-[9.5px]">
-            <span className="text-amber-500 font-semibold">Compra de Materiais:</span>
-            <span className="text-amber-400 font-mono font-bold">R$ {(budgetState.spentOnResources ?? 0).toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="col-span-2 border-t border-slate-805 pt-1 mt-1 flex justify-between">
-             <span className="text-emerald-500 font-medium">Subsídios Regionais:</span>
-             <span className="text-emerald-400 font-bold font-sans">+R$ {budgetState.grantIncome.toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="col-span-2 border-t border-slate-850 pt-1 mt-1 flex justify-between text-[9.5px]">
-            <span className="text-sky-400 font-semibold">Receita Mensal (Transporte):</span>
-            <span className="text-sky-300 font-bold font-mono">+R$ {(budgetState.monthlyRevenue ?? 0).toLocaleString('pt-BR')}/mês</span>
-          </div>
-          <div className="col-span-2 flex justify-between text-[9.5px]">
-            <span className="text-sky-500 font-medium">Receita Total Acumulada:</span>
-            <span className="text-sky-400 font-bold font-mono">+R$ {(budgetState.totalRevenue ?? 0).toLocaleString('pt-BR')}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 1b. Histórico de Caixa (SVG chart) */}
-      <div className="p-3.5 bg-slate-900/20 flex flex-col gap-2">
-        <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-          📈 Histórico de Caixa (últimos 24 meses):
-        </span>
-        {budgetHistory.length < 2 ? (
-          <p className="text-[9.5px] text-slate-500 italic">Aguardando dados do próximo mês...</p>
-        ) : (() => {
-          const W = 280, H = 64;
-          const minB = Math.min(...budgetHistory.map(h => h.budget));
-          const maxB = Math.max(...budgetHistory.map(h => h.budget));
-          const range = maxB - minB || 1;
-          const pts = budgetHistory.map((h, i) => {
-            const x = (i / (budgetHistory.length - 1)) * W;
-            const y = H - ((h.budget - minB) / range) * (H - 8) - 4;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-          }).join(' ');
-          const isUp = budgetHistory[budgetHistory.length - 1].budget >= budgetHistory[0].budget;
-          const lineColor = isUp ? '#10b981' : '#f43f5e';
-          const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(0)}B` : `${(v/1e6).toFixed(0)}M`;
-          return (
-            <div className="relative">
-              <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
-                <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
-                <text x="0" y={H} fontSize="7" fill="#64748b">{budgetHistory[0].label}</text>
-                <text x={W} y={H} fontSize="7" fill="#64748b" textAnchor="end">{budgetHistory[budgetHistory.length-1].label}</text>
-                <text x={W} y="8" fontSize="7" fill="#94a3b8" textAnchor="end">{fmt(maxB)}</text>
-                <text x={W} y={H - 2} fontSize="7" fill="#94a3b8" textAnchor="end">{fmt(minB)}</text>
-              </svg>
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* 2. Equipe de Engenharia (Trabalhadores) */}
+      {/* Equipe de Engenharia (Trabalhadores) */}
       <div className="p-3.5 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">

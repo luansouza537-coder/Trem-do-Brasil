@@ -5,6 +5,7 @@ import { SaveGame } from '../utils/persistence';
 import { FundGrant, WORKER_SALARIES, getSimultaneousPenalty } from '../utils/gameRules';
 import { Volume2, VolumeX, RotateCw } from 'lucide-react';
 import OperationsTab from './sidebar/OperationsTab';
+import FinancialTab from './sidebar/FinancialTab';
 import MissionsTab from './sidebar/MissionsTab';
 import NewsTab from './sidebar/NewsTab';
 import CitiesTab from './sidebar/CitiesTab';
@@ -104,7 +105,7 @@ export default function Sidebar({
   mobileExpanded = false, onMobileExpandedChange,
 }: SidebarProps) {
   const importFileRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news'>('cities');
+  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news' | 'financial'>('cities');
   const setMobileExpanded = useCallback((v: boolean) => onMobileExpandedChange?.(v), [onMobileExpandedChange]);
 
   // Orientation detection
@@ -127,7 +128,7 @@ export default function Sidebar({
 
   // Swipe between tabs
   const swipeTouchStartX = useRef<number | null>(null);
-  const TABS: ('cities' | 'operations' | 'missions' | 'news')[] = ['cities', 'operations', 'missions', 'news'];
+  const TABS: ('cities' | 'operations' | 'missions' | 'news' | 'financial')[] = ['cities', 'operations', 'missions', 'news', 'financial'];
   const handleTabSwipe = useCallback((e: React.TouchEvent) => {
     if (swipeTouchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
@@ -304,7 +305,8 @@ export default function Sidebar({
           { id: 'cities',     icon: '🗺️', label: 'Rotas',    badge: false },
           { id: 'operations', icon: '👷', label: 'Equipe',   badge: activeEvents.length > 0, count: constructionQueue.length > 0 ? constructionQueue.length : 0 },
           { id: 'missions',   icon: '🎯', label: 'Missões',  badge: missionResults.some(m => m.completed), count: 0 },
-          { id: 'news',       icon: '📰', label: 'Notícias', badge: newsItems.length > 0 && activeTab !== 'news', count: 0 },
+          { id: 'news',       icon: '📰', label: 'Notícias',   badge: newsItems.length > 0 && activeTab !== 'news', count: 0 },
+          { id: 'financial',  icon: '💰', label: 'Finanças',   badge: (budgetState?.currentBudget ?? 0) < 0, count: 0 },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`flex-1 text-center py-2.5 rounded-t-lg text-[10px] font-black tracking-wide transition flex flex-col items-center justify-center gap-0.5 cursor-pointer relative border-b-2 ${
@@ -366,6 +368,16 @@ export default function Sidebar({
 
       {activeTab === 'news' && (
         <NewsTab newsItems={newsItems} />
+      )}
+
+      {activeTab === 'financial' && (
+        <FinancialTab
+          edges={edges}
+          workers={workers}
+          activeEvents={activeEvents}
+          budgetState={budgetState ?? { totalSpent: 0, spentRail: 0, spentBalsa: 0, spentYards: 0, spentHubs: 0, grantIncome: 0, currentBudget: 0, unlockedGrants: [] }}
+          budgetHistory={budgetHistory ?? []}
+        />
       )}
 
       {activeTab === 'cities' && (

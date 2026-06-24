@@ -34,7 +34,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
 
   // ── 2028 ──
   { id:'ev004', triggerYear:2028, triggerMonth:4, category:'POS', title:'Colheita Recorde no Agronegócio', description:'Safra histórica gera demanda por escoamento ferroviário e atrai investidores para o setor de logística.', immediateCash:5_000_000_000 },
-  { id:'ev005', triggerYear:2028, triggerMonth:8, category:'CRI', title:'Greve Geral Ferroviária 🚧', description:'Sindicatos paralisaram parcialmente as obras. Os trabalhadores exigem aumento salarial e melhores condições de campo. A RENIF paga multas mensais até a resolução.', gameEvent:{ type:'strike', statusEffect:'GREVE_GERAL', durationMonths:12, costPerMonth:3_000_000_000, costToResolve:20_000_000_000 } },
+  { id:'ev005', triggerYear:2028, triggerMonth:8, category:'CRI', title:'Greve Geral Ferroviária 🚧', description:'Sindicatos paralisaram parcialmente as obras. Os trabalhadores exigem aumento salarial e melhores condições de campo. A RENIF paga multas mensais até a resolução.', gameEvent:{ type:'strike', statusEffect:'GREVE_GERAL', durationMonths:8, costPerMonth:1_500_000_000, costToResolve:12_000_000_000 } },
   { id:'ev006', triggerYear:2028, triggerMonth:12, category:'NEU', title:'Festa do Peão de Barretos', description:'O maior rodeio do Brasil movimenta o interior paulista e impulsiona a demanda por transporte ferroviário regional.', gameEvent:{ type:'neutral', statusEffect:'FESTA_PEAO', durationMonths:1, revenueMultiplier:1.10 } },
 
   // ── 2029 ──
