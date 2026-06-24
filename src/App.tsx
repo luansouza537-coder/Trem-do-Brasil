@@ -1864,19 +1864,19 @@ export default function App() {
         onMobileExpandedChange={setMobileExpanded}
       />
 
+      {/* FAB — mobile only — fixed in root stacking context so it's never covered by popups */}
+      {!mobileExpanded && (
+        <button
+          onClick={() => setMobileExpanded(true)}
+          className="md:hidden fixed bottom-5 left-4 z-[9990] w-12 h-12 rounded-full bg-amber-500 text-slate-950 shadow-xl flex items-center justify-center text-xl font-black border-2 border-amber-300 active:scale-95 transition-transform"
+          title="Abrir painel"
+        >
+          ☰
+        </button>
+      )}
+
       {/* 3. Primary Leaflet Map Container */}
       <main className="flex-1 h-[60vh] md:h-full relative overflow-hidden">
-
-        {/* FAB — mobile only — opens sidebar panel */}
-        {!mobileExpanded && (
-          <button
-            onClick={() => setMobileExpanded(true)}
-            className="md:hidden absolute bottom-4 left-4 z-[500] w-12 h-12 rounded-full bg-amber-500 text-slate-950 shadow-xl flex items-center justify-center text-xl font-black border-2 border-amber-300 active:scale-95 transition-transform"
-            title="Abrir painel"
-          >
-            ☰
-          </button>
-        )}
 
         {/* Floating Map Format / Style Selector widget — hidden on mobile portrait, visible md+ */}
         <div className="hidden md:flex absolute top-4 right-4 z-50 bg-slate-900/95 backdrop-blur-md p-1 px-1.5 rounded-xl border border-slate-800 shadow-2xl items-center gap-1.5 transition-all">
