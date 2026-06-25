@@ -93,6 +93,7 @@ export default function App() {
   const constructionQueueRef = React.useRef<ConstructionProject[]>([]);
   const infraQueueRef = React.useRef<InfraProject[]>([]);
   const activeEventsRef = React.useRef<GameEvent[]>([]);
+  const workersRef = React.useRef<GameWorkers>({ terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 });
 
   // Game States
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -267,6 +268,7 @@ export default function App() {
   useEffect(() => { constructionQueueRef.current = constructionQueue; }, [constructionQueue]);
   useEffect(() => { infraQueueRef.current = infraQueue; }, [infraQueue]);
   useEffect(() => { activeEventsRef.current = activeEvents; }, [activeEvents]);
+  useEffect(() => { workersRef.current = workers; }, [workers]);
   useEffect(() => { triggeredEventIdsRef.current = triggeredEventIds; }, [triggeredEventIds]);
   useEffect(() => { currentEventRef.current = currentEvent; }, [currentEvent]);
 
@@ -398,13 +400,14 @@ export default function App() {
       lastPaidMonthRef.current = monthKey;
 
       const inflationMult = getYearInflationMultiplier(gameYear);
-      const monthlyPayroll = ((workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
-                             (workers.assentamento  * WORKER_SALARIES.assentamento)  +
-                             (workers.sinalizacao   * WORKER_SALARIES.sinalizacao)   +
-                             (workers.explosivos    * WORKER_SALARIES.explosivos)    +
-                             (workers.manutencao    * WORKER_SALARIES.manutencao)) * inflationMult;
+      const curWorkers = workersRef.current;
+      const monthlyPayroll = ((curWorkers.terraplanagem * WORKER_SALARIES.terraplanagem) +
+                             (curWorkers.assentamento  * WORKER_SALARIES.assentamento)  +
+                             (curWorkers.sinalizacao   * WORKER_SALARIES.sinalizacao)   +
+                             (curWorkers.explosivos    * WORKER_SALARIES.explosivos)    +
+                             (curWorkers.manutencao    * WORKER_SALARIES.manutencao)) * inflationMult;
 
-      const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
+      const totalWorkers = curWorkers.terraplanagem + curWorkers.assentamento + curWorkers.sinalizacao + curWorkers.explosivos + curWorkers.manutencao;
       const curEvents = activeEventsRef.current;
       const payrollMultiplier = curEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
       const adjustedPayroll = Math.round(monthlyPayroll * payrollMultiplier);
@@ -716,7 +719,7 @@ export default function App() {
         }
       }
     }
-  }, [monthIdx, gameYear, workers]);
+  }, [monthIdx, gameYear]);
 
   // Toast notifier trigger
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -1016,14 +1019,8 @@ export default function App() {
 
   // Manual resource purchasing handler
   const handleBuyResource = (resKey: keyof GameResources, amount: number) => {
-    const buyActiveEffects = activeEvents.map(e => e.statusEffect);
-    const isHighInflation = buyActiveEffects.includes('INFLACAO_GLOBAL');
-    const isGeopoliticTension = buyActiveEffects.includes('TENSAO_GEOPOLITICA');
     let unitPrice = RESOURCE_BUY_PRICES[resKey];
-    if (resKey === 'aco' && isHighInflation) unitPrice *= 2.0;
-    if (resKey === 'cobre' && isHighInflation) unitPrice *= 2.0;
-    if (resKey === 'cobre' && isGeopoliticTension) unitPrice *= 1.8;
-    // Apply resource price multipliers from active events
+    // Apply resource price multipliers from all active events (single unified system)
     activeEvents.forEach(e => {
       if (e.resourceMultipliers && e.resourceMultipliers[resKey] !== undefined) {
         unitPrice = Math.round(unitPrice * e.resourceMultipliers[resKey]!);
@@ -1788,8 +1785,6 @@ export default function App() {
       return;
     }
     let buyCost = 0;
-    const isHighInflation = activeEffects.includes('INFLACAO_GLOBAL');
-    const isTensaoGeo = activeEffects.includes('TENSAO_GEOPOLITICA');
     const shortages: Partial<GameResources> = {};
     let hasShortage = false;
 
@@ -1800,9 +1795,11 @@ export default function App() {
         shortages[key] = short;
         hasShortage = true;
         let unitPrice = RESOURCE_BUY_PRICES[key];
-        if (key === 'aco' && isHighInflation) unitPrice *= 2.0;
-        if (key === 'cobre' && isHighInflation) unitPrice *= 2.0;
-        if (key === 'cobre' && isTensaoGeo) unitPrice *= 1.8;
+        activeEvents.forEach(e => {
+          if (e.resourceMultipliers && e.resourceMultipliers[key] !== undefined) {
+            unitPrice = Math.round(unitPrice * e.resourceMultipliers[key]!);
+          }
+        });
         buyCost += short * unitPrice;
       }
     });
@@ -2809,10 +2806,10 @@ export default function App() {
                       📉 Receita -{Math.round((1 - currentEvent.revenueMultiplier) * 100)}% durante a crise
                     </p>
                   )}
-                  {currentEvent.constructionSlowFactor !== undefined && currentEvent.constructionSlowFactor > 1 && (
-                    <p className="text-[10px] text-red-400 font-bold mt-1">
-                      🐢 Obras +{Math.round((currentEvent.constructionSlowFactor - 1) * 100)}% mais lentas
-                    </p>
+                  {currentEvent.constructionSlowFactor !== undefined && currentEvent.constructionSlowFactor !== 1 && (
+                    currentEvent.constructionSlowFactor > 1
+                      ? <p className="text-[10px] text-red-400 font-bold mt-1">🐢 Obras +{Math.round((currentEvent.constructionSlowFactor - 1) * 100)}% mais lentas</p>
+                      : <p className="text-[10px] text-emerald-400 font-bold mt-1">⚡ Obras {Math.round((1 - currentEvent.constructionSlowFactor) * 100)}% mais rápidas</p>
                   )}
                   {currentEvent.balsaFrozen && (
                     <p className="text-[10px] text-red-400 font-bold mt-1">
