@@ -209,11 +209,6 @@ export default function Sidebar({
             title={mobileExpanded ? 'Minimizar painel' : 'Expandir painel'}>
             {mobileExpanded ? '✕' : '⬆'}
           </button>
-          <button onClick={onAdvanceMonth}
-            className="p-1.5 rounded-lg border border-sky-900/40 bg-sky-950/20 text-sky-400 hover:bg-sky-900/40 hover:text-sky-200 transition text-[9px] font-black uppercase tracking-wider"
-            title="Avançar 1 mês manualmente">
-            ⏭+1M
-          </button>
           <button onClick={onToggleMute}
             className={`p-2 rounded-lg border transition ${isMuted ? 'border-slate-800 bg-slate-950/40 text-slate-500 hover:text-slate-300' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
             title={isMuted ? "Ativar som" : "Desativar som"}>
@@ -244,20 +239,27 @@ export default function Sidebar({
               ⏳ {Math.max(0, 2077 - gameYear)} anos restantes
             </span>
           </div>
-          <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 shrink-0">
-            {(['paused', 'normal', 'fast'] as const).map(speed => (
-              <button key={speed} onClick={() => onPlaySpeedChange(speed)}
-                className={`px-2 py-1.5 md:px-1.5 md:py-0.5 rounded text-[10px] md:text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                  playSpeed === speed
-                    ? speed === 'paused' ? 'bg-rose-500 text-slate-950 font-black'
-                      : speed === 'normal' ? 'bg-amber-500 text-slate-950 font-black'
-                      : 'bg-sky-500 text-slate-950 font-black'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}>
-                <span className="md:hidden">{speed === 'paused' ? '⏸' : speed === 'normal' ? '1x' : '⚡'}</span>
-                <span className="hidden md:inline">{speed === 'paused' ? '⏸️ Pausar' : speed === 'normal' ? '⏱️ 1x' : '⚡ Rápido'}</span>
-              </button>
-            ))}
+          <div className="flex items-center gap-1 shrink-0">
+            <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+              {(['paused', 'normal', 'fast'] as const).map(speed => (
+                <button key={speed} onClick={() => onPlaySpeedChange(speed)}
+                  className={`px-2 py-1.5 md:px-1.5 md:py-0.5 rounded text-[10px] md:text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                    playSpeed === speed
+                      ? speed === 'paused' ? 'bg-rose-500 text-slate-950 font-black'
+                        : speed === 'normal' ? 'bg-amber-500 text-slate-950 font-black'
+                        : 'bg-sky-500 text-slate-950 font-black'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}>
+                  <span className="md:hidden">{speed === 'paused' ? '⏸' : speed === 'normal' ? '1x' : '⚡'}</span>
+                  <span className="hidden md:inline">{speed === 'paused' ? '⏸️ Pausar' : speed === 'normal' ? '⏱️ 1x' : '⚡ Rápido'}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={onAdvanceMonth}
+              className="p-1.5 rounded-lg border border-sky-900/40 bg-sky-950/20 text-sky-400 hover:bg-sky-900/40 hover:text-sky-200 transition text-[9px] font-black uppercase tracking-wider"
+              title="Avançar 1 mês manualmente">
+              ⏭+1M
+            </button>
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-xs">

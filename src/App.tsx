@@ -111,7 +111,12 @@ export default function App() {
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [silos, setSilos] = useState<string[]>([]);
-  const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | 'first_balsa' | 'first_passenger' | 'event_greve' | 'event_escassez_cimento' | null>(null);
+  type CutsceneId = 'first_rail' | 'half_network' | 'first_balsa' | 'first_passenger' | 'event_greve' | 'event_escassez_cimento';
+  const [cutsceneQueue, setCutsceneQueue] = useState<CutsceneId[]>([]);
+  const activeCutscene: CutsceneId | null = cutsceneQueue[0] ?? null;
+  const enqueueCutscene = React.useCallback((id: CutsceneId) => {
+    setCutsceneQueue(prev => prev.includes(id) ? prev : [...prev, id]);
+  }, []);
   const pendingEventAfterCutsceneRef = React.useRef<string | null>(null);
   const [shownCutscenes, setShownCutscenes] = useState<string[]>([]);
   const shownCutscenesRef = React.useRef<string[]>([]);
@@ -322,7 +327,7 @@ export default function App() {
     if (completedCount >= 1 && !shown.includes('first_rail')) {
       shownCutscenesRef.current = [...shown, 'first_rail'];
       setShownCutscenes(shownCutscenesRef.current);
-      setTimeout(() => setActiveCutscene('first_rail'), 800);
+      setTimeout(() => enqueueCutscene('first_rail'), 800);
       return; // don't check half_network in same tick — let it fire on next change
     }
     // First balsa (hidrovia): fires when first balsa edge completes
@@ -330,7 +335,7 @@ export default function App() {
     if (firstBalsa && !shown.includes('first_balsa')) {
       shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_balsa'];
       setShownCutscenes(shownCutscenesRef.current);
-      setTimeout(() => setActiveCutscene('first_balsa'), 800);
+      setTimeout(() => enqueueCutscene('first_balsa'), 800);
       return;
     }
     // First passenger line: fires when first passenger edge completes
@@ -338,7 +343,7 @@ export default function App() {
     if (firstPassenger && !shown.includes('first_passenger')) {
       shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_passenger'];
       setShownCutscenes(shownCutscenesRef.current);
-      setTimeout(() => setActiveCutscene('first_passenger'), 800);
+      setTimeout(() => enqueueCutscene('first_passenger'), 800);
       return;
     }
     const connectedCities = new Set(
@@ -348,7 +353,7 @@ export default function App() {
     if (connectedCities.size >= halfTarget && !shown.includes('half_network') && !shownCutscenesRef.current.includes('half_network')) {
       shownCutscenesRef.current = [...shownCutscenesRef.current, 'half_network'];
       setShownCutscenes(shownCutscenesRef.current);
-      setTimeout(() => setActiveCutscene('half_network'), 800);
+      setTimeout(() => enqueueCutscene('half_network'), 800);
     }
   }, [edges]);
 
@@ -642,7 +647,7 @@ export default function App() {
       if (ev.id === 'ev005' || ev.id === 'ev002') {
         const cutsceneId = ev.id === 'ev005' ? 'event_greve' : 'event_escassez_cimento';
         pendingEventAfterCutsceneRef.current = ev.id;
-        setTimeout(() => setActiveCutscene(cutsceneId as typeof activeCutscene), 400);
+        setTimeout(() => enqueueCutscene(cutsceneId as typeof activeCutscene), 400);
         continue;
       }
 
@@ -732,7 +737,7 @@ export default function App() {
   // Sound muter toggle
   // Activates the event that was deferred while a cutscene was playing
   const handleCutsceneFinished = React.useCallback((cutsceneId: string) => {
-    setActiveCutscene(null);
+    setCutsceneQueue(prev => prev.slice(1));
     const pendingId = pendingEventAfterCutsceneRef.current;
     if (!pendingId) return;
     pendingEventAfterCutsceneRef.current = null;
@@ -826,7 +831,7 @@ export default function App() {
     setSilos([]);
     setShownCutscenes([]);
     shownCutscenesRef.current = [];
-    setActiveCutscene(null);
+    setCutsceneQueue([]);
     setExpiredMissions([]);
     setAutoBuyResources(true);
     // Start tutorial for new games — zero out resources and workers so player learns to buy them
@@ -1987,7 +1992,7 @@ export default function App() {
         title="Primeira Ferrovia Concluída"
         subtitle="Marco Histórico da RENIF"
         description="Sua primeira ferrovia está operando! Este é o ponto de partida de uma malha que vai transformar o Brasil. Cada trilho posto é um passo rumo à integração nacional."
-        onFinished={() => setActiveCutscene(null)}
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
       />
     )}
     {activeCutscene === 'half_network' && (
@@ -1997,7 +2002,7 @@ export default function App() {
         title="Metade do Brasil Conectada"
         subtitle="50% da Malha Concluída"
         description="Você alcançou um marco extraordinário: metade das cidades do Brasil agora estão ligadas pela malha ferroviária da RENIF. A integração nacional está a meio caminho de se tornar realidade."
-        onFinished={() => setActiveCutscene(null)}
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
       />
     )}
     {activeCutscene === 'first_balsa' && (
@@ -2007,7 +2012,7 @@ export default function App() {
         title="Primeira Hidrovia Concluída"
         subtitle="Marco Hidroviário da RENIF"
         description="Sua primeira hidrovia está operando! O Brasil é um país de rios — e você acabou de transformar as grandes hidrovias em aliadas da RENIF. Novas rotas fluviais podem conectar o que os trilhos não alcançam."
-        onFinished={() => setActiveCutscene(null)}
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
       />
     )}
     {activeCutscene === 'first_passenger' && (
@@ -2017,7 +2022,7 @@ export default function App() {
         title="Primeira Linha de Passageiros"
         subtitle="Marco Histórico da RENIF"
         description="O primeiro trem de passageiros da RENIF acaba de partir! Uma nova era começa — agora o Brasil não transporta só carga, mas também pessoas. Cada viagem é um passo rumo à integração nacional."
-        onFinished={() => setActiveCutscene(null)}
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
       />
     )}
     {activeCutscene === 'event_greve' && (
