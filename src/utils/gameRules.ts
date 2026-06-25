@@ -552,7 +552,14 @@ export function getMonthlyRevenue(
     const siloA = silos ? silos.includes(e.from) : false;
     const siloB = silos ? silos.includes(e.to) : false;
     const siloBonus = (siloA || siloB) ? SILO_CONFIG.revenueMultiplier : 1.0;
-    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * demandMult);
+    // Agro-port bonus: polo_agricola connecting to a port city gets +60% revenue
+    const isAgroPort =
+      (cityA?.type === 'polo_agricola' && cityB?.portType != null) ||
+      (cityB?.type === 'polo_agricola' && cityA?.portType != null);
+    const agroPortMult = isAgroPort ? 1.6 : 1.0;
+    // Distance bonus: longer routes carry more freight; capped at 2.0×
+    const distanceMult = Math.min(2.0, 1.0 + (e.distance / 2000));
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * agroPortMult * distanceMult * demandMult);
   }, 0);
   // Maintenance penalty: gradual scale based on crew size vs network load
   const maintPenalty = completedEdges.length === 0 ? 1.0
@@ -681,7 +688,12 @@ export function getEdgeMonthlyRevenue(
   const siloA = silos ? silos.includes(edge.from) : false;
   const siloB = silos ? silos.includes(edge.to) : false;
   const siloBonus = (siloA || siloB) ? SILO_CONFIG.revenueMultiplier : 1.0;
-  const base = Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * demandMult);
+  const isAgroPort =
+    (cityA?.type === 'polo_agricola' && cityB?.portType != null) ||
+    (cityB?.type === 'polo_agricola' && cityA?.portType != null);
+  const agroPortMult = isAgroPort ? 1.6 : 1.0;
+  const distanceMult = Math.min(2.0, 1.0 + (edge.distance / 2000));
+  const base = Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * agroPortMult * distanceMult * demandMult);
   const maintPenalty = workers.manutencao === 0 ? 0.85 : workers.manutencao < 20 ? 0.93 : workers.manutencao < 50 ? 0.97 : 1.0;
   const maintBonus = workers.manutencao >= 100
     ? Math.min(1.20, 1.0 + Math.floor((workers.manutencao - 100) / 50) * 0.05)
