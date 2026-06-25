@@ -16,16 +16,14 @@ export const TUTORIAL_ROUTES = {
   passenger: { cityAId: '1',  cityBId: '28', label: 'São Paulo → Campinas',    distanceKm: 84 },
 } as const;
 
-// Exact requirements from game formulas (getTrackWorkersRequired only checks terra+assent)
-// Rail SP→Campinas 84km: terra=ceil(84×0.90)=76, assent=ceil(84×0.55)=47
-// Resources for cargo rail SP→Campinas 84km (aco=ceil(84×2)=168, brita=ceil(84×4)=336, cimento=ceil(84×2)=168)
+// Worker targets intentionally generous so player has capacity for all tutorial routes
 export const TUTORIAL_REQS = {
   workers: {
-    terraplanagem: 76,  // ceil(84 × 0.90)
-    assentamento:  47,  // ceil(84 × 0.55)
+    terraplanagem: 500,
+    assentamento:  500,
   },
   resources: {
-    aco:     168,  // ceil(84 × 2.0)
+    aco:     168,  // ceil(84 × 2.0) for SP→Campinas
     brita:   336,  // ceil(84 × 4.0)
     cimento: 168,  // ceil(84 × 2.0)
   },
@@ -42,7 +40,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'go_to_team',
     title: '👷 Contrate sua equipe',
-    message: 'O painel lateral foi aberto — clique na aba "Equipe" para contratar seus primeiros operários.',
+    message: 'Toque no botão ⬆ no topo direito do painel para expandi-lo, depois clique na aba "Equipe" para contratar seus primeiros operários.',
     refKey: 'tab-operations',
     advanceOn: 'action',
     position: 'bottom',
@@ -50,7 +48,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'hire_workers',
     title: '👷 Contrate trabalhadores',
-    message: 'Para construir São Paulo → Campinas você precisa de 76 Terraplanagem e 47 Assentamento. Clique em "+10" várias vezes em cada tipo até atingir esses valores.',
+    message: 'Contrate 500 Terraplanagem e 500 Assentamento. Clique em "+10" várias vezes em cada tipo — quanto mais, melhor! Isso garantirá capacidade para todas as obras do tutorial.',
     refKey: 'workers-section',
     advanceOn: 'action',
     position: 'bottom',

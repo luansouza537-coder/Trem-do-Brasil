@@ -718,9 +718,10 @@ export default function App() {
   useEffect(() => {
     if (!splashDone || !audioRef.current) return;
     audioRef.current.volume = 0.35;
-    if (!isMuted) audioRef.current.play().catch(() => {});
-    else audioRef.current.pause();
-  }, [splashDone, isMuted]);
+    // Pause music during cutscenes; resume when done (unless user muted)
+    if (isMuted || activeCutscene !== null) audioRef.current.pause();
+    else audioRef.current.play().catch(() => {});
+  }, [splashDone, isMuted, activeCutscene]);
 
   // Sound muter toggle
   // Activates the event that was deferred while a cutscene was playing
