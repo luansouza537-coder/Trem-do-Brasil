@@ -924,9 +924,9 @@ export default function GameMap({
             const revenueColor = getRouteColor(revenuePerKm, false);
             const revenueGlow = L.polyline(latlngs, { color: revenueColor, weight: 6, opacity: 0.75, lineCap: 'round' });
             trackGroupRef.current?.addLayer(revenueGlow);
-          } else if ((edge.trainLevel ?? 1) >= 2 || edge.passenger) {
+          } else if ((edge.trainLevel ?? 1) >= 2 || edge.type === 'passenger') {
             // Train level / quality glow (only when revenue mode is off)
-            const glowColor = (edge.trainLevel ?? 1) >= 3 ? '#22d3ee' : edge.passenger ? '#a78bfa' : '#60a5fa';
+            const glowColor = (edge.trainLevel ?? 1) >= 3 ? '#22d3ee' : edge.type === 'passenger' ? '#a78bfa' : '#60a5fa';
             const glowLayer = L.polyline(latlngs, { color: glowColor, weight: 2, opacity: 0.6, lineCap: 'round' });
             trackGroupRef.current?.addLayer(glowLayer);
           }
@@ -990,12 +990,12 @@ export default function GameMap({
             trackGroupRef.current?.addLayer(doubledLine);
           }
 
-          // Passenger service overlay — rose/pink dashed line
-          if (edge.passenger) {
+          // Passenger service overlay — purple dashed line
+          if (edge.type === 'passenger') {
             const passengerLine = L.polyline(latlngs, {
-              color: '#f472b6',
-              weight: 2,
-              opacity: 0.75,
+              color: '#a78bfa',
+              weight: 2.5,
+              opacity: 0.85,
               dashArray: '3, 5',
               lineCap: 'round',
               className: 'leaflet-passenger-line',

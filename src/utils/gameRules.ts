@@ -279,9 +279,10 @@ export function getTrackCostDetail(cityA: City, cityB: City, distance: number) {
  * Returns elements in each connected component of the active railway grid.
  */
 export function getConnectedComponents(cities: City[], edges: Edge[]): string[][] {
+  const cargoEdges = edges.filter(e => e.type !== 'passenger');
   const adj: Record<string, string[]> = {};
   cities.forEach(c => { adj[c.id] = []; });
-  edges.forEach(edge => {
+  cargoEdges.forEach(edge => {
     adj[edge.from]?.push(edge.to);
     adj[edge.to]?.push(edge.from);
   });

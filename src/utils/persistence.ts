@@ -67,6 +67,7 @@ export function loadGame(slot = 1): SaveGame | null {
     if (save.edges) {
       save.edges = save.edges.map(e => ({
         ...e,
+        type: e.type ?? 'rail',
         doubled: e.doubled ?? false,
         trainLevel: e.trainLevel ?? 1,
       }));

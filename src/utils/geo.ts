@@ -22,10 +22,11 @@ export function getHaversineDistance(lat1: number, lon1: number, lat2: number, l
  * Checks if a path exists between startCityId and targetCityId using BFS.
  */
 export function pathExists(startCityId: string, targetCityId: string, edges: Edge[]): boolean {
-  if (edges.length === 0) return false;
+  const cargoEdges = edges.filter(e => e.type !== 'passenger');
+  if (cargoEdges.length === 0) return false;
 
   const adj: Record<string, string[]> = {};
-  for (const edge of edges) {
+  for (const edge of cargoEdges) {
     if (!adj[edge.from]) adj[edge.from] = [];
     if (!adj[edge.to]) adj[edge.to] = [];
     adj[edge.from].push(edge.to);

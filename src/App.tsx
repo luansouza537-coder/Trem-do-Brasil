@@ -118,8 +118,6 @@ export default function App() {
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa' | 'passenger'>('rail');
-  const [passengerFares, setPassengerFares] = useState<Record<string, number>>({});
-  const [passengerExtraFleets, setPassengerExtraFleets] = useState<Record<string, number>>({});
 
   // Resource & Crises states
   const [resources, setResources] = useState<GameResources>({
@@ -265,7 +263,7 @@ export default function App() {
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
         infraQueue, yardLevels, warehouses, silos,
         shownCutscenes, autoBuyResources, expiredMissions,
-        passengerFares, passengerExtraFleets,
+        passengerFares: {}, passengerExtraFleets: {},
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -276,8 +274,7 @@ export default function App() {
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
-      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions,
-      passengerFares, passengerExtraFleets]);
+      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions]);
 
   // Keep ref in sync so cutscene useEffect always reads current value
   useEffect(() => { shownCutscenesRef.current = shownCutscenes; }, [shownCutscenes]);
@@ -789,8 +786,6 @@ export default function App() {
     setActiveCutscene(null);
     setExpiredMissions([]);
     setAutoBuyResources(true);
-    setPassengerFares({});
-    setPassengerExtraFleets({});
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -827,8 +822,6 @@ export default function App() {
     shownCutscenesRef.current = loadedCutscenes;
     setAutoBuyResources(save.autoBuyResources ?? true);
     setExpiredMissions(save.expiredMissions ?? []);
-    setPassengerFares(save.passengerFares ?? {});
-    setPassengerExtraFleets(save.passengerExtraFleets ?? {});
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -877,8 +870,6 @@ export default function App() {
       setShownCutscenes(importedCutscenes);
       shownCutscenesRef.current = importedCutscenes;
       setAutoBuyResources(data.autoBuyResources ?? true);
-      setPassengerFares(data.passengerFares ?? {});
-      setPassengerExtraFleets(data.passengerExtraFleets ?? {});
       setExpiredMissions(data.expiredMissions ?? []);
       showToast('📥 Save importado com sucesso!', 'success');
     } catch {
@@ -2807,7 +2798,7 @@ export default function App() {
                 <div className="text-center">
                   <span className="text-[10px] text-slate-500 tracking-wider uppercase font-semibold">Trilhos Ativos</span>
                   <p className="text-xl font-black text-rose-400 mt-1">
-                    {edges.length} <span className="text-xs font-normal text-slate-400">/ {CITIES.length - 1}</span>
+                    {edges.filter(e => e.type !== 'passenger').length} <span className="text-xs font-normal text-slate-400">/ {CITIES.length - 1}</span>
                   </p>
                 </div>
                 

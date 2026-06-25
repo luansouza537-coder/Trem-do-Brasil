@@ -146,7 +146,7 @@ export default function Sidebar({
     swipeTouchStartX.current = null;
   }, [activeTab]);
 
-  const activeConns = edges.length;
+  const activeConns = edges.filter(e => e.type !== 'passenger').length;
   const maxConnsCount = cities.length - 1;
   const pctComplete = Math.min(100, Math.round((activeConns / maxConnsCount) * 100));
 
