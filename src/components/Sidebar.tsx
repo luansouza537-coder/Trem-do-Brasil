@@ -419,22 +419,21 @@ export default function Sidebar({
       {/* Footer */}
       <div className="bg-slate-950 border-t border-slate-900 shrink-0">
         {/* Map type selector + construction mode — same row, mobile footer */}
-        <div className="md:hidden px-2.5 pt-2 pb-1 flex items-center gap-1 flex-wrap">
-          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider shrink-0">🗺️</span>
+        <div className="md:hidden px-2 pt-2 pb-1 flex items-center gap-0.5">
           {(['voyager', 'positron', 'dark', 'satellite', 'terrain'] as const).map((type) => (
             <button
               key={type}
               onClick={() => onTileLayerChange(type)}
-              className={`px-2 py-1 rounded text-[9px] font-bold uppercase transition-all ${
+              className={`px-1.5 py-1 rounded text-[8px] font-bold uppercase transition-all ${
                 tileLayerType === type
                   ? 'bg-amber-500 text-slate-950 font-black'
                   : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
               }`}
             >
-              {type === 'voyager' ? 'Voyager' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Escuro' : type === 'satellite' ? 'Satélite' : 'Relevo'}
+              {type === 'voyager' ? 'Voy' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Esc' : type === 'satellite' ? 'Sat' : 'Rel'}
             </button>
           ))}
-          <span className="w-px h-4 bg-slate-700 mx-0.5 shrink-0" />
+          <span className="w-px h-4 bg-slate-700 mx-1 shrink-0" />
           {([
             { id: 'rail',      icon: '🚂', active: 'bg-amber-500 text-slate-950' },
             { id: 'balsa',     icon: '⚓', active: 'bg-sky-500 text-slate-950' },
@@ -443,7 +442,7 @@ export default function Sidebar({
             <button
               key={m.id}
               onClick={() => onConstructionTypeChange(m.id)}
-              className={`px-2 py-1 rounded text-[9px] font-bold transition-all ${
+              className={`px-2 py-1 rounded text-[11px] transition-all ${
                 constructionType === m.id
                   ? m.active + ' font-black'
                   : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
