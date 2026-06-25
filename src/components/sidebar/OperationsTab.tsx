@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { registerTutorialRef } from '../../data/tutorial';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, InfraProject } from '../../types';
-import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, getSimultaneousPenalty } from '../../utils/gameRules';
+import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, getSimultaneousPenalty, getActiveSeasonalEffects } from '../../utils/gameRules';
 import { getAdvisorMessages, AdvisorPriority } from '../../utils/advisor';
 import { AlertTriangle, Users, CheckCircle, Info } from 'lucide-react';
 
@@ -71,6 +72,13 @@ export default function OperationsTab({
   onFireWorker,
 }: OperationsTabProps) {
   const [showHowToPlay, setShowHowToPlay] = useState(true);
+
+  const workersSectionRef = useRef<HTMLDivElement>(null);
+  const resourcesSectionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (workersSectionRef.current) registerTutorialRef('workers-section', workersSectionRef as React.RefObject<HTMLElement>);
+    if (resourcesSectionRef.current) registerTutorialRef('resources-section', resourcesSectionRef as React.RefObject<HTMLElement>);
+  }, []);
 
   const totalPayroll = useMemo(() => {
     return (workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
@@ -155,75 +163,8 @@ export default function OperationsTab({
         </div>
       )}
 
-      {/* 1. Finanças detalhadas (Demonstrativo) */}
-      <div className="p-3.5 bg-slate-900/30 flex flex-col gap-2">
-        <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-          📊 Demonstrativo de Finanças:
-        </span>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-400 bg-slate-950/50 p-2 rounded-lg border border-slate-850">
-          <div className="flex justify-between"><span>Vias Férreas:</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentRail.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between"><span>Pátios (🔧):</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentYards.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between"><span>Balsas (🚢):</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentBalsa.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between"><span>Cen. Hubs (★):</span> <span className="text-slate-200 font-mono">R$ {budgetState.spentHubs.toLocaleString('pt-BR')}</span></div>
-          <div className="flex justify-between col-span-2 border-t border-slate-850 pt-1 mt-1 text-[9.5px]">
-            <span className="text-amber-500 font-semibold">Salários de RH Pagos:</span>
-            <span className="text-amber-400 font-mono font-bold">R$ {(budgetState.spentOnWorkers ?? 0).toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="flex justify-between col-span-2 border-t border-slate-850 pt-1 mt-1 text-[9.5px]">
-            <span className="text-amber-500 font-semibold">Compra de Materiais:</span>
-            <span className="text-amber-400 font-mono font-bold">R$ {(budgetState.spentOnResources ?? 0).toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="col-span-2 border-t border-slate-805 pt-1 mt-1 flex justify-between">
-             <span className="text-emerald-500 font-medium">Subsídios Regionais:</span>
-             <span className="text-emerald-400 font-bold font-sans">+R$ {budgetState.grantIncome.toLocaleString('pt-BR')}</span>
-          </div>
-          <div className="col-span-2 border-t border-slate-850 pt-1 mt-1 flex justify-between text-[9.5px]">
-            <span className="text-sky-400 font-semibold">Receita Mensal (Transporte):</span>
-            <span className="text-sky-300 font-bold font-mono">+R$ {(budgetState.monthlyRevenue ?? 0).toLocaleString('pt-BR')}/mês</span>
-          </div>
-          <div className="col-span-2 flex justify-between text-[9.5px]">
-            <span className="text-sky-500 font-medium">Receita Total Acumulada:</span>
-            <span className="text-sky-400 font-bold font-mono">+R$ {(budgetState.totalRevenue ?? 0).toLocaleString('pt-BR')}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 1b. Histórico de Caixa (SVG chart) */}
-      <div className="p-3.5 bg-slate-900/20 flex flex-col gap-2">
-        <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-          📈 Histórico de Caixa (últimos 24 meses):
-        </span>
-        {budgetHistory.length < 2 ? (
-          <p className="text-[9.5px] text-slate-500 italic">Aguardando dados do próximo mês...</p>
-        ) : (() => {
-          const W = 280, H = 64;
-          const minB = Math.min(...budgetHistory.map(h => h.budget));
-          const maxB = Math.max(...budgetHistory.map(h => h.budget));
-          const range = maxB - minB || 1;
-          const pts = budgetHistory.map((h, i) => {
-            const x = (i / (budgetHistory.length - 1)) * W;
-            const y = H - ((h.budget - minB) / range) * (H - 8) - 4;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-          }).join(' ');
-          const isUp = budgetHistory[budgetHistory.length - 1].budget >= budgetHistory[0].budget;
-          const lineColor = isUp ? '#10b981' : '#f43f5e';
-          const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(0)}B` : `${(v/1e6).toFixed(0)}M`;
-          return (
-            <div className="relative">
-              <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
-                <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
-                <text x="0" y={H} fontSize="7" fill="#64748b">{budgetHistory[0].label}</text>
-                <text x={W} y={H} fontSize="7" fill="#64748b" textAnchor="end">{budgetHistory[budgetHistory.length-1].label}</text>
-                <text x={W} y="8" fontSize="7" fill="#94a3b8" textAnchor="end">{fmt(maxB)}</text>
-                <text x={W} y={H - 2} fontSize="7" fill="#94a3b8" textAnchor="end">{fmt(minB)}</text>
-              </svg>
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* 2. Equipe de Engenharia (Trabalhadores) */}
-      <div className="p-3.5 flex flex-col gap-2">
+      {/* Equipe de Engenharia (Trabalhadores) */}
+      <div ref={workersSectionRef} className="p-3.5 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-amber-500" /> Equipes de Obra:
@@ -370,7 +311,7 @@ export default function OperationsTab({
       )}
 
       {/* 3. Insumos de Construção */}
-      <div className="p-3.5 flex flex-col gap-2">
+      <div ref={resourcesSectionRef} className="p-3.5 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1">
             📦 Insumos de Construção (Estoque):
@@ -462,6 +403,28 @@ export default function OperationsTab({
           </div>
         </div>
       )}
+
+      {/* 4b. Efeitos Sazonais Ativos */}
+      {(() => {
+        const seasonal = getActiveSeasonalEffects(monthIdx);
+        if (seasonal.length === 0) return null;
+        return (
+          <div className="p-3.5 bg-slate-900/10 flex flex-col gap-2">
+            <span className="text-[10px] text-amber-400 font-extrabold tracking-wider uppercase flex items-center gap-1.5">
+              <span>🌦</span>
+              Efeitos Sazonais ({seasonal.length}):
+            </span>
+            <div className="flex flex-col gap-1.5">
+              {seasonal.map((s) => (
+                <div key={s.id} className="bg-amber-950/20 border border-amber-500/20 rounded-lg p-2 flex flex-col gap-0.5">
+                  <span className="text-[10px] font-black text-amber-300 leading-tight">{s.label}</span>
+                  <p className="text-[8.5px] text-slate-400 leading-snug italic">{s.headline}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 5. Regional Intermodal Export Grants */}
       <div className="p-3.5 flex flex-col gap-1.5">

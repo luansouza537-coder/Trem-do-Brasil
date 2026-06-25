@@ -3,10 +3,10 @@ import { City, Edge, GameResources, GameWorkers } from '../types';
 export const RESOURCE_BUY_PRICES: Record<keyof GameResources, number> = {
   aco: 6000000,        // R$ 6.000.000 por ton
   brita: 1500000,      // R$ 1.500.000 por ton
-  madeira: 2500050,    // R$ 2.500.050 por ton
+  madeira: 2500000,    // R$ 2.500.000 por ton
   cimento: 3500000,    // R$ 3.500.000 por ton
   cobre: 10000000,     // R$ 10.000.000 por ton
-  explosivos: 20000100 // R$ 20.000.100 por ton
+  explosivos: 20000000 // R$ 20.000.000 por ton
 };
 
 export const RESOURCE_NAMES: Record<keyof GameResources, string> = {
@@ -125,7 +125,7 @@ export const WORKER_NAMES: Record<keyof GameWorkers, string> = {
   assentamento:  'Assentamento de Trilhos',
   sinalizacao:   'Sinalização & Elétrica',
   explosivos:    'Explosivos & Túneis',
-  manutencao:    'Manutenção',
+  manutencao:    'Manutenção de Via',
 };
 
 export function getConstructionMonths(
@@ -190,10 +190,14 @@ export function getTrackWorkersRequired(
 // More concurrent projects = slower each one (logistics/engineering divided).
 export function getSimultaneousPenalty(activeProjectCount: number): number {
   if (activeProjectCount <= 1) return 1.00;
-  if (activeProjectCount === 2) return 0.85;
-  if (activeProjectCount === 3) return 0.72;
-  if (activeProjectCount === 4) return 0.60;
-  return 0.50; // 5+ projects
+  if (activeProjectCount === 2) return 0.96;
+  if (activeProjectCount === 3) return 0.91;
+  if (activeProjectCount === 4) return 0.86;
+  if (activeProjectCount === 5) return 0.81;
+  if (activeProjectCount === 6) return 0.77;
+  if (activeProjectCount === 7) return 0.73;
+  if (activeProjectCount === 8) return 0.70;
+  return Math.max(0.55, 0.70 - (activeProjectCount - 8) * 0.03); // 9+ projects: -3% each, floor 55%
 }
 
 /**
@@ -275,9 +279,10 @@ export function getTrackCostDetail(cityA: City, cityB: City, distance: number) {
  * Returns elements in each connected component of the active railway grid.
  */
 export function getConnectedComponents(cities: City[], edges: Edge[]): string[][] {
+  const cargoEdges = edges.filter(e => e.type !== 'passenger');
   const adj: Record<string, string[]> = {};
   cities.forEach(c => { adj[c.id] = []; });
-  edges.forEach(edge => {
+  cargoEdges.forEach(edge => {
     adj[edge.from]?.push(edge.to);
     adj[edge.to]?.push(edge.from);
   });
@@ -515,7 +520,8 @@ export function getMonthlyRevenue(
   cities: City[] = [],
   balsaFrozenOverride?: boolean,
   gameYear?: number,
-  upgradedHubs?: string[]
+  upgradedHubs?: string[],
+  silos?: string[]
 ): number {
   const completedEdges = edges.filter(e => e.status !== 'building');
   const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
@@ -538,9 +544,15 @@ export function getMonthlyRevenue(
           return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
         })()
       : 1.0;
-    // Hub bonus: +25% if either endpoint has an upgraded hub
-    const hubBonus = upgradedHubs && (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.25 : 1.0;
-    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
+    // Hub bonus: +20% one endpoint, +40% both endpoints
+    const hubA = upgradedHubs ? upgradedHubs.includes(e.from) : false;
+    const hubB = upgradedHubs ? upgradedHubs.includes(e.to) : false;
+    const hubBonus = hubA && hubB ? 1.40 : (hubA || hubB) ? 1.20 : 1.0;
+    // Silo bonus: +30% if either endpoint has a silo (polo_agricola cities)
+    const siloA = silos ? silos.includes(e.from) : false;
+    const siloB = silos ? silos.includes(e.to) : false;
+    const siloBonus = (siloA || siloB) ? SILO_CONFIG.revenueMultiplier : 1.0;
+    return sum + Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * demandMult);
   }, 0);
   // Maintenance penalty: gradual scale based on crew size vs network load
   const maintPenalty = completedEdges.length === 0 ? 1.0
@@ -604,6 +616,24 @@ export const YARD_CONFIGS: Record<1|2|3, {
   },
 };
 
+// Armazém Geral config — monthly passive bonus
+export const WAREHOUSE_CONFIG = {
+  cost: 8_000_000_000,
+  months: 4,
+  monthlyBonus: 500_000_000,
+  workers: { assentamento: 10 } as Partial<GameWorkers>,
+  resources: { aco: 100, cimento: 150, madeira: 100 } as Partial<GameResources>,
+};
+
+// Silo Graneleiro config — revenue multiplier for polo_agricola cities
+export const SILO_CONFIG = {
+  cost: 12_000_000_000,
+  months: 5,
+  revenueMultiplier: 1.30,
+  workers: { assentamento: 15, terraplanagem: 10 } as Partial<GameWorkers>,
+  resources: { aco: 150, cimento: 200, madeira: 150 } as Partial<GameResources>,
+};
+
 // Hub (Terminal Central) config
 export const HUB_CONFIG = {
   cost: 30_000_000_000,
@@ -611,3 +641,101 @@ export const HUB_CONFIG = {
   workers: { assentamento: 30, sinalizacao: 15 },
   resources: { aco: 500, cimento: 300, cobre: 80 } as Partial<GameResources>,
 };
+
+/**
+ * Revenue for a single completed edge (same logic as getMonthlyRevenue but for one edge).
+ * Returns 0 for edges that are still building.
+ */
+export function getEdgeMonthlyRevenue(
+  edge: Edge,
+  workers: { manutencao: number },
+  activeEffects: string[] = [],
+  cities: City[] = [],
+  balsaFrozenOverride?: boolean,
+  gameYear?: number,
+  upgradedHubs?: string[],
+  silos?: string[]
+): number {
+  if (edge.status === 'building') return 0;
+  const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
+  if (edge.type === 'balsa' && balsaFrozen) return 0;
+  const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
+  const demandMult = gameYear ? getDemandGrowthMultiplier(gameYear) : 1.0;
+  const baseKm = Math.round(edge.distance * (edge.type === 'balsa' ? 40000 : 80000));
+  const cityA = cities.find(c => c.id === edge.from);
+  const cityB = cities.find(c => c.id === edge.to);
+  const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
+  const multB = cityB ? getCityTypeRevenueMultiplier(cityB.type) : 1.0;
+  const avgMult = (multA + multB) / 2;
+  const doubledMult = edge.doubled ? 1.5 : 1.0;
+  const trainMult = TRAIN_LEVEL_MULT[(edge.trainLevel ?? 1) as 1|2|3];
+  const passengerBonus = edge.passenger
+    ? (() => {
+        const highPop = (c: City | undefined) => c && (c.type === 'capital' || c.type === 'polo_industrial');
+        return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
+      })()
+    : 1.0;
+  const hubA = upgradedHubs ? upgradedHubs.includes(edge.from) : false;
+  const hubB = upgradedHubs ? upgradedHubs.includes(edge.to) : false;
+  const hubBonus = hubA && hubB ? 1.40 : (hubA || hubB) ? 1.20 : 1.0;
+  const siloA = silos ? silos.includes(edge.from) : false;
+  const siloB = silos ? silos.includes(edge.to) : false;
+  const siloBonus = (siloA || siloB) ? SILO_CONFIG.revenueMultiplier : 1.0;
+  const base = Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * demandMult);
+  const maintPenalty = workers.manutencao === 0 ? 0.85 : workers.manutencao < 20 ? 0.93 : workers.manutencao < 50 ? 0.97 : 1.0;
+  const maintBonus = workers.manutencao >= 100
+    ? Math.min(1.20, 1.0 + Math.floor((workers.manutencao - 100) / 50) * 0.05)
+    : 1.0;
+  return Math.round(base * maintPenalty * maintBonus);
+}
+
+// ── Passenger railway ─────────────────────────────────────────────────────────
+export const PASSENGER_COST_PER_KM = 30_000_000;
+export const PASSENGER_BUILD_SPEED = 0.012; // months per km
+
+export function getCityPassengerDemand(type: string): number {
+  const DEMAND: Record<string, number> = {
+    capital: 600_000,
+    polo_industrial: 350_000,
+    polo_agricola: 120_000,
+    cidade: 80_000,
+    mineracao: 60_000,
+    fronteira: 50_000,
+  };
+  return DEMAND[type] ?? 80_000;
+}
+
+export function getPassengerMonthlyRevenue(
+  edges: Edge[],
+  cities: City[],
+  gameYear: number,
+  activeEffects: string[]
+): number {
+  const demandMult = getDemandGrowthMultiplier(gameYear);
+  const eventMult = activeEffects.includes('PANDEMIA2') ? 0.80
+    : activeEffects.includes('GRIPE_AVIARIA_2') ? 0.95
+    : activeEffects.includes('COPA_MUNDO_2035') ? 1.30
+    : activeEffects.includes('OLIMPIADAS') ? 1.25
+    : activeEffects.includes('VISITA_PAPA') ? 1.20
+    : activeEffects.includes('COPA_AMERICA') ? 1.05
+    : activeEffects.includes('PROTESTOS_PEDAGIO') ? 0.80
+    : 1.0;
+
+  return edges
+    .filter(e => e.type === 'passenger' && e.status === 'complete')
+    .reduce((sum, edge) => {
+      const cityA = cities.find(c => c.id === edge.from);
+      const cityB = cities.find(c => c.id === edge.to);
+      const demandA = getCityPassengerDemand(cityA?.type ?? 'cidade');
+      const demandB = getCityPassengerDemand(cityB?.type ?? 'cidade');
+      const demandBase = (demandA + demandB) / 2;
+      const fare = edge.fare ?? 150;
+      const elasticity = Math.max(0.2, 1 - (fare - 120) / 400);
+      const capacityBase = Math.round((edge.distance / 100) * 300);
+      const capacity = Math.max(300, capacityBase + (edge.extraFleets ?? 0) * 150);
+      const pax = Math.min(demandBase * elasticity, capacity);
+      const satisfaction = edge.satisfaction ?? 100;
+      const rev = Math.round(pax * fare * (satisfaction / 100) * demandMult * eventMult);
+      return sum + rev;
+    }, 0);
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CITIES } from './data/cities';
+import { CITIES, CITY_MAP } from './data/cities';
 import { City, Edge, GameStats, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from './types';
 import { MISSIONS } from './utils/missions';
 import { newsRouteComplete, newsCrisis, newsGrant, newsMission, newsRandom } from './utils/news';
@@ -7,6 +7,9 @@ import Sidebar from './components/Sidebar';
 import GameMap from './components/GameMap';
 import PauseScreen from './components/PauseScreen';
 import SplashScreen from './components/SplashScreen';
+import CutsceneModal from './components/CutsceneModal';
+import TutorialOverlay from './components/TutorialOverlay';
+import { TUTORIAL_STEPS, TUTORIAL_ROUTES, TUTORIAL_REQS, getTutorialRef } from './data/tutorial';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -16,7 +19,6 @@ import {
 } from './utils/geo';
 import {
   getTrackCostDetail,
-  getIntermodalGrants,
   RESOURCE_NAMES,
   calculateRailwayDistancesFromYards,
   getTrackResourcesRequired,
@@ -32,10 +34,16 @@ import {
   WORKER_NAMES,
   getYearInflationMultiplier,
   getMonthlyRevenue,
+  getEdgeMonthlyRevenue,
   getCityTypeRevenueMultiplier,
   YARD_CONFIGS,
   HUB_CONFIG,
-  YARD_COVERAGE_KM
+  WAREHOUSE_CONFIG,
+  SILO_CONFIG,
+  YARD_COVERAGE_KM,
+  PASSENGER_COST_PER_KM,
+  PASSENGER_BUILD_SPEED,
+  getPassengerMonthlyRevenue,
 } from './utils/gameRules';
 import { 
   Train, 
@@ -59,6 +67,7 @@ import {
   Layers
 } from 'lucide-react';
 import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates, SaveGame } from './utils/persistence';
+import { useBudget, STARTING_BUDGET } from './hooks/useBudget';
 import { SCHEDULED_EVENTS } from './data/scheduledEvents';
 
 interface Toast {
@@ -79,8 +88,10 @@ const MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set'
 
 export default function App() {
   const lastPaidMonthRef = React.useRef('');
-  const lowBudgetAlertedRef = React.useRef(false);
   const edgesRef = React.useRef<Edge[]>([]);
+  const constructionQueueRef = React.useRef<ConstructionProject[]>([]);
+  const infraQueueRef = React.useRef<InfraProject[]>([]);
+  const activeEventsRef = React.useRef<GameEvent[]>([]);
 
   // Game States
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -92,38 +103,41 @@ export default function App() {
   const [mobileExpanded, setMobileExpanded] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [showRouteColors, setShowRouteColors] = useState(false);
   const [flyToSignal, setFlyToSignal] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
 
   // Tycoon expansions
   const [upgradedHubs, setUpgradedHubs] = useState<string[]>([]);
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
+  const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [silos, setSilos] = useState<string[]>([]);
+  type CutsceneId = 'first_rail' | 'half_network' | 'first_balsa' | 'first_passenger' | 'event_greve' | 'event_escassez_cimento';
+  const [cutsceneQueue, setCutsceneQueue] = useState<CutsceneId[]>([]);
+  const activeCutscene: CutsceneId | null = cutsceneQueue[0] ?? null;
+  const enqueueCutscene = React.useCallback((id: CutsceneId) => {
+    setCutsceneQueue(prev => prev.includes(id) ? prev : [...prev, id]);
+  }, []);
+  const pendingEventAfterCutsceneRef = React.useRef<string | null>(null);
+  const [shownCutscenes, setShownCutscenes] = useState<string[]>([]);
+  const shownCutscenesRef = React.useRef<string[]>([]);
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
-  const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
+  const [constructionType, setConstructionType] = useState<'rail' | 'balsa' | 'passenger'>('rail');
 
   // Resource & Crises states
-  const [resources, setResources] = useState<GameResources>({
-    aco: 2500,
-    brita: 4000,
-    madeira: 2000,
-    cimento: 2500,
-    cobre: 850,
-    explosivos: 300
-  });
+  const isNewPlayer = !hasSave();
+  const [resources, setResources] = useState<GameResources>(isNewPlayer
+    ? { aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 }
+    : { aco: 2500, brita: 4000, madeira: 2000, cimento: 2500, cobre: 850, explosivos: 300 }
+  );
   const [autoBuyResources, setAutoBuyResources] = useState(true);
-  const [spentOnResources, setSpentOnResources] = useState(0);
 
-  // Workforce state (workers pool and spent payroll)
-  const [workers, setWorkers] = useState<GameWorkers>({
-    terraplanagem: 500,
-    assentamento:  300,
-    sinalizacao:   80,
-    explosivos:    30,
-    manutencao:    150,
-  });
-  const [spentOnWorkers, setSpentOnWorkers] = useState(0);
+  // Workforce state (workers pool)
+  const [workers, setWorkers] = useState<GameWorkers>(isNewPlayer
+    ? { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 }
+    : { terraplanagem: 500, assentamento: 300, sinalizacao: 80, explosivos: 30, manutencao: 150 }
+  );
   const [constructionQueue, setConstructionQueue] = useState<ConstructionProject[]>([]);
-  const [totalRevenue, setTotalRevenue] = useState(0);
   const [saveSlot, setSaveSlot] = useState(1);
   const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
   const [completedMissions, setCompletedMissions] = useState<string[]>([]);
@@ -155,10 +169,103 @@ export default function App() {
   const triggeredEventIdsRef = React.useRef<string[]>([]);
   const currentEventRef = React.useRef<GameEvent | null>(null);
   const [triggeredEventIds, setTriggeredEventIds] = useState<string[]>([]);
-  const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
 
-  // Keep edgesRef in sync for use inside non-edges-dependent effects
+  // Stable showToast ref so useBudget can be placed early (before showToast arrow fn is defined)
+  const showToastRef = React.useRef<(msg: string, type: 'success' | 'error' | 'info') => void>(() => {});
+
+  // ── Budget hook — must come before any useEffect that references its outputs ──
+  const {
+    spentOnResources, setSpentOnResources,
+    spentOnWorkers,   setSpentOnWorkers,
+    totalRevenue,     setTotalRevenue,
+    budgetState,      budgetHistory, setBudgetHistory,
+  } = useBudget({
+    edges, workers, activeEvents, maintenanceYards,
+    upgradedHubs, warehouses, silos,
+    gameYear, monthIdx, welcomeOpen,
+    showToast: (msg, type) => showToastRef.current(msg, type),
+  });
+
+  // Tutorial state — start on step 0 for brand new players (no save exists)
+  const [tutorialStep, setTutorialStep] = useState<number | null>(() => hasSave() ? null : 0);
+  const [tutorialEdgeSnapshot, setTutorialEdgeSnapshot] = useState(0);
+
+  const advanceTutorial = React.useCallback(() => {
+    setTutorialStep(prev => {
+      if (prev === null) return null;
+      const next = prev + 1;
+      return next >= TUTORIAL_STEPS.length ? null : next;
+    });
+  }, []);
+
+  const finalizeTutorial = React.useCallback(() => {
+    setTutorialStep(null);
+  }, []);
+
+  // Placeholder kept for compatibility with GameMap prop
+  const advanceTutorialOnAction = React.useCallback((_action: string) => {}, []);
+
+  // Auto-advance tutorial when player completes the required action
+  useEffect(() => {
+    if (tutorialStep === null) return;
+    const step = TUTORIAL_STEPS[tutorialStep];
+    if (step.advanceOn !== 'action') return;
+    const totalWorkers = Object.values(workers).reduce((a, b) => a + b, 0);
+    const R = TUTORIAL_ROUTES;
+    const W = TUTORIAL_REQS.workers;
+    const RES = TUTORIAL_REQS.resources;
+    const matchesRoute = (e: typeof edges[0], r: { cityAId: string; cityBId: string }) =>
+      (e.from === r.cityAId && e.to === r.cityBId) || (e.from === r.cityBId && e.to === r.cityAId);
+    const hasRailEdge      = edges.some(e => e.type === 'rail'      && matchesRoute(e, R.rail));
+    const hasBalsaEdge     = edges.some(e => e.type === 'balsa'     && matchesRoute(e, R.balsa));
+    const hasPassengerEdge = edges.some(e => e.type === 'passenger' && matchesRoute(e, R.passenger));
+    const conditions: Record<string, boolean> = {
+      go_to_team:       totalWorkers > 0,
+      close_sidebar:             !mobileExpanded,
+      close_sidebar_balsa:       !mobileExpanded,
+      close_sidebar_passenger:   !mobileExpanded,
+      hire_workers:     workers.terraplanagem >= W.terraplanagem
+                     && workers.assentamento  >= W.assentamento
+                     && workers.sinalizacao   >= W.sinalizacao
+                     && workers.explosivos    >= W.explosivos
+                     && workers.manutencao    >= W.manutencao,
+      go_to_resources:  resources.aco     >= RES.aco
+                     && resources.brita   >= RES.brita
+                     && resources.cimento >= RES.cimento,
+      click_city:       selectedCityId === R.rail.cityAId,
+      build_rail:       hasRailEdge,
+      switch_balsa:     constructionType === 'balsa',
+      build_balsa:      hasBalsaEdge,
+      switch_passenger: constructionType === 'passenger',
+      build_passenger:  hasPassengerEdge,
+    };
+    if (conditions[step.id]) advanceTutorial();
+  }, [tutorialStep, workers, resources, selectedCityId, edges, constructionType, tutorialEdgeSnapshot, mobileExpanded, advanceTutorial]);
+
+  // When reaching click_city step, reset city selection so player must act fresh
+  useEffect(() => {
+    if (tutorialStep === null) return;
+    if (TUTORIAL_STEPS[tutorialStep]?.id === 'click_city') {
+      setSelectedCityId(null);
+    }
+  }, [tutorialStep]);
+
+  // Auto-expand sidebar for tutorial steps that require sidebar interaction
+  const SIDEBAR_STEPS = new Set(['go_to_team', 'hire_workers', 'go_to_resources']);
+  useEffect(() => {
+    if (tutorialStep === null) return;
+    const stepId = TUTORIAL_STEPS[tutorialStep]?.id;
+    if (stepId && SIDEBAR_STEPS.has(stepId)) {
+      setMobileExpanded(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorialStep]);
+
+  // Keep refs in sync so the monthly useEffect always reads current values without adding them as deps
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { constructionQueueRef.current = constructionQueue; }, [constructionQueue]);
+  useEffect(() => { infraQueueRef.current = infraQueue; }, [infraQueue]);
+  useEffect(() => { activeEventsRef.current = activeEvents; }, [activeEvents]);
   useEffect(() => { triggeredEventIdsRef.current = triggeredEventIds; }, [triggeredEventIds]);
   useEffect(() => { currentEventRef.current = currentEvent; }, [currentEvent]);
 
@@ -192,7 +299,10 @@ export default function App() {
         completedMissions, newsItems,
         triggeredEventIds,
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
-        infraQueue, yardLevels,
+        infraQueue, yardLevels, warehouses, silos,
+        shownCutscenes, autoBuyResources, expiredMissions,
+        passengerFares: {}, passengerExtraFleets: {},
+        tutorialStep,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -203,7 +313,49 @@ export default function App() {
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
-      infraQueue, yardLevels]);
+      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions, tutorialStep]);
+
+  // Keep ref in sync so cutscene useEffect always reads current value
+  useEffect(() => { shownCutscenesRef.current = shownCutscenes; }, [shownCutscenes]);
+
+  // Cutscene triggers — runs whenever edges change, reads ref to avoid stale closure
+  useEffect(() => {
+    const completedCount = edges.filter(e => e.status === 'complete').length;
+    if (completedCount === 0) return;
+    const shown = shownCutscenesRef.current;
+    // First rail: fires as soon as ≥1 edge is complete (handles simultaneous completions)
+    if (completedCount >= 1 && !shown.includes('first_rail')) {
+      shownCutscenesRef.current = [...shown, 'first_rail'];
+      setShownCutscenes(shownCutscenesRef.current);
+      setTimeout(() => enqueueCutscene('first_rail'), 800);
+      return; // don't check half_network in same tick — let it fire on next change
+    }
+    // First balsa (hidrovia): fires when first balsa edge completes
+    const firstBalsa = edges.find(e => e.type === 'balsa' && e.status === 'complete');
+    if (firstBalsa && !shown.includes('first_balsa')) {
+      shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_balsa'];
+      setShownCutscenes(shownCutscenesRef.current);
+      setTimeout(() => enqueueCutscene('first_balsa'), 800);
+      return;
+    }
+    // First passenger line: fires when first passenger edge completes
+    const firstPassenger = edges.find(e => e.type === 'passenger' && e.status === 'complete');
+    if (firstPassenger && !shown.includes('first_passenger')) {
+      shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_passenger'];
+      setShownCutscenes(shownCutscenesRef.current);
+      setTimeout(() => enqueueCutscene('first_passenger'), 800);
+      return;
+    }
+    const connectedCities = new Set(
+      edges.filter(e => e.status === 'complete').flatMap(e => [e.from, e.to])
+    );
+    const halfTarget = Math.floor(CITIES.length / 2);
+    if (connectedCities.size >= halfTarget && !shown.includes('half_network') && !shownCutscenesRef.current.includes('half_network')) {
+      shownCutscenesRef.current = [...shownCutscenesRef.current, 'half_network'];
+      setShownCutscenes(shownCutscenesRef.current);
+      setTimeout(() => enqueueCutscene('half_network'), 800);
+    }
+  }, [edges]);
 
   // Dynamic time progression with configurable speeds:
   // - 'paused': No ticking
@@ -251,19 +403,21 @@ export default function App() {
                              (workers.manutencao    * WORKER_SALARIES.manutencao);
 
       const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
-      const payrollMultiplier = activeEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
+      const curEvents = activeEventsRef.current;
+      const payrollMultiplier = curEvents.reduce((acc, e) => acc * (e.payrollMultiplier ?? 1.0), 1.0);
       const adjustedPayroll = Math.round(monthlyPayroll * payrollMultiplier);
       if (adjustedPayroll > 0) {
         setSpentOnWorkers((prev) => prev + adjustedPayroll);
       }
 
       // Collect revenue from all completed routes
-      const activeEffects = activeEvents.map(e => e.statusEffect);
+      const activeEffects = curEvents.map(e => e.statusEffect);
       const cyberAttack = activeEffects.includes('CYBER_ATAQUE');
-      let compoundRevMult = activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
-      if (compoundRevMult > 1.0) compoundRevMult = Math.min(1.35, compoundRevMult);
-      const balsaFrozenByEvent = activeEvents.some(e => e.balsaFrozen);
-      const monthlyBonusTotal = activeEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0);
+      let compoundRevMult = curEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0);
+      compoundRevMult = Math.max(0, Math.min(2.0, compoundRevMult));
+      const balsaFrozenByEvent = curEvents.some(e => e.balsaFrozen);
+      const warehouseBonus = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
+      const monthlyBonusTotal = curEvents.reduce((acc, e) => acc + (e.monthlyBonus ?? 0), 0) + warehouseBonus;
 
       // Seasonal effects
       const seasonalEffects = getActiveSeasonalEffects(monthIdx);
@@ -276,11 +430,11 @@ export default function App() {
             headline: s.headline,
             category: s.revenueFactor && s.revenueFactor < 1 ? 'crisis' : s.revenueFactor && s.revenueFactor > 1 ? 'grant' : 'infra',
             yearMonth: `${MONTHS_PT[monthIdx]}/${gameYear}`,
-          }, ...prev].slice(0, 40));
+          }, ...prev].slice(0, 60));
         }
       });
 
-      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent, gameYear, upgradedHubs);
+      const baseRev = cyberAttack ? 0 : getMonthlyRevenue(edgesRef.current, workers, activeEffects, CITIES, balsaFrozenByEvent, gameYear, upgradedHubs, silos);
       const monthlyRev = cyberAttack ? 0 : (Math.round(baseRev * compoundRevMult * seasonalRevFactor) + monthlyBonusTotal);
       if (cyberAttack) {
         showToast('💻 Ataque Cibernético: sistemas offline — receita mensal bloqueada!', 'error');
@@ -288,6 +442,19 @@ export default function App() {
       if (monthlyRev > 0) {
         setTotalRevenue(prev => prev + monthlyRev);
       }
+
+      // Passenger revenue (separate from cargo)
+      const passengerRev = getPassengerMonthlyRevenue(edgesRef.current, CITIES, gameYear, activeEffects);
+      if (passengerRev > 0) {
+        setTotalRevenue(prev => prev + passengerRev);
+      }
+
+      // Passenger satisfaction decay — 3pts/month, floors at 20
+      setEdges(prev => prev.map(e =>
+        e.type === 'passenger' && e.status === 'complete'
+          ? { ...e, satisfaction: Math.max(20, (e.satisfaction ?? 100) - 3) }
+          : e
+      ));
 
       // Monthly summary toast
       const net = monthlyRev - adjustedPayroll;
@@ -299,115 +466,117 @@ export default function App() {
 
       // Random monthly news
       const rnd = newsRandom(gameYear, monthIdx);
-      if (rnd) setNewsItems(prev => [rnd, ...prev].slice(0, 40));
+      if (rnd) setNewsItems(prev => [rnd, ...prev].slice(0, 60));
 
       // Budget snapshot recorded by a separate useEffect on budgetState.currentBudget
 
-      // Advance construction queue
-      setConstructionQueue(prev => {
-        const stillBuilding: ConstructionProject[] = [];
-        const completed: ConstructionProject[] = [];
-        prev.forEach(p => {
-          if (p.monthsRemaining <= 1) completed.push(p);
-          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
-        });
-        if (completed.length > 0) {
-          const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-          setEdges(prevEdges => prevEdges.map(e => {
-            const done = completed.find(p => p.edgeId === e.id);
-            return done ? { ...e, status: 'complete' as const } : e;
-          }));
-          // Return allocated workers to the free pool
-          const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
-          completed.forEach(p => {
-            if (p.workersAllocated) {
-              (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
-                totalReturned[k] += p.workersAllocated[k];
-              });
-            }
-          });
-          const anyReturned = Object.values(totalReturned).some(v => v > 0);
-          if (anyReturned) {
-            setWorkers(prev => ({
-              terraplanagem: prev.terraplanagem + totalReturned.terraplanagem,
-              assentamento:  prev.assentamento  + totalReturned.assentamento,
-              sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
-              explosivos:    prev.explosivos    + totalReturned.explosivos,
-              manutencao:    prev.manutencao,
-            }));
+      // Advance construction queue — pre-calculate from ref (avoids stale closure / dep array issue)
+      const completedProjects = constructionQueueRef.current.filter(p => p.monthsRemaining <= 1);
+      setConstructionQueue(prev => prev
+        .filter(p => p.monthsRemaining > 1)
+        .map(p => ({ ...p, monthsRemaining: p.monthsRemaining - 1 }))
+      );
+      if (completedProjects.length > 0) {
+        const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
+        setEdges(prevEdges => prevEdges.map(e => {
+          const done = completedProjects.find(p => p.edgeId === e.id);
+          return done ? { ...e, status: 'complete' as const } : e;
+        }));
+        const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
+        completedProjects.forEach(p => {
+          if (p.type === 'passenger') return; // passenger projects allocate no workers
+          if (p.workersAllocated) {
+            (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
+              totalReturned[k] += p.workersAllocated[k];
+            });
           }
-          completed.forEach(p => {
-            const cityA = CITIES.find(c => c.id === p.from);
-            const cityB = CITIES.find(c => c.id === p.to);
-            const workerReturn = p.workersAllocated
-              ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
-              : '';
-            showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
-            sound.playConnect();
-            if (cityA && cityB) {
-              setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 40));
-            }
-          });
-        }
-        return stillBuilding;
-      });
-
-      // Process infrastructure build queue
-      setInfraQueue(prev => {
-        const stillBuilding: InfraProject[] = [];
-        const completedInfra: InfraProject[] = [];
-        prev.forEach(p => {
-          if (p.monthsRemaining <= 1) completedInfra.push(p);
-          else stillBuilding.push({ ...p, monthsRemaining: p.monthsRemaining - 1 });
         });
-        completedInfra.forEach(p => {
-          const cityName = CITIES.find(c => c.id === p.cityId)?.name ?? p.cityId;
+        if (Object.values(totalReturned).some(v => v > 0)) {
+          setWorkers(prev => ({
+            terraplanagem: prev.terraplanagem + totalReturned.terraplanagem,
+            assentamento:  prev.assentamento  + totalReturned.assentamento,
+            sinalizacao:   prev.sinalizacao   + totalReturned.sinalizacao,
+            explosivos:    prev.explosivos    + totalReturned.explosivos,
+            manutencao:    prev.manutencao    + totalReturned.manutencao,
+          }));
+        }
+        completedProjects.forEach(p => {
+          const cityA = CITY_MAP.get(p.from);
+          const cityB = CITY_MAP.get(p.to);
+          if (p.type === 'passenger') {
+            showToast(`🚆 Linha de passageiros concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)`, 'success');
+            sound.playConnect();
+            return;
+          }
+          const workerReturn = p.workersAllocated
+            ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
+            : '';
+          showToast(`✅ Obra concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)${workerReturn ? ` — ${workerReturn} liberados!` : ''}`, 'success');
+          sound.playConnect();
+          if (cityA && cityB) {
+            setNewsItems(prev => [newsRouteComplete(cityA, cityB, p.distance, p.type, ym), ...prev].slice(0, 60));
+          }
+        });
+      }
+
+      // Process infrastructure build queue — pre-calculate from ref
+      const completedInfraProjects = infraQueueRef.current.filter(p => p.monthsRemaining <= 1);
+      setInfraQueue(prev => prev
+        .filter(p => p.monthsRemaining > 1)
+        .map(p => ({ ...p, monthsRemaining: p.monthsRemaining - 1 }))
+      );
+      if (completedInfraProjects.length > 0) {
+        const infraWorkerReturn: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
+        completedInfraProjects.forEach(p => {
+          const cityName = CITY_MAP.get(p.cityId)?.name ?? p.cityId;
           if (p.type === 'hub') {
             setUpgradedHubs(prev2 => [...prev2, p.cityId]);
             showToast(`★ Terminal Central em ${cityName} concluído! +1 slot de conexão.`, 'success');
+          } else if (p.type === 'warehouse') {
+            setWarehouses(prev2 => [...prev2, p.cityId]);
+            showToast(`🏭 Armazém Geral em ${cityName} concluído! +R$500M/mês.`, 'success');
+          } else if (p.type === 'silo') {
+            setSilos(prev2 => [...prev2, p.cityId]);
+            showToast(`🌾 Silo Graneleiro em ${cityName} concluído! +30% receita nas rotas.`, 'success');
           } else {
             setMaintenanceYards(prev2 => [...prev2, p.cityId]);
             setYardLevels(prev2 => ({ ...prev2, [p.cityId]: p.yardLevel ?? 1 }));
-            const lvlName = YARD_CONFIGS[p.yardLevel ?? 1].name;
-            const cov = YARD_CONFIGS[p.yardLevel ?? 1].coverage;
+            const yLevel = (p.yardLevel ?? 1) as 1 | 2 | 3;
+            const lvlName = YARD_CONFIGS[yLevel]?.name ?? 'Básico';
+            const cov = YARD_CONFIGS[yLevel]?.coverage ?? 0;
             showToast(`🔧 Pátio ${lvlName} em ${cityName} concluído! Cobertura: ${cov}km.`, 'success');
           }
-          // Return allocated workers
-          setWorkers(prev2 => ({
-            terraplanagem: prev2.terraplanagem + (p.workersAllocated.terraplanagem ?? 0),
-            assentamento: prev2.assentamento + (p.workersAllocated.assentamento ?? 0),
-            sinalizacao: prev2.sinalizacao + (p.workersAllocated.sinalizacao ?? 0),
-            explosivos: prev2.explosivos,
-            manutencao: prev2.manutencao,
-          }));
+          (Object.keys(infraWorkerReturn) as Array<keyof GameWorkers>).forEach(k => {
+            infraWorkerReturn[k] += p.workersAllocated[k] ?? 0;
+          });
           sound.playConnect();
         });
-        return stillBuilding;
-      });
+        if (Object.values(infraWorkerReturn).some(v => v > 0)) {
+          setWorkers(prev2 => ({
+            terraplanagem: prev2.terraplanagem + infraWorkerReturn.terraplanagem,
+            assentamento:  prev2.assentamento  + infraWorkerReturn.assentamento,
+            sinalizacao:   prev2.sinalizacao   + infraWorkerReturn.sinalizacao,
+            explosivos:    prev2.explosivos    + infraWorkerReturn.explosivos,
+            manutencao:    prev2.manutencao    + infraWorkerReturn.manutencao,
+          }));
+        }
+      }
     }
 
-    // 1. Durations Tick + monthly fine deductions
-    setActiveEvents((prev) => {
-      const updated = prev.map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }));
-      const expired = updated.filter(e => e.monthsLeft <= 0);
-      const active = updated.filter(e => e.monthsLeft > 0);
-
-      // Deduct monthly crisis fines
-      let totalFines = 0;
-      prev.forEach(e => {
-        if (e.costPerMonth && e.monthsLeft > 0) totalFines += e.costPerMonth;
-      });
-      if (totalFines > 0) {
-        setSpentOnResources(p => p + totalFines);
-        const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
-        showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
-      }
-
-      expired.forEach(e => {
-        showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');
-      });
-
-      return active;
+    // 1. Durations Tick — pre-calculate from ref, then pure state update
+    const totalFines = activeEventsRef.current.reduce((acc, e) => acc + (e.costPerMonth && e.monthsLeft > 0 ? e.costPerMonth : 0), 0);
+    const expiredEvents = activeEventsRef.current.filter(e => e.monthsLeft <= 1);
+    setActiveEvents(prev => prev
+      .map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }))
+      .filter(e => e.monthsLeft > 0)
+    );
+    if (totalFines > 0) {
+      setSpentOnResources(p => p + totalFines);
+      const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
+      showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
+    }
+    expiredEvents.forEach(e => {
+      showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');
     });
 
     // 2. Calendar-based scheduled event trigger
@@ -452,7 +621,7 @@ export default function App() {
           headline: `🗳️ ${ev.title} — ${ev.description.slice(0, 80)}`,
           yearMonth,
           category: 'crisis',
-        }, ...prev].slice(0, 40));
+        }, ...prev].slice(0, 60));
         showToast(`🗳️ ${ev.title}`, 'info');
         continue;
       }
@@ -471,7 +640,15 @@ export default function App() {
           headline: `${ev.immediateCash! > 0 ? '💰' : '💸'} ${ev.title}`,
           yearMonth,
           category: ev.immediateCash! > 0 ? 'grant' : 'crisis',
-        }, ...prev].slice(0, 40));
+        }, ...prev].slice(0, 60));
+      }
+
+      // Cutscene events: play video first, then activate event via onFinished
+      if (ev.id === 'ev005' || ev.id === 'ev002') {
+        const cutsceneId = ev.id === 'ev005' ? 'event_greve' : 'event_escassez_cimento';
+        pendingEventAfterCutsceneRef.current = ev.id;
+        setTimeout(() => enqueueCutscene(cutsceneId as typeof activeCutscene), 400);
+        continue;
       }
 
       // Apply game event effect
@@ -518,7 +695,7 @@ export default function App() {
               headline: `⚠️ ${ev.title}`,
               yearMonth,
               category: 'crisis',
-            }, ...prev].slice(0, 40));
+            }, ...prev].slice(0, 60));
           }
         } else {
           // POS/NEU events apply automatically, no popup
@@ -530,7 +707,7 @@ export default function App() {
             headline: `${icon} ${ev.title}`,
             yearMonth,
             category: ev.category === 'POS' ? 'grant' : 'economy',
-          }, ...prev].slice(0, 40));
+          }, ...prev].slice(0, 60));
         }
       }
     }
@@ -540,21 +717,60 @@ export default function App() {
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
-    
+
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
   };
+  // Wire the ref now that showToast is defined
+  showToastRef.current = showToast;
 
   // Soundtrack: start after splash, respect mute
   useEffect(() => {
     if (!splashDone || !audioRef.current) return;
     audioRef.current.volume = 0.35;
-    if (!isMuted) audioRef.current.play().catch(() => {});
-    else audioRef.current.pause();
-  }, [splashDone, isMuted]);
+    // Pause music during cutscenes; resume when done (unless user muted)
+    if (isMuted || activeCutscene !== null) audioRef.current.pause();
+    else audioRef.current.play().catch(() => {});
+  }, [splashDone, isMuted, activeCutscene]);
 
   // Sound muter toggle
+  // Activates the event that was deferred while a cutscene was playing
+  const handleCutsceneFinished = React.useCallback((cutsceneId: string) => {
+    setCutsceneQueue(prev => prev.slice(1));
+    const pendingId = pendingEventAfterCutsceneRef.current;
+    if (!pendingId) return;
+    pendingEventAfterCutsceneRef.current = null;
+    const ev = SCHEDULED_EVENTS.find(e => e.id === pendingId);
+    if (!ev || !ev.gameEvent) return;
+    const ge = ev.gameEvent;
+    const gameEventObj: GameEvent = {
+      id: `ge_${ev.id}`,
+      title: ev.title,
+      description: ev.description,
+      type: ge.type,
+      statusEffect: ge.statusEffect,
+      durationMonths: ge.durationMonths,
+      monthsLeft: ge.durationMonths,
+      ...(ge.costPerMonth !== undefined ? { costPerMonth: ge.costPerMonth } : {}),
+      ...(ge.costToResolve !== undefined ? { costToResolve: ge.costToResolve } : {}),
+      ...(ge.workerLoss !== undefined ? { workerLoss: ge.workerLoss } : {}),
+      ...(ge.revenueMultiplier !== undefined ? { revenueMultiplier: ge.revenueMultiplier } : {}),
+      ...(ge.monthlyBonus !== undefined ? { monthlyBonus: ge.monthlyBonus } : {}),
+      ...(ge.resourceMultipliers !== undefined ? { resourceMultipliers: ge.resourceMultipliers } : {}),
+      ...(ge.constructionSlowFactor !== undefined ? { constructionSlowFactor: ge.constructionSlowFactor } : {}),
+      ...(ge.balsaFrozen !== undefined ? { balsaFrozen: ge.balsaFrozen } : {}),
+      ...(ge.blockConstruction !== undefined ? { blockConstruction: ge.blockConstruction } : {}),
+      ...(ge.payrollMultiplier !== undefined ? { payrollMultiplier: ge.payrollMultiplier } : {}),
+    };
+    if (!currentEventRef.current) {
+      setCurrentEvent(gameEventObj);
+      sound.playError();
+    } else {
+      setActiveEvents(prev => [...prev, gameEventObj]);
+    }
+  }, []);
+
   const handleToggleMute = () => {
     const nextMute = sound.toggleMute();
     setIsMuted(nextMute);
@@ -611,6 +827,18 @@ export default function App() {
     triggeredEventIdsRef.current = [];
     setInfraQueue([]);
     setYardLevels({});
+    setWarehouses([]);
+    setSilos([]);
+    setShownCutscenes([]);
+    shownCutscenesRef.current = [];
+    setCutsceneQueue([]);
+    setExpiredMissions([]);
+    setAutoBuyResources(true);
+    // Start tutorial for new games — zero out resources and workers so player learns to buy them
+    setTutorialStep(0);
+    setTutorialEdgeSnapshot(0);
+    setResources({ aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 });
+    setWorkers({ terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 });
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -640,6 +868,14 @@ export default function App() {
     triggeredEventIdsRef.current = save.triggeredEventIds ?? [];
     setInfraQueue(save.infraQueue ?? []);
     setYardLevels(save.yardLevels ?? {});
+    setWarehouses(save.warehouses ?? []);
+    setSilos(save.silos ?? []);
+    const loadedCutscenes = save.shownCutscenes ?? [];
+    setShownCutscenes(loadedCutscenes);
+    shownCutscenesRef.current = loadedCutscenes;
+    setAutoBuyResources(save.autoBuyResources ?? true);
+    setExpiredMissions(save.expiredMissions ?? []);
+    setTutorialStep(save.tutorialStep ?? null);
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -682,6 +918,13 @@ export default function App() {
       setTriggeredEventIds(data.triggeredEventIds ?? []);
       setInfraQueue(data.infraQueue ?? []);
       setYardLevels(data.yardLevels ?? {});
+      setWarehouses(data.warehouses ?? []);
+      setSilos(data.silos ?? []);
+      const importedCutscenes = data.shownCutscenes ?? [];
+      setShownCutscenes(importedCutscenes);
+      shownCutscenesRef.current = importedCutscenes;
+      setAutoBuyResources(data.autoBuyResources ?? true);
+      setExpiredMissions(data.expiredMissions ?? []);
       showToast('📥 Save importado com sucesso!', 'success');
     } catch {
       showToast('❌ Arquivo inválido — não foi possível importar.', 'error');
@@ -818,80 +1061,29 @@ export default function App() {
     return 2;
   };
 
-  // Dynamic cost & grant budget state (calculated reactively to avoid state bugs)
-  const startingBudget = 1250000000000; // R$ 1.250.000.000.000,00 starting cash
-
-  // Split intermodal grants into own useMemo — only re-runs when edges change
-  const intermodalGrants = useMemo(() => getIntermodalGrants(CITIES, edges), [edges]);
-
-  const budgetState = useMemo(() => {
-    let spentRail = 0;
-    let spentBalsa = 0;
-
-    edges.forEach(edge => {
-      const cityA = CITIES.find(c => c.id === edge.from);
-      const cityB = CITIES.find(c => c.id === edge.to);
-      if (cityA && cityB) {
-        if (edge.type === 'balsa') {
-          spentBalsa += Math.round(edge.distance * 12000000);
-        } else {
-          spentRail += getTrackCostDetail(cityA, cityB, edge.distance).totalCost;
-        }
-      }
+  // Revenue-per-km map for route color visualization — only computed when feature is on
+  const routeRevenueMap = useMemo(() => {
+    if (!showRouteColors) return new Map<string, number>();
+    const activeEffects = activeEvents.map(e => e.statusEffect);
+    const balsaFrozen = activeEvents.some(e => e.balsaFrozen);
+    const map = new Map<string, number>();
+    edges.filter(e => e.status === 'complete').forEach(edge => {
+      const rev = getEdgeMonthlyRevenue(edge, workers, activeEffects, CITIES, balsaFrozen, gameYear, upgradedHubs, silos);
+      map.set(edge.id, edge.distance > 0 ? rev / edge.distance : 0);
     });
+    return map;
+  }, [showRouteColors, edges, workers, activeEvents, gameYear, upgradedHubs, silos]);
 
-    // Yards and hubs are debited directly via spentOnResources — no separate tracking needed
-    const spentYards = 0;
-    const spentHubs = 0;
-
-    const grantIncome = intermodalGrants
-      .filter(g => g.unlocked)
-      .reduce((sum, g) => sum + g.value, 0);
-
-    const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
-    const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
-    const activeEffectsForDisplay = activeEvents.map(e => e.statusEffect);
-    const seasonalRevForDisplay = getActiveSeasonalEffects(monthIdx).reduce((acc, s) => acc * (s.revenueFactor ?? 1.0), 1.0);
-    const balsaFrozenForDisplay = activeEvents.some(e => e.balsaFrozen);
-    const monthlyRevenue = Math.round(
-      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs) * seasonalRevForDisplay
-    );
-
-    return {
-      totalSpent,
-      spentRail,
-      spentBalsa,
-      spentYards,
-      spentHubs,
-      grantIncome,
-      currentBudget,
-      unlockedGrants: intermodalGrants,
-      spentOnWorkers,
-      spentOnResources,
-      totalRevenue,
-      monthlyRevenue,
-    };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue, gameYear, workers, activeEvents, monthIdx]);
-
-  // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
-  useEffect(() => {
-    setBudgetHistory(prev => [
-      ...prev.slice(-23),
-      { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
-    ]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budgetState.currentBudget]);
-
-  // Budget critically low alert
+  // Sound effect when budget alert fires (hook handles the toast, App handles the sound)
+  const budgetAlertFiredRef = React.useRef(false);
   useEffect(() => {
     if (welcomeOpen) return;
-    const pct = budgetState.currentBudget / startingBudget;
-    if (pct < 0.08 && budgetState.currentBudget > 0 && !lowBudgetAlertedRef.current) {
-      lowBudgetAlertedRef.current = true;
-      showToast('🚨 ALERTA CRÍTICO: Caixa abaixo de 8% do orçamento inicial! Reduza gastos urgentemente.', 'error');
+    const pct = budgetState.currentBudget / STARTING_BUDGET;
+    if (pct < 0.08 && budgetState.currentBudget > 0 && !budgetAlertFiredRef.current) {
+      budgetAlertFiredRef.current = true;
       sound.playError();
     } else if (pct >= 0.15) {
-      lowBudgetAlertedRef.current = false;
+      budgetAlertFiredRef.current = false;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [budgetState.currentBudget, welcomeOpen]);
@@ -913,7 +1105,7 @@ export default function App() {
     const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
     budgetState.unlockedGrants.filter(g => g.unlocked).forEach(g => {
       if (!prevGrantsRef.current.includes(g.id)) {
-        setNewsItems(prev => [newsGrant(g.title, g.value, ym), ...prev].slice(0, 40));
+        setNewsItems(prev => [newsGrant(g.title, g.value, ym), ...prev].slice(0, 60));
       }
     });
     prevGrantsRef.current = budgetState.unlockedGrants.filter(g => g.unlocked).map(g => g.id);
@@ -932,10 +1124,10 @@ export default function App() {
         setTotalRevenue(prev => prev + m.reward);
         showToast(`🎯 Missão concluída: "${m.title.replace(/^[^ ]+ /, '')}" — Prêmio: R$ ${(m.reward/1e9).toFixed(0)}B`, 'success');
         sound.playConnect();
-        setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 40));
+        setNewsItems(prev => [newsMission(m.title, m.reward, yearMonth), ...prev].slice(0, 60));
       }
       // Check deadline
-      if (m.deadlineYear && gameYear > m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
+      if (m.deadlineYear && gameYear >= m.deadlineYear && !completedMissions.includes(m.id) && !expiredMissions.includes(m.id)) {
         setExpiredMissions(prev => [...prev, m.id]);
         showToast(`⏰ Missão expirada: ${m.title}`, 'error');
       }
@@ -985,11 +1177,11 @@ export default function App() {
         return u;
       });
       setWorkers(prev => ({
-        terraplanagem: prev.terraplanagem,
+        terraplanagem: prev.terraplanagem + (existingProject.workersAllocated.terraplanagem ?? 0),
         assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
         sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
-        explosivos: prev.explosivos,
-        manutencao: prev.manutencao,
+        explosivos: prev.explosivos + (existingProject.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existingProject.workersAllocated.manutencao ?? 0),
       }));
       showToast(`★ Construção do Terminal Central em ${city.name} cancelada (50% reembolsado).`, 'info');
       sound.playDisconnect();
@@ -1056,6 +1248,118 @@ export default function App() {
     };
     setInfraQueue(prev => [...prev, project]);
     showToast(`★ Terminal Central em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
+  };
+
+  const handleBuildWarehouse = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+    if (warehouses.includes(cityId)) {
+      setWarehouses(prev => prev.filter(id => id !== cityId));
+      setSpentOnResources(prev => Math.max(0, prev - WAREHOUSE_CONFIG.cost));
+      showToast(`🏭 Armazém em ${city.name} demolido. Reembolso parcial aplicado.`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const existing = infraQueue.find(p => p.cityId === cityId && p.type === 'warehouse');
+    if (existing) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existing.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(WAREHOUSE_CONFIG.cost * 0.5)));
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem + (existing.workersAllocated.terraplanagem ?? 0),
+        assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existing.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos + (existing.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existing.workersAllocated.manutencao ?? 0),
+      }));
+      showToast(`🏭 Construção do Armazém em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const cfg = WAREHOUSE_CONFIG;
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Assentamento insuficiente para Armazém (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost) {
+      showToast(`Orçamento insuficiente para Armazém (R$ ${(cfg.cost/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost);
+    setWorkers(prev => ({ ...prev, assentamento: prev.assentamento - (cfg.workers.assentamento ?? 0) }));
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setInfraQueue(prev => [...prev, {
+      id: `warehouse_${cityId}_${Date.now()}`, cityId, type: 'warehouse',
+      monthsRemaining: cfg.months, totalMonths: cfg.months,
+      workersAllocated: { assentamento: cfg.workers.assentamento ?? 0 },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear, startedMonth: monthIdx, cost: cfg.cost,
+    }]);
+    showToast(`🏭 Armazém Geral em ${city.name} em construção — ${cfg.months} meses.`, 'success');
+    sound.playConnect();
+  };
+
+  const handleBuildSilo = (cityId: string) => {
+    const city = CITIES.find(c => c.id === cityId);
+    if (!city) return;
+    if (city.type !== 'polo_agricola') {
+      showToast('🌾 Silo só pode ser construído em cidades Polo Agrícola.', 'error');
+      sound.playError(); return;
+    }
+    if (silos.includes(cityId)) {
+      setSilos(prev => prev.filter(id => id !== cityId));
+      setSpentOnResources(prev => Math.max(0, prev - SILO_CONFIG.cost));
+      showToast(`🌾 Silo em ${city.name} demolido. Reembolso parcial aplicado.`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const existing = infraQueue.find(p => p.cityId === cityId && p.type === 'silo');
+    if (existing) {
+      setInfraQueue(prev => prev.filter(p => p.id !== existing.id));
+      setSpentOnResources(prev => Math.max(0, prev - Math.round(SILO_CONFIG.cost * 0.5)));
+      setWorkers(prev => ({
+        terraplanagem: prev.terraplanagem + (existing.workersAllocated.terraplanagem ?? 0),
+        assentamento: prev.assentamento + (existing.workersAllocated.assentamento ?? 0),
+        sinalizacao: prev.sinalizacao + (existing.workersAllocated.sinalizacao ?? 0),
+        explosivos: prev.explosivos + (existing.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existing.workersAllocated.manutencao ?? 0),
+      }));
+      showToast(`🌾 Construção do Silo em ${city.name} cancelada (50% reembolsado).`, 'info');
+      sound.playDisconnect(); return;
+    }
+    const cfg = SILO_CONFIG;
+    if ((workers.assentamento ?? 0) < (cfg.workers.assentamento ?? 0)) {
+      showToast(`⚠️ Assentamento insuficiente para Silo (${cfg.workers.assentamento} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if ((workers.terraplanagem ?? 0) < (cfg.workers.terraplanagem ?? 0)) {
+      showToast(`⚠️ Terraplanagem insuficiente para Silo (${cfg.workers.terraplanagem} necessários).`, 'error');
+      sound.playError(); return;
+    }
+    if (budgetState.currentBudget < cfg.cost) {
+      showToast(`Orçamento insuficiente para Silo (R$ ${(cfg.cost/1e9).toFixed(0)}B necessários).`, 'error');
+      sound.playError(); return;
+    }
+    setSpentOnResources(prev => prev + cfg.cost);
+    setWorkers(prev => ({
+      ...prev,
+      assentamento: prev.assentamento - (cfg.workers.assentamento ?? 0),
+      terraplanagem: prev.terraplanagem - (cfg.workers.terraplanagem ?? 0),
+    }));
+    setResources(prev => {
+      const u = { ...prev };
+      (Object.keys(cfg.resources) as (keyof GameResources)[]).forEach(k => { u[k] = Math.max(0, (u[k] ?? 0) - (cfg.resources[k] ?? 0)); });
+      return u;
+    });
+    setInfraQueue(prev => [...prev, {
+      id: `silo_${cityId}_${Date.now()}`, cityId, type: 'silo',
+      monthsRemaining: cfg.months, totalMonths: cfg.months,
+      workersAllocated: { assentamento: cfg.workers.assentamento ?? 0, terraplanagem: cfg.workers.terraplanagem ?? 0 },
+      resourcesConsumed: { ...cfg.resources } as Partial<GameResources>,
+      startedYear: gameYear, startedMonth: monthIdx, cost: cfg.cost,
+    }]);
+    showToast(`🌾 Silo Graneleiro em ${city.name} em construção — ${cfg.months} meses. +30% receita nas rotas.`, 'success');
     sound.playConnect();
   };
 
@@ -1138,8 +1442,8 @@ export default function App() {
         terraplanagem: prev.terraplanagem + (existingProject.workersAllocated.terraplanagem ?? 0),
         assentamento: prev.assentamento + (existingProject.workersAllocated.assentamento ?? 0),
         sinalizacao: prev.sinalizacao + (existingProject.workersAllocated.sinalizacao ?? 0),
-        explosivos: prev.explosivos,
-        manutencao: prev.manutencao,
+        explosivos: prev.explosivos + (existingProject.workersAllocated.explosivos ?? 0),
+        manutencao: prev.manutencao + (existingProject.workersAllocated.manutencao ?? 0),
       }));
       showToast(`🔧 Construção do Pátio em ${city.name} cancelada (50% reembolsado).`, 'info');
       sound.playDisconnect();
@@ -1218,11 +1522,84 @@ export default function App() {
     return edges.reduce((acc, edge) => acc + edge.distance, 0);
   }, [edges]);
 
+  // Passenger line construction — simpler flow, no resources/workers
+  const handleConnectPassenger = (idA: string, idB: string) => {
+    if (idA === idB) { setSelectedCityId(null); return; }
+    const cityA = CITIES.find(c => c.id === idA);
+    const cityB = CITIES.find(c => c.id === idB);
+    if (!cityA || !cityB) return;
+    const edgeId = `${idA}-${idB}`;
+    const edgeIdRev = `${idB}-${idA}`;
+    const existing = edges.find(e => (e.id === edgeId || e.id === edgeIdRev) && e.type === 'passenger');
+    if (existing) {
+      if (existing.status === 'building') {
+        setEdges(prev => prev.filter(e => e.id !== existing.id));
+        setConstructionQueue(prev => prev.filter(p => p.edgeId !== existing.id));
+        const cost = Math.round(existing.distance * PASSENGER_COST_PER_KM);
+        setSpentOnResources(prev => prev - cost);
+        showToast('🚆 Obra de passageiros cancelada. Custo reembolsado.', 'info');
+      } else {
+        const confirmed = window.confirm(`Encerrar linha de passageiros ${cityA.name} ↔ ${cityB.name}?`);
+        if (!confirmed) return;
+        setEdges(prev => prev.filter(e => e.id !== existing.id));
+        sound.playDisconnect();
+        showToast(`🚆 Linha ${cityA.name} ↔ ${cityB.name} encerrada.`, 'info');
+      }
+      setSelectedCityId(null);
+      return;
+    }
+    const dist = getHaversineDistance(cityA.lat, cityA.lng, cityB.lat, cityB.lng);
+    const cost = Math.round(dist * PASSENGER_COST_PER_KM);
+    if (budgetState.currentBudget < cost) {
+      showToast(`❌ Saldo insuficiente para linha de passageiros (R$${(cost/1e9).toFixed(1)}B necessário)`, 'error');
+      setSelectedCityId(null);
+      return;
+    }
+    const months = Math.max(1, Math.round(dist * PASSENGER_BUILD_SPEED));
+    const newEdge: Edge = {
+      id: edgeId, from: idA, to: idB,
+      distance: dist, type: 'passenger', status: 'building',
+      fare: 150, satisfaction: 100, extraFleets: 0,
+    };
+    setEdges(prev => [...prev, newEdge]);
+    setConstructionQueue(prev => [...prev, {
+      edgeId, from: idA, to: idB, distance: dist, type: 'passenger',
+      resourcesConsumed: { aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 },
+      workersAllocated: { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 },
+      totalMonths: months, monthsRemaining: months, startedYear: gameYear, startedMonth: monthIdx,
+    }]);
+    setSpentOnResources(prev => prev + cost);
+    setSelectedCityId(null);
+    sound.playConnect();
+    showToast(`🚆 Linha de passageiros ${cityA.name} ↔ ${cityB.name} em construção — ${months} meses. Custo: R$${(cost/1e9).toFixed(1)}B`, 'success');
+  };
+
+  const handleSetPassengerFare = (edgeId: string, fare: number) => {
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, fare } : e));
+  };
+
+  const handleBuyExtraFleet = (edgeId: string) => {
+    const FLEET_COST = 2_000_000_000;
+    if (budgetState.currentBudget < FLEET_COST) {
+      showToast('❌ Saldo insuficiente para frota extra (R$2B necessário)', 'error');
+      return;
+    }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, extraFleets: (e.extraFleets ?? 0) + 1 } : e));
+    setSpentOnResources(prev => prev + FLEET_COST);
+    showToast('🚆 Frota extra adquirida! +150 lugares/mês.', 'success');
+  };
+
   // Main track-drawing click routine
   const handleConnectCities = (idA: string, idB: string) => {
     // 1. Prevent connecting City A with itself
     if (idA === idB) {
       setSelectedCityId(null);
+      return;
+    }
+
+    // Passenger mode — delegate to separate handler
+    if (constructionType === 'passenger') {
+      handleConnectPassenger(idA, idB);
       return;
     }
 
@@ -1252,11 +1629,14 @@ export default function App() {
     const existingEdge = edges.find((e) => e.id === edgeId1 || e.id === edgeId2);
 
     if (existingEdge) {
+      const isBuilding = existingEdge.status === 'building';
+      if (!isBuilding) {
+        const confirmed = window.confirm(`Demolir a ferrovia ${cityA.name} ↔ ${cityB.name}?\n\nVocê receberá reembolso total de materiais e custo. Esta ação não pode ser desfeita.`);
+        if (!confirmed) return;
+      }
       setEdges((prev) => prev.filter((e) => e.id !== existingEdge.id));
       setSelectedCityId(null);
       sound.playDisconnect();
-
-      const isBuilding = existingEdge.status === 'building';
       if (isBuilding) {
         // Return allocated workers when cancelling a build
         const cancelledProject = constructionQueue.find(p => p.edgeId === existingEdge.id);
@@ -1487,7 +1867,7 @@ export default function App() {
     const seasonalSlowFactor = activeSeasonal
       .filter(s => s.constructionSlowFactor && s.states?.some(st => [cityA.state, cityB.state].includes(st)))
       .reduce((acc, s) => acc * (s.constructionSlowFactor ?? 1.0), 1.0);
-    if (seasonalSlowFactor > 1.0 && NORTE_STATES.includes(cityA.state) || NORTE_STATES.includes(cityB.state)) {
+    if (seasonalSlowFactor > 1.0 && (NORTE_STATES.includes(cityA.state) || NORTE_STATES.includes(cityB.state))) {
       showToast(`🌧️ Chuvas amazônicas: obra no Norte terá duração +${Math.round((seasonalSlowFactor - 1) * 100)}% mais longa`, 'info');
     }
     const months = Math.ceil(baseMths * slowFactor * seasonalSlowFactor / simultaneousPenalty);
@@ -1605,6 +1985,68 @@ export default function App() {
 
   return (
     <>
+    {activeCutscene === 'first_rail' && (
+      <CutsceneModal
+        videoSrc="/cutscene_primeira_ferrovia.mp4"
+        icon="🚂"
+        title="Primeira Ferrovia Concluída"
+        subtitle="Marco Histórico da RENIF"
+        description="Sua primeira ferrovia está operando! Este é o ponto de partida de uma malha que vai transformar o Brasil. Cada trilho posto é um passo rumo à integração nacional."
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
+      />
+    )}
+    {activeCutscene === 'half_network' && (
+      <CutsceneModal
+        videoSrc="/cutscene_50_porcento.mp4"
+        icon="🗺️"
+        title="Metade do Brasil Conectada"
+        subtitle="50% da Malha Concluída"
+        description="Você alcançou um marco extraordinário: metade das cidades do Brasil agora estão ligadas pela malha ferroviária da RENIF. A integração nacional está a meio caminho de se tornar realidade."
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
+      />
+    )}
+    {activeCutscene === 'first_balsa' && (
+      <CutsceneModal
+        videoSrc="/cutscene_primeira_hidrovia.mp4"
+        icon="🚢"
+        title="Primeira Hidrovia Concluída"
+        subtitle="Marco Hidroviário da RENIF"
+        description="Sua primeira hidrovia está operando! O Brasil é um país de rios — e você acabou de transformar as grandes hidrovias em aliadas da RENIF. Novas rotas fluviais podem conectar o que os trilhos não alcançam."
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
+      />
+    )}
+    {activeCutscene === 'first_passenger' && (
+      <CutsceneModal
+        videoSrc="/cutscene_primeira_passageiros.mp4"
+        icon="🚆"
+        title="Primeira Linha de Passageiros"
+        subtitle="Marco Histórico da RENIF"
+        description="O primeiro trem de passageiros da RENIF acaba de partir! Uma nova era começa — agora o Brasil não transporta só carga, mas também pessoas. Cada viagem é um passo rumo à integração nacional."
+        onFinished={() => handleCutsceneFinished(activeCutscene!)}
+      />
+    )}
+    {activeCutscene === 'event_greve' && (
+      <CutsceneModal
+        videoSrc="/cutscene_greve.mp4"
+        icon="🚧"
+        type="event"
+        title="Greve Geral Ferroviária"
+        subtitle="Crise Trabalhista — 2028"
+        description="Os trabalhadores paralisaram as obras. Os sindicatos exigem aumento salarial e melhores condições de campo. A RENIF pagará multas mensais enquanto o conflito durar."
+        onFinished={() => handleCutsceneFinished('event_greve')}
+      />
+    )}
+    {activeCutscene === 'event_escassez_cimento' && (
+      <CutsceneModal
+        videoSrc="/cutscene_escassez_cimento.mp4"
+        icon="🏗️"
+        type="event"
+        title="Escassez Nacional de Cimento"
+        subtitle="Crise de Insumos — 2027"
+        description="A crise no setor de construção civil drenou os estoques nacionais. Todas as obras avançam mais devagar por falta de cimento no mercado."
+        onFinished={() => handleCutsceneFinished('event_escassez_cimento')}
+      />
+    )}
     {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
     <audio ref={audioRef} src="/soundtrack.mp3" loop preload="auto" />
     <div id="game-workspace" className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-slate-950 font-sans" style={{ contentVisibility: 'auto' }}>
@@ -1625,6 +2067,8 @@ export default function App() {
         onToggleMute={handleToggleMute}
         showSuggestions={showSuggestions}
         onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
+        showRouteColors={showRouteColors}
+        onToggleRouteColors={() => setShowRouteColors(v => !v)}
         
         // Tycoon extensions
         upgradedHubs={upgradedHubs}
@@ -1674,24 +2118,27 @@ export default function App() {
         onFlyToRegion={(lat, lng) => setFlyToSignal({ lat, lng, timestamp: Date.now() })}
         mobileExpanded={mobileExpanded}
         onMobileExpandedChange={setMobileExpanded}
+        passengerEdges={edges.filter(e => e.type === 'passenger')}
+        onSetPassengerFare={handleSetPassengerFare}
+        onBuyExtraFleet={handleBuyExtraFleet}
       />
+
+      {/* FAB — mobile only — fixed in root stacking context so it's never covered by popups */}
+      {!mobileExpanded && (
+        <button
+          onClick={() => setMobileExpanded(true)}
+          className="md:hidden fixed bottom-5 left-4 z-[9990] w-12 h-12 rounded-full bg-amber-500 text-slate-950 shadow-xl flex items-center justify-center text-xl font-black border-2 border-amber-300 active:scale-95 transition-transform"
+          title="Abrir painel"
+        >
+          ☰
+        </button>
+      )}
 
       {/* 3. Primary Leaflet Map Container */}
       <main className="flex-1 h-[60vh] md:h-full relative overflow-hidden">
 
-        {/* FAB — mobile only — opens sidebar panel */}
-        {!mobileExpanded && (
-          <button
-            onClick={() => setMobileExpanded(true)}
-            className="md:hidden absolute bottom-4 left-4 z-[500] w-12 h-12 rounded-full bg-amber-500 text-slate-950 shadow-xl flex items-center justify-center text-xl font-black border-2 border-amber-300 active:scale-95 transition-transform"
-            title="Abrir painel"
-          >
-            ☰
-          </button>
-        )}
-
-        {/* Floating Map Format / Style Selector widget */}
-        <div className="absolute top-4 right-4 z-50 flex bg-slate-900/95 backdrop-blur-md p-1 px-1.5 rounded-xl border border-slate-800 shadow-2xl items-center gap-1.5 transition-all">
+        {/* Floating Map Format / Style Selector widget — hidden on mobile portrait, visible md+ */}
+        <div className="hidden md:flex absolute top-4 right-4 z-50 bg-slate-900/95 backdrop-blur-md p-1 px-1.5 rounded-xl border border-slate-800 shadow-2xl items-center gap-1.5 transition-all">
           <div className="px-1 text-[10px] font-bold text-slate-400 flex items-center gap-1.5 uppercase tracking-wider">
             <Layers className="w-3.5 h-3.5 text-amber-500" />
             <span className="hidden sm:inline">Mapa:</span>
@@ -1730,7 +2177,7 @@ export default function App() {
             const doubledMult = e.doubled ? 1.5 : 1.0;
             const trainMult = TRAIN_LVL_MULT[(e.trainLevel ?? 1) as 1|2|3];
             const passengerBonus = e.passenger ? ((selectedCity.type === 'capital' || selectedCity.type === 'polo_industrial' || otherCity?.type === 'capital' || otherCity?.type === 'polo_industrial') ? 1.4 : 1.15) : 1.0;
-            const hubBonus = upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to) ? 1.25 : 1.0;
+            const hubBonus = upgradedHubs.includes(e.from) && upgradedHubs.includes(e.to) ? 1.40 : (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.20 : 1.0;
             const demandMult = getDemandGrowthMultiplier(gameYear);
             return s + Math.round(base * (multA + multB) / 2 * doubledMult * trainMult * passengerBonus * hubBonus * demandMult);
           }, 0);
@@ -1742,7 +2189,7 @@ export default function App() {
           const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(1)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
 
           return (
-            <div className="fixed bottom-0 left-0 right-0 max-h-[72vh] overflow-y-auto rounded-t-2xl md:absolute md:bottom-auto md:top-4 md:left-4 md:right-auto md:rounded-xl md:max-h-none md:overflow-visible md:w-[480px] bg-slate-900 md:bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 shadow-2xl z-50 flex flex-col gap-3">
+            <div className="fixed bottom-0 left-0 right-0 max-h-[55vh] overflow-y-auto rounded-t-2xl md:absolute md:bottom-auto md:top-4 md:left-4 md:right-auto md:rounded-xl md:max-h-none md:overflow-visible md:w-[480px] bg-slate-900 md:bg-slate-900/97 backdrop-blur-md border border-slate-700 px-4 py-3.5 shadow-2xl z-50 flex flex-col gap-3">
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1754,16 +2201,22 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] text-slate-500 font-mono block">Clique no mapa para cancelar</span>
-                  <span className="text-[8.5px] text-slate-600">
-                    {(() => {
-                      const nat = getCityNativeMaxConns(selectedCity.id);
-                      const tot = nat + (isUpgraded ? 1 : 0);
-                      const cur = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
-                      return `${cur}/${tot} conexões${isUpgraded ? ' (hub)' : ''}`;
-                    })()}
-                  </span>
+                <div className="flex items-start gap-2">
+                  <div className="text-right">
+                    <span className="text-[8.5px] text-slate-600">
+                      {(() => {
+                        const nat = getCityNativeMaxConns(selectedCity.id);
+                        const tot = nat + (isUpgraded ? 1 : 0);
+                        const cur = edges.filter(e => e.from === selectedCity.id || e.to === selectedCity.id).length;
+                        return `${cur}/${tot} conexões${isUpgraded ? ' (hub)' : ''}`;
+                      })()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedCityId(null)}
+                    className="w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white flex items-center justify-center text-sm font-black transition shrink-0"
+                    title="Fechar"
+                  >✕</button>
                 </div>
               </div>
 
@@ -1795,7 +2248,7 @@ export default function App() {
                   const base = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
                   const multA = getCityTypeRevenueMultiplier(selectedCity.type);
                   const multB = other ? getCityTypeRevenueMultiplier(other.type) : 1.0;
-                  const hubBonus = upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to) ? 1.25 : 1.0;
+                  const hubBonus = upgradedHubs.includes(e.from) && upgradedHubs.includes(e.to) ? 1.40 : (upgradedHubs.includes(e.from) || upgradedHubs.includes(e.to)) ? 1.20 : 1.0;
                   const demandMult = getDemandGrowthMultiplier(gameYear);
                   const edgeRevenue = Math.round(base * (multA + multB) / 2 * hubBonus * demandMult);
                   return { e, other, edgeRevenue };
@@ -1896,6 +2349,38 @@ export default function App() {
                   <Wrench className="w-3 h-3 text-emerald-400" />
                   {hasYard ? '🔧 Pátio Ativo' : '🔧 Pátio Manutenção (R$ 15B)'}
                 </button>
+                {(() => {
+                  const hasWarehouse = warehouses.includes(selectedCity.id);
+                  const buildingWarehouse = infraQueue.some(p => p.cityId === selectedCity.id && p.type === 'warehouse');
+                  return (
+                    <button
+                      onClick={() => handleBuildWarehouse(selectedCity.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
+                        hasWarehouse ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30'
+                        : buildingWarehouse ? 'bg-slate-700/60 text-slate-400 border border-slate-600'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                      }`}
+                    >
+                      {hasWarehouse ? '🏭 Armazém Ativo (+R$500M/mês)' : buildingWarehouse ? '🏭 Armazém em construção…' : '🏭 Armazém Geral (R$ 8B)'}
+                    </button>
+                  );
+                })()}
+                {selectedCity.type === 'polo_agricola' && (() => {
+                  const hasSilo = silos.includes(selectedCity.id);
+                  const buildingSilo = infraQueue.some(p => p.cityId === selectedCity.id && p.type === 'silo');
+                  return (
+                    <button
+                      onClick={() => handleBuildSilo(selectedCity.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold transition-all shadow-sm ${
+                        hasSilo ? 'bg-green-500/20 text-green-300 border border-green-500/40 hover:bg-green-500/30'
+                        : buildingSilo ? 'bg-slate-700/60 text-slate-400 border border-slate-600'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/80'
+                      }`}
+                    >
+                      {hasSilo ? '🌾 Silo Ativo (+30% receita rotas)' : buildingSilo ? '🌾 Silo em construção…' : '🌾 Silo Graneleiro (R$ 12B)'}
+                    </button>
+                  );
+                })()}
               </div>
               {/* Per-edge upgrade actions */}
               {cityEdges.length > 0 && (
@@ -1940,7 +2425,7 @@ export default function App() {
           edges={edges}
           selectedCityId={selectedCityId}
           hoveredCityId={hoveredCityId}
-          onSelectCity={setSelectedCityId}
+          onSelectCity={(id) => { setSelectedCityId(id); if (id) advanceTutorialOnAction('click_city'); }}
           onHoverCity={setHoveredCityId}
           onConnectCities={handleConnectCities}
           tileLayerType={tileLayerType}
@@ -1948,32 +2433,93 @@ export default function App() {
           showSuggestions={showSuggestions}
           upgradedHubs={upgradedHubs}
           maintenanceYards={maintenanceYards}
+          warehouses={warehouses}
+          silos={silos}
           nearestYardDistances={nearestYardDistances}
           constructionQueue={constructionQueue}
           activeEvents={activeEvents}
+          routeRevenueMap={routeRevenueMap}
+          showRouteColors={showRouteColors}
+          constructionType={constructionType}
+          onConstructionTypeChange={setConstructionType}
+          tutorialHighlightCities={(() => {
+            if (tutorialStep === null) return [];
+            const stepId = TUTORIAL_STEPS[tutorialStep]?.id;
+            if (stepId === 'click_city') return [TUTORIAL_ROUTES.rail.cityAId];
+            if (stepId === 'build_rail') return [TUTORIAL_ROUTES.rail.cityAId, TUTORIAL_ROUTES.rail.cityBId];
+            if (stepId === 'build_balsa') return [TUTORIAL_ROUTES.balsa.cityAId, TUTORIAL_ROUTES.balsa.cityBId];
+            if (stepId === 'build_passenger') return [TUTORIAL_ROUTES.passenger.cityAId, TUTORIAL_ROUTES.passenger.cityBId];
+            return [];
+          })()}
+          tutorialActiveCities={tutorialStep !== null ? [
+            TUTORIAL_ROUTES.rail.cityAId,
+            TUTORIAL_ROUTES.rail.cityBId,
+            TUTORIAL_ROUTES.balsa.cityAId,
+            TUTORIAL_ROUTES.balsa.cityBId,
+          ] : []}
         />
       </main>
 
       {/* --- Toasts Stacks HUD Overlay --- */}
-      <div className="absolute bottom-6 right-6 z-[2000] flex flex-col gap-2 max-w-sm pointer-events-none">
+      <div className="fixed top-4 right-4 z-[9998] flex flex-col gap-1.5 max-w-[280px] md:max-w-sm pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`p-3.5 rounded-xl border text-xs font-medium shadow-2xl flex items-center gap-2.5 transition-all duration-300 transform translate-y-0 opacity-100 pointer-events-auto ${
+            className={`px-3 py-2 rounded-lg border text-[11px] font-medium shadow-xl flex items-center gap-2 transition-all duration-300 pointer-events-auto ${
               toast.type === 'success'
-                ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200'
+                ? 'bg-emerald-950/97 border-emerald-600/60 text-emerald-200'
                 : toast.type === 'error'
-                  ? 'bg-rose-950/95 border-rose-500/50 text-rose-200'
-                  : 'bg-slate-900/95 border-slate-700/60 text-slate-200'
+                  ? 'bg-rose-950/97 border-rose-600/60 text-rose-200'
+                  : 'bg-slate-900/97 border-slate-600/60 text-slate-200'
             }`}
           >
-            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-            {toast.type === 'error' && <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
-            {toast.type === 'info' && <Info className="w-4 h-4 text-amber-400 shrink-0" />}
+            {toast.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+            {toast.type === 'error' && <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+            {toast.type === 'info' && <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
             <span className="leading-snug">{toast.message}</span>
           </div>
         ))}
       </div>
+
+      {/* --- TUTORIAL OVERLAY --- */}
+      {tutorialStep !== null && splashDone && !welcomeOpen && (() => {
+        const tStep = TUTORIAL_STEPS[tutorialStep];
+        const totalWorkers = Object.values(workers).reduce((a, b) => a + b, 0);
+        const totalResources = Object.values(resources).reduce((a, b) => a + b, 0);
+        let progressText: string | undefined;
+        let progressFraction: number | undefined;
+        if (tStep.id === 'hire_workers') {
+          const W2 = TUTORIAL_REQS.workers;
+          const done = (Math.min(workers.terraplanagem, W2.terraplanagem)
+                      + Math.min(workers.assentamento,  W2.assentamento)
+                      + Math.min(workers.sinalizacao,   W2.sinalizacao)
+                      + Math.min(workers.explosivos,    W2.explosivos)
+                      + Math.min(workers.manutencao,    W2.manutencao));
+          const total = W2.terraplanagem + W2.assentamento + W2.sinalizacao + W2.explosivos + W2.manutencao;
+          const t = workers.terraplanagem, a = workers.assentamento,
+                s = workers.sinalizacao, e2 = workers.explosivos, m = workers.manutencao;
+          progressText = `Terra:${t}/500 · Asst:${a}/500 · Sinal:${s}/500 · Explo:${e2}/500 · Mant:${m}/500`;
+          progressFraction = done / total;
+        } else if (tStep.id === 'go_to_resources') {
+          const { aco: ra, brita: rb, cimento: rc } = TUTORIAL_REQS.resources;
+          const a = resources.aco, b = resources.brita, c = resources.cimento;
+          progressText = `Aço: ${a}/${ra} · Brita: ${b}/${rb} · Cimento: ${c}/${rc}`;
+          const done = Math.min(a, ra) + Math.min(b, rb) + Math.min(c, rc);
+          progressFraction = done / (ra + rb + rc);
+        }
+        return (
+          <TutorialOverlay
+            step={tStep}
+            stepIndex={tutorialStep}
+            totalSteps={TUTORIAL_STEPS.length}
+            highlightRef={tStep.refKey ? getTutorialRef(tStep.refKey!) : undefined}
+            progressText={progressText}
+            progressFraction={progressFraction}
+            onNext={advanceTutorial}
+            onSkip={finalizeTutorial}
+          />
+        );
+      })()}
 
       {/* --- PAUSE SCREEN --- */}
       {playSpeed === 'paused' && !welcomeOpen && !victoryOpen && !gameOverOpen && (
@@ -2318,48 +2864,13 @@ export default function App() {
                     }
                     showToast(`Crise absorvida: ${ev.title} ativo por ${ev.durationMonths} meses!`, 'info');
                     const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-                    setNewsItems(prev => [newsCrisis(ev, ym), ...prev].slice(0, 40));
+                    setNewsItems(prev => [newsCrisis(ev, ym), ...prev].slice(0, 60));
                     setCurrentEvent(null);
                     sound.playSelect();
                   }}
                   className="w-full bg-gradient-to-r from-red-650 to-rose-600 hover:from-red-650 hover:to-rose-650 text-white font-display font-extrabold uppercase py-2.5 px-4 rounded-xl transition shadow-md text-xs tracking-wider cursor-pointer"
                 >
                    Aceitar e Absorver ({currentEvent.durationMonths} Meses)
-                </button>
-                <button
-                  onClick={() => {
-                    // Ignore crisis — double its duration
-                    const ev = currentEvent;
-                    const doubledDuration = ev.durationMonths * 2;
-                    const ignoredEvent: GameEvent = { ...ev, durationMonths: doubledDuration, monthsLeft: doubledDuration };
-                    setActiveEvents(prev => [...prev, ignoredEvent]);
-                    const ym = `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`;
-                    setNewsItems(prev => [newsCrisis(ignoredEvent, ym), ...prev].slice(0, 40));
-                    setCurrentEvent(null);
-                    showToast(`⚠️ Crise ignorada — duração dobrada para ${doubledDuration} meses!`, 'error');
-                    sound.playError();
-                  }}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-rose-400 border border-rose-500/30 font-bold uppercase py-2 px-4 rounded-xl transition text-xs tracking-wider cursor-pointer"
-                >
-                  ⚠️ Ignorar (sofrer consequência — {currentEvent.durationMonths * 2} meses)
-                </button>
-
-                <button
-                  onClick={() => {
-                    const ev = { ...currentEvent, monthsLeft: currentEvent.durationMonths * 2, durationMonths: currentEvent.durationMonths * 2 };
-                    setActiveEvents(prev => [...prev, ev]);
-                    if (ev.workerLoss) {
-                      const { role, amount } = ev.workerLoss;
-                      setWorkers(prev => ({ ...prev, [role]: Math.max(0, (prev[role] ?? 0) - amount) }));
-                      setSpentOnWorkers(prev => prev + 8_000_000_000);
-                    }
-                    showToast(`⚠️ Crise ignorada — duração dobrada para ${ev.durationMonths} meses!`, 'error');
-                    setCurrentEvent(null);
-                    sound.playError();
-                  }}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 font-bold uppercase py-2 px-4 rounded-xl transition text-[10px] tracking-wider cursor-pointer border border-slate-700"
-                >
-                  ⚠️ Ignorar (duração dobrada)
                 </button>
               </div>
 
@@ -2399,7 +2910,7 @@ export default function App() {
                 <div className="text-center">
                   <span className="text-[10px] text-slate-500 tracking-wider uppercase font-semibold">Trilhos Ativos</span>
                   <p className="text-xl font-black text-rose-400 mt-1">
-                    {edges.length} <span className="text-xs font-normal text-slate-400">/ {CITIES.length - 1}</span>
+                    {edges.filter(e => e.type !== 'passenger').length} <span className="text-xs font-normal text-slate-400">/ {CITIES.length - 1}</span>
                   </p>
                 </div>
                 

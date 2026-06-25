@@ -13,12 +13,15 @@ export interface Edge {
   from: string;
   to: string;
   distance: number;
-  type?: 'rail' | 'balsa';
+  type?: 'rail' | 'balsa' | 'passenger';
   resourcesConsumed?: GameResources;
   status?: 'complete' | 'building';
   doubled?: boolean;
   trainLevel?: 1 | 2 | 3;
   passenger?: boolean;
+  fare?: number;
+  satisfaction?: number;
+  extraFleets?: number;
 }
 
 export interface GameStats {
@@ -50,7 +53,7 @@ export interface ConstructionProject {
   from: string;
   to: string;
   distance: number;
-  type: 'rail' | 'balsa';
+  type: 'rail' | 'balsa' | 'passenger';
   resourcesConsumed: GameResources;
   workersAllocated: GameWorkers;
   totalMonths: number;
@@ -92,7 +95,7 @@ export type PoliticalParty = 'PL' | 'PS' | 'PB';
 export interface InfraProject {
   id: string;
   cityId: string;
-  type: 'hub' | 'yard';
+  type: 'hub' | 'yard' | 'warehouse' | 'silo';
   yardLevel?: 1 | 2 | 3;
   monthsRemaining: number;
   totalMonths: number;

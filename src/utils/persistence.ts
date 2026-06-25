@@ -6,7 +6,7 @@ export interface SaveGame {
   edges: Edge[];
   upgradedHubs: string[];
   maintenanceYards: string[];
-  constructionType: 'rail' | 'balsa';
+  constructionType: 'rail' | 'balsa' | 'passenger';
   resources: GameResources;
   spentOnResources: number;
   workers: GameWorkers;
@@ -22,6 +22,14 @@ export interface SaveGame {
   currentPartyStatusEffect: string | null;
   infraQueue?: InfraProject[];
   yardLevels?: Record<string, number>;
+  warehouses?: string[];
+  silos?: string[];
+  shownCutscenes?: string[];
+  autoBuyResources?: boolean;
+  expiredMissions?: string[];
+  passengerFares?: Record<string, number>;
+  passengerExtraFleets?: Record<string, number>;
+  tutorialStep?: number | null;
 }
 
 const getSaveKey = (slot: number) =>
@@ -49,10 +57,19 @@ export function loadGame(slot = 1): SaveGame | null {
     if (save.currentPartyStatusEffect === undefined) save.currentPartyStatusEffect = null;
     if (!save.infraQueue) save.infraQueue = [];
     if (!save.yardLevels) save.yardLevels = {};
+    if (!save.warehouses) save.warehouses = [];
+    if (!save.silos) save.silos = [];
+    if (!save.shownCutscenes) save.shownCutscenes = [];
+    if (save.autoBuyResources === undefined) save.autoBuyResources = true;
+    if (!save.expiredMissions) save.expiredMissions = [];
+    if (!save.passengerFares) save.passengerFares = {};
+    if (!save.passengerExtraFleets) save.passengerExtraFleets = {};
+    if (save.tutorialStep === undefined) save.tutorialStep = null;
     // Patch edge fields added in later versions
     if (save.edges) {
       save.edges = save.edges.map(e => ({
         ...e,
+        type: e.type ?? 'rail',
         doubled: e.doubled ?? false,
         trainLevel: e.trainLevel ?? 1,
       }));

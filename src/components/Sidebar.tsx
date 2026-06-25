@@ -1,12 +1,16 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { registerTutorialRef } from '../data/tutorial';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { SaveGame } from '../utils/persistence';
-import { FundGrant, WORKER_SALARIES } from '../utils/gameRules';
+import { FundGrant, WORKER_SALARIES, getSimultaneousPenalty } from '../utils/gameRules';
 import { Volume2, VolumeX, RotateCw } from 'lucide-react';
 import OperationsTab from './sidebar/OperationsTab';
+import FinancialTab from './sidebar/FinancialTab';
 import MissionsTab from './sidebar/MissionsTab';
+import NewsTab from './sidebar/NewsTab';
 import CitiesTab from './sidebar/CitiesTab';
+import PassengersTab from './sidebar/PassengersTab';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -28,14 +32,16 @@ interface SidebarProps {
   onToggleMute: () => void;
   showSuggestions: boolean;
   onToggleSuggestions: () => void;
+  showRouteColors?: boolean;
+  onToggleRouteColors?: () => void;
   upgradedHubs?: string[];
   onBuildHub?: (cityId: string) => void;
   maintenanceYards?: string[];
   onBuildYard?: (cityId: string, level: 1 | 2 | 3) => void;
   infraQueue?: InfraProject[];
   yardLevels?: Record<string, number>;
-  constructionType?: 'rail' | 'balsa';
-  onConstructionTypeChange?: (type: 'rail' | 'balsa') => void;
+  constructionType?: 'rail' | 'balsa' | 'passenger';
+  onConstructionTypeChange?: (type: 'rail' | 'balsa' | 'passenger') => void;
   budgetState?: {
     totalSpent: number; spentRail: number; spentBalsa: number; spentYards: number;
     spentHubs: number; grantIncome: number; currentBudget: number;
@@ -74,15 +80,18 @@ interface SidebarProps {
   onFlyToRegion?: (lat: number, lng: number) => void;
   mobileExpanded?: boolean;
   onMobileExpandedChange?: (v: boolean) => void;
+  passengerEdges?: Edge[];
+  onSetPassengerFare?: (edgeId: string, fare: number) => void;
+  onBuyExtraFleet?: (edgeId: string) => void;
 }
 
 export default function Sidebar({
   cities, edges, selectedCityId, hoveredCityId, onSelectCity, onHoverCity, onFlyTo,
   onReset, tileLayerType, onTileLayerChange, isMuted, onToggleMute,
-  showSuggestions, onToggleSuggestions,
+  showSuggestions, onToggleSuggestions, showRouteColors = false, onToggleRouteColors = () => {},
   upgradedHubs = [], onBuildHub = () => {}, maintenanceYards = [],
   onBuildYard = () => {}, infraQueue = [], yardLevels = {},
-  constructionType = 'rail', onConstructionTypeChange = () => {},
+  constructionType = 'rail' as 'rail' | 'balsa' | 'passenger', onConstructionTypeChange = () => {},
   budgetState = {
     totalSpent: 0, spentRail: 0, spentBalsa: 0, spentYards: 0, spentHubs: 0,
     grantIncome: 0, currentBudget: 1250000000000, unlockedGrants: [],
@@ -101,25 +110,45 @@ export default function Sidebar({
   onDoubleTrack = () => {}, onUpgradeTrainLevel = () => {}, onPassengerUpgrade = () => {},
   expiredMissions = [], completedMissions = [], onFlyToRegion,
   mobileExpanded = false, onMobileExpandedChange,
+  passengerEdges = [], onSetPassengerFare = () => {}, onBuyExtraFleet = () => {},
 }: SidebarProps) {
   const importFileRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions'>('cities');
+  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news' | 'financial' | 'passenger'>('cities');
   const setMobileExpanded = useCallback((v: boolean) => onMobileExpandedChange?.(v), [onMobileExpandedChange]);
 
-  // Portrait orientation warning when expanded on mobile
+  // Tutorial refs
+  const tabOperationsRef = useRef<HTMLButtonElement>(null);
+  const modeBalsaRef = useRef<HTMLButtonElement>(null);
+  const modePassengerRef = useRef<HTMLButtonElement>(null);
+  const closeSidebarBtnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (tabOperationsRef.current) registerTutorialRef('tab-operations', tabOperationsRef as React.RefObject<HTMLElement>);
+    if (modeBalsaRef.current) registerTutorialRef('mode-balsa', modeBalsaRef as React.RefObject<HTMLElement>);
+    if (modePassengerRef.current) registerTutorialRef('mode-passenger', modePassengerRef as React.RefObject<HTMLElement>);
+    if (closeSidebarBtnRef.current) registerTutorialRef('close-sidebar-btn', closeSidebarBtnRef as React.RefObject<HTMLElement>);
+  }, []);
+
+  // Orientation detection
   const [isPortrait, setIsPortrait] = useState(
     typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false
   );
   useEffect(() => {
-    const handler = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    const handler = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+      // Auto-expand when rotating to landscape on touch devices
+      if (!portrait && navigator.maxTouchPoints > 0) {
+        onMobileExpandedChange?.(true);
+      }
+    };
     window.addEventListener('resize', handler);
     window.addEventListener('orientationchange', handler);
     return () => { window.removeEventListener('resize', handler); window.removeEventListener('orientationchange', handler); };
-  }, []);
+  }, [onMobileExpandedChange]);
 
   // Swipe between tabs
   const swipeTouchStartX = useRef<number | null>(null);
-  const TABS: ('cities' | 'operations' | 'missions')[] = ['cities', 'operations', 'missions'];
+  const TABS: ('cities' | 'operations' | 'missions' | 'news' | 'financial' | 'passenger')[] = ['cities', 'operations', 'missions', 'news', 'financial', 'passenger'];
   const handleTabSwipe = useCallback((e: React.TouchEvent) => {
     if (swipeTouchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
@@ -130,7 +159,7 @@ export default function Sidebar({
     swipeTouchStartX.current = null;
   }, [activeTab]);
 
-  const activeConns = edges.length;
+  const activeConns = edges.filter(e => e.type !== 'passenger').length;
   const maxConnsCount = cities.length - 1;
   const pctComplete = Math.min(100, Math.round((activeConns / maxConnsCount) * 100));
 
@@ -175,15 +204,10 @@ export default function Sidebar({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setMobileExpanded(e => !e)}
+          <button ref={closeSidebarBtnRef} onClick={() => setMobileExpanded(e => !e)}
             className="md:hidden p-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition text-[11px] font-black"
             title={mobileExpanded ? 'Minimizar painel' : 'Expandir painel'}>
             {mobileExpanded ? '✕' : '⬆'}
-          </button>
-          <button onClick={onAdvanceMonth}
-            className="p-1.5 rounded-lg border border-sky-900/40 bg-sky-950/20 text-sky-400 hover:bg-sky-900/40 hover:text-sky-200 transition text-[9px] font-black uppercase tracking-wider"
-            title="Avançar 1 mês manualmente">
-            ⏭+1M
           </button>
           <button onClick={onToggleMute}
             className={`p-2 rounded-lg border transition ${isMuted ? 'border-slate-800 bg-slate-950/40 text-slate-500 hover:text-slate-300' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
@@ -207,33 +231,41 @@ export default function Sidebar({
       <div className="p-3 bg-slate-950/90 border-b border-slate-800 flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Concessão</span>
-            <span className="text-xs font-black text-slate-100">
-              {MONTHS[monthIdx]}/2077 de <span className="text-amber-400">{gameYear}</span>
+            <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Concessão</span>
+            <span className="text-sm md:text-xs font-black text-slate-100">
+              {MONTHS[monthIdx]}/{gameYear} <span className="text-slate-500 font-normal text-[10px]">de 2027</span>
             </span>
-            <span className={`text-[9px] font-bold ${2077 - gameYear <= 5 ? 'text-rose-400' : 2077 - gameYear <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
-              ⏳ {2077 - gameYear} anos restantes
+            <span className={`text-[10px] md:text-[9px] font-bold ${2077 - gameYear <= 5 ? 'text-rose-400' : 2077 - gameYear <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
+              ⏳ {Math.max(0, 2077 - gameYear)} anos restantes
             </span>
           </div>
-          <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 shrink-0">
-            {(['paused', 'normal', 'fast'] as const).map(speed => (
-              <button key={speed} onClick={() => onPlaySpeedChange(speed)}
-                className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                  playSpeed === speed
-                    ? speed === 'paused' ? 'bg-rose-500 text-slate-950 font-black'
-                      : speed === 'normal' ? 'bg-amber-500 text-slate-950 font-black'
-                      : 'bg-sky-500 text-slate-950 font-black'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}>
-                {speed === 'paused' ? '⏸️ Pausar' : speed === 'normal' ? '⏱️ 1x' : '⚡ Rápido'}
-              </button>
-            ))}
+          <div className="flex items-center gap-1 shrink-0">
+            <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+              {(['paused', 'normal', 'fast'] as const).map(speed => (
+                <button key={speed} onClick={() => onPlaySpeedChange(speed)}
+                  className={`px-2 py-1.5 md:px-1.5 md:py-0.5 rounded text-[10px] md:text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                    playSpeed === speed
+                      ? speed === 'paused' ? 'bg-rose-500 text-slate-950 font-black'
+                        : speed === 'normal' ? 'bg-amber-500 text-slate-950 font-black'
+                        : 'bg-sky-500 text-slate-950 font-black'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}>
+                  <span className="md:hidden">{speed === 'paused' ? '⏸' : speed === 'normal' ? '1x' : '⚡'}</span>
+                  <span className="hidden md:inline">{speed === 'paused' ? '⏸️ Pausar' : speed === 'normal' ? '⏱️ 1x' : '⚡ Rápido'}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={onAdvanceMonth}
+              className="p-1.5 rounded-lg border border-sky-900/40 bg-sky-950/20 text-sky-400 hover:bg-sky-900/40 hover:text-sky-200 transition text-[9px] font-black uppercase tracking-wider"
+              title="Avançar 1 mês manualmente">
+              ⏭+1M
+            </button>
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-xs">
           <div>
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Caixa</span>
-            <span className={`text-[12.5px] font-black font-sans flex items-center gap-1 ${
+            <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Caixa</span>
+            <span className={`text-[15px] md:text-[12.5px] font-black font-sans flex items-center gap-1 ${
               budgetState.currentBudget < 0 ? 'text-rose-500' :
               budgetState.currentBudget < 100000000000 ? 'text-rose-400' :
               budgetState.currentBudget < 250000000000 ? 'text-amber-400' : 'text-emerald-400'
@@ -252,22 +284,31 @@ export default function Sidebar({
               const flow = (budgetState.monthlyRevenue ?? 0) - payroll;
               const fmtFlow = (v: number) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
               return (
-                <span className={`text-[9px] font-bold ${flow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <span className={`text-[11px] md:text-[9px] font-bold ${flow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {flow >= 0 ? '▲' : '▼'} R$ {fmtFlow(Math.abs(flow))}/mês
                 </span>
               );
             })()}
           </div>
           <div className="text-right flex flex-col items-end gap-0.5">
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Conexões</span>
-            <span className="text-[11px] font-black text-amber-400">
+            <span className="text-[10px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wide block">Conexões</span>
+            <span className="text-[13px] md:text-[11px] font-black text-amber-400">
               {activeConns} / {maxConnsCount} ({pctComplete}%)
             </span>
-            <div className="flex gap-0.5 mt-0.5">
+            {constructionQueue.length > 1 && (() => {
+              const penalty = getSimultaneousPenalty(constructionQueue.length);
+              const pct = Math.round((1 - penalty) * 100);
+              return (
+                <span className="text-[9px] font-bold text-rose-400 bg-rose-950/60 border border-rose-800/50 px-1.5 py-0.5 rounded-full">
+                  ⚡ {constructionQueue.length} obras −{pct}% vel.
+                </span>
+              );
+            })()}
+            <div className="flex gap-1 md:gap-0.5 mt-0.5">
               {[1, 2, 3].map(s => (
                 <button key={s} onClick={() => onSaveSlotChange(s)}
                   title={`Slot ${s}: ${slotDates[s - 1] ?? 'Vazio'}`}
-                  className={`w-5 h-5 rounded text-[8px] font-black border transition cursor-pointer ${
+                  className={`w-8 h-8 md:w-5 md:h-5 rounded text-[10px] md:text-[8px] font-black border transition cursor-pointer ${
                     saveSlot === s ? 'bg-amber-500 text-slate-950 border-amber-400'
                       : slotDates[s - 1] ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/40 hover:bg-emerald-800/60'
                       : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
@@ -281,17 +322,28 @@ export default function Sidebar({
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-850 bg-slate-900 p-1 gap-0.5 shrink-0">
+      <div className="flex border-b border-slate-800 bg-slate-900/95 px-1 pt-1 gap-0.5 shrink-0">
         {([
-          { id: 'cities', label: '🗺️ Rotas', badge: false },
-          { id: 'operations', label: `👷 Equipe${constructionQueue.length > 0 ? ` (${constructionQueue.length})` : ''}`, badge: activeEvents.length > 0 },
-          { id: 'missions', label: '🎯 Objetivos', badge: missionResults.some(m => m.completed) && newsItems.length > 0 },
+          { id: 'cities',     icon: '🗺️', label: 'Rotas',    badge: false },
+          { id: 'operations', icon: '👷', label: 'Equipe',   badge: activeEvents.length > 0, count: constructionQueue.length > 0 ? constructionQueue.length : 0 },
+          { id: 'missions',   icon: '🎯', label: 'Missões',  badge: missionResults.some(m => m.completed), count: 0 },
+          { id: 'news',       icon: '📰', label: 'Notícias',   badge: newsItems.length > 0 && activeTab !== 'news', count: 0 },
+          { id: 'financial',  icon: '💰', label: 'Finanças',   badge: (budgetState?.currentBudget ?? 0) < 0, count: 0 },
+          { id: 'passenger',  icon: '🚆', label: 'Passag.',   badge: false, count: passengerEdges.filter(e => e.status === 'complete').length },
         ] as const).map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 text-center py-2 rounded-lg text-[9.5px] font-black tracking-wide transition flex items-center justify-center gap-1 cursor-pointer relative ${
-              activeTab === tab.id ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          <button key={tab.id} ref={tab.id === 'operations' ? tabOperationsRef : undefined} onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 text-center py-2.5 rounded-t-lg text-[10px] font-black tracking-wide transition flex flex-col items-center justify-center gap-0.5 cursor-pointer relative border-b-2 ${
+              activeTab === tab.id
+                ? 'bg-slate-800 text-amber-400 border-amber-500 shadow-inner'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border-transparent'
             }`}>
-            {tab.label}
+            <span className="text-[16px] leading-none">{tab.icon}</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">{tab.label}</span>
+            {'count' in tab && tab.count > 0 && (
+              <span className="absolute top-1 right-1 text-[8px] font-black bg-sky-500 text-white rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                {tab.count}
+              </span>
+            )}
             {tab.badge && (
               <span className="absolute top-1 right-1 flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -333,8 +385,35 @@ export default function Sidebar({
       {activeTab === 'missions' && (
         <MissionsTab
           missionResults={missionResults} completedMissions={completedMissions}
-          newsItems={newsItems} expiredMissions={expiredMissions}
+          expiredMissions={expiredMissions}
         />
+      )}
+
+      {activeTab === 'news' && (
+        <NewsTab newsItems={newsItems} />
+      )}
+
+      {activeTab === 'financial' && (
+        <FinancialTab
+          edges={edges}
+          cities={cities}
+          workers={workers}
+          activeEvents={activeEvents}
+          budgetState={budgetState ?? { totalSpent: 0, spentRail: 0, spentBalsa: 0, spentYards: 0, spentHubs: 0, grantIncome: 0, currentBudget: 0, unlockedGrants: [] }}
+          budgetHistory={budgetHistory ?? []}
+        />
+      )}
+
+      {activeTab === 'passenger' && (
+        <div className="flex-1 overflow-y-auto">
+          <PassengersTab
+            passengerEdges={passengerEdges}
+            gameYear={gameYear}
+            activeEffects={activeEvents.map(e => e.statusEffect)}
+            onSetFare={onSetPassengerFare}
+            onBuyExtraFleet={onBuyExtraFleet}
+          />
+        </div>
       )}
 
       {activeTab === 'cities' && (
@@ -347,44 +426,84 @@ export default function Sidebar({
           onToggleSuggestions={onToggleSuggestions} unmaintainedEdgesCount={unmaintainedEdgesCount}
           tileLayerType={tileLayerType} onTileLayerChange={onTileLayerChange}
           onBuildHub={onBuildHub} onBuildYard={onBuildYard}
+          showRouteColors={showRouteColors} onToggleRouteColors={onToggleRouteColors}
         />
       )}
       </div>
 
       {/* Footer */}
-      <div className="p-2.5 bg-slate-950 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center tracking-wide shrink-0 font-mono">
-        <span>© 2027 TREM DO BRASIL · RENIF V1.0</span>
-        <div className="flex gap-1.5 items-center">
-          {onImportSave && (
-            <>
-              <input ref={importFileRef} type="file" accept=".json" className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    try {
-                      const data = JSON.parse(ev.target?.result as string) as SaveGame;
-                      if (!data.edges || !data.gameYear) throw new Error('Invalid save');
-                      onImportSave(data);
-                    } catch { alert('Arquivo de save inválido.'); }
-                  };
-                  reader.readAsText(file);
-                  e.target.value = '';
-                }}
-              />
-              <button onClick={() => importFileRef.current?.click()}
-                className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-emerald-400 hover:border-emerald-700 transition text-[9px] font-bold uppercase cursor-pointer"
-                title="Importar save de arquivo JSON">
-                📥 Import
-              </button>
-            </>
-          )}
-          <button onClick={onExportStats}
-            className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
-            title="Exportar estatísticas como JSON">
-            📊 Export
-          </button>
+      <div className="bg-slate-950 border-t border-slate-900 shrink-0">
+        {/* Map type selector + construction mode — same row, mobile footer */}
+        <div className="md:hidden px-2 pt-2 pb-1 flex items-center gap-0.5">
+          {(['voyager', 'positron', 'dark', 'satellite', 'terrain'] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => onTileLayerChange(type)}
+              className={`flex-1 py-1 rounded text-[8px] font-bold uppercase transition-all text-center ${
+                tileLayerType === type
+                  ? 'bg-amber-500 text-slate-950 font-black'
+                  : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
+              }`}
+            >
+              {type === 'voyager' ? 'Voy' : type === 'positron' ? 'Claro' : type === 'dark' ? 'Esc' : type === 'satellite' ? 'Sat' : 'Rel'}
+            </button>
+          ))}
+          <span className="w-px h-4 bg-slate-700 mx-1 shrink-0" />
+          {([
+            { id: 'rail',      icon: '🚂', active: 'bg-amber-500 text-slate-950' },
+            { id: 'balsa',     icon: '⚓', active: 'bg-sky-500 text-slate-950' },
+            { id: 'passenger', icon: '🚆', active: 'bg-purple-500 text-slate-950' },
+          ] as const).map(m => (
+            <button
+              key={m.id}
+              ref={m.id === 'balsa' ? modeBalsaRef : m.id === 'passenger' ? modePassengerRef : undefined}
+              onClick={() => onConstructionTypeChange(m.id)}
+              className={`flex-1 py-1 rounded text-[11px] transition-all text-center ${
+                constructionType === m.id
+                  ? m.active + ' font-black'
+                  : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
+              }`}
+            >
+              {m.icon}
+            </button>
+          ))}
+        </div>
+
+        {/* Export / Import + copyright */}
+        <div className="p-2.5 text-[10px] text-slate-500 flex justify-between items-center tracking-wide font-mono">
+          <span className="hidden md:inline">© 2027 TREM DO BRASIL · RENIF V1.0</span>
+          <div className="flex gap-1.5 items-center">
+            {onImportSave && (
+              <>
+                <input ref={importFileRef} type="file" accept=".json" className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      try {
+                        const data = JSON.parse(ev.target?.result as string) as SaveGame;
+                        if (!data.edges || !data.gameYear) throw new Error('Invalid save');
+                        onImportSave(data);
+                      } catch { alert('Arquivo de save inválido.'); }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                />
+                <button onClick={() => importFileRef.current?.click()}
+                  className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-emerald-400 hover:border-emerald-700 transition text-[9px] font-bold uppercase cursor-pointer"
+                  title="Importar save de arquivo JSON">
+                  📥 Import
+                </button>
+              </>
+            )}
+            <button onClick={onExportStats}
+              className="px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-sky-400 hover:border-sky-700 transition text-[9px] font-bold uppercase cursor-pointer"
+              title="Exportar estatísticas como JSON">
+              📊 Export
+            </button>
+          </div>
         </div>
       </div>
     </div>
