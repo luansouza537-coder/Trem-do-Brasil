@@ -216,7 +216,9 @@ export default function App() {
     const hasPassengerEdge = edges.some(e => e.type === 'passenger' && matchesRoute(e, R.passenger));
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
-      close_sidebar:    !mobileExpanded,
+      close_sidebar:             !mobileExpanded,
+      close_sidebar_balsa:       !mobileExpanded,
+      close_sidebar_passenger:   !mobileExpanded,
       hire_workers:     workers.terraplanagem >= W.terraplanagem
                      && workers.assentamento  >= W.assentamento
                      && workers.sinalizacao   >= W.sinalizacao
@@ -244,7 +246,7 @@ export default function App() {
   }, [tutorialStep]);
 
   // Auto-expand sidebar for tutorial steps that require sidebar interaction
-  const SIDEBAR_STEPS = new Set(['go_to_team', 'hire_workers', 'go_to_resources', 'switch_balsa', 'switch_passenger']);
+  const SIDEBAR_STEPS = new Set(['go_to_team', 'hire_workers', 'go_to_resources']);
   useEffect(() => {
     if (tutorialStep === null) return;
     const stepId = TUTORIAL_STEPS[tutorialStep]?.id;
