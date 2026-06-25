@@ -1135,11 +1135,11 @@ export default function GameMap({
     <div className="w-full h-full relative" id="map-container">
       <div ref={mapContainerRef} className="w-full h-full" style={{ outline: 'none' }} />
 
-      {/* Construction mode chip — fixed so overflow-hidden on parent doesn't clip it */}
+      {/* Construction mode chip — top-left of map */}
       {onConstructionTypeChange && (
         <button
           onClick={e => { e.stopPropagation(); onConstructionTypeChange(nextMode.type); }}
-          className={`fixed bottom-6 left-4 z-[9990] flex items-center gap-1.5 px-3 py-2 rounded-xl border shadow-xl backdrop-blur-sm cursor-pointer transition-all hover:scale-105 active:scale-95 ${activeMode.bg} ${activeMode.border}`}
+          className={`absolute top-3 left-3 z-[1000] flex items-center gap-1.5 px-3 py-2 rounded-xl border shadow-xl backdrop-blur-sm cursor-pointer transition-all hover:scale-105 active:scale-95 ${activeMode.bg} ${activeMode.border}`}
           title={`Modo ativo: ${activeMode.label} — clique para mudar para ${nextMode.label}`}
         >
           <span className="text-lg leading-none">{activeMode.icon}</span>
