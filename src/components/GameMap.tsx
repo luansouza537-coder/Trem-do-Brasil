@@ -28,6 +28,7 @@ interface GameMapProps {
   showRouteColors?: boolean;
   constructionType?: 'rail' | 'balsa' | 'passenger';
   onConstructionTypeChange?: (type: 'rail' | 'balsa' | 'passenger') => void;
+  tutorialHighlightCities?: string[];
 }
 
 const TILE_LAYERS = {
@@ -76,6 +77,7 @@ export default function GameMap({
   showRouteColors = false,
   constructionType = 'rail',
   onConstructionTypeChange,
+  tutorialHighlightCities = [],
 }: GameMapProps) {
   const hasBlockConstruction = activeEvents.some(e => e.blockConstruction);
   const hasStrike = activeEvents.some(e => e.type === 'strike');
@@ -88,6 +90,7 @@ export default function GameMap({
   const trackGroupRef = useRef<L.LayerGroup | null>(null);
   const suggestedGroupRef = useRef<L.LayerGroup | null>(null);
   const rubberBandRef = useRef<L.Polyline | null>(null);
+  const tutorialHighlightGroupRef = useRef<L.LayerGroup | null>(null);
 
   // Synchronization refs to bypass Leaflet event stale closures
   const selectedCityIdRef = useRef<string | null>(selectedCityId);
@@ -467,6 +470,37 @@ export default function GameMap({
     }
   }, [flyToSignal]);
 
+  // Draw pulsing amber circles on tutorial-highlighted cities
+  useEffect(() => {
+    if (!tutorialHighlightGroupRef.current) return;
+    tutorialHighlightGroupRef.current.clearLayers();
+    tutorialHighlightCities.forEach(cityId => {
+      const city = cities.find(c => c.id === cityId);
+      if (!city || !tutorialHighlightGroupRef.current) return;
+      // Outer glow ring
+      L.circle([city.lat, city.lng], {
+        radius: 28000,
+        color: '#fbbf24',
+        fillColor: '#fbbf24',
+        fillOpacity: 0.12,
+        weight: 2.5,
+        opacity: 0.9,
+        interactive: false,
+        className: 'tutorial-pulse-ring',
+      }).addTo(tutorialHighlightGroupRef.current);
+      // Inner bright ring
+      L.circle([city.lat, city.lng], {
+        radius: 14000,
+        color: '#fbbf24',
+        fillColor: '#fbbf24',
+        fillOpacity: 0.25,
+        weight: 2,
+        opacity: 1,
+        interactive: false,
+      }).addTo(tutorialHighlightGroupRef.current);
+    });
+  }, [tutorialHighlightCities, cities]);
+
   // Draw 800km coverage circles for maintenance yards
   useEffect(() => {
     if (!yardRadiiGroupRef.current) return;
@@ -520,6 +554,7 @@ export default function GameMap({
     // Track layers
     trackGroupRef.current = L.layerGroup().addTo(map);
     suggestedGroupRef.current = L.layerGroup().addTo(map);
+    tutorialHighlightGroupRef.current = L.layerGroup().addTo(map);
     yardRadiiGroupRef.current = L.layerGroup().addTo(map);
     
     // Create rubber-band path layer

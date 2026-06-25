@@ -9,6 +9,31 @@ export interface TutorialStepDef {
   position: 'center' | 'top' | 'bottom';
 }
 
+// Pre-selected short routes so we know exact worker/resource requirements
+export const TUTORIAL_ROUTES = {
+  rail:      { cityAId: '1',  cityBId: '28', label: 'São Paulo → Campinas',    distanceKm: 84 },
+  balsa:     { cityAId: '29', cityBId: '2',  label: 'Santos → Rio de Janeiro', distanceKm: 343 },
+  passenger: { cityAId: '1',  cityBId: '28', label: 'São Paulo → Campinas',    distanceKm: 84 },
+} as const;
+
+// Exact requirements computed from game formulas — no guesswork
+// Rail SP→Campinas 84km: terra=ceil(84×0.90)=76, assent=ceil(84×0.55)=47, sinal=ceil(84×0.18)=16
+// Balsa Santos→Rio 343km: terra=70(fixed), assent=35(fixed), sinal=ceil(343×0.18)=62
+// Workers cover ALL tutorial routes; sinalizacao=62 because balsa is the bottleneck
+export const TUTORIAL_REQS = {
+  workers: {
+    terraplanagem: 76,
+    assentamento:  47,
+    sinalizacao:   62,
+  },
+  // Resources for first route (cargo rail SP→Campinas 84km)
+  resources: {
+    aco:     168,  // ceil(84 × 2.0)
+    brita:   335,  // ceil(84 × 4.0)
+    cimento: 168,  // ceil(84 × 2.0)
+  },
+} as const;
+
 export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'welcome',
@@ -20,7 +45,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'go_to_team',
     title: '👷 Contrate sua equipe',
-    message: 'Sem trabalhadores, nada é construído. O painel lateral foi aberto — clique na aba "Equipe" para contratar seus primeiros operários.',
+    message: 'O painel lateral foi aberto — clique na aba "Equipe" para contratar seus primeiros operários.',
     refKey: 'tab-operations',
     advanceOn: 'action',
     position: 'bottom',
@@ -28,7 +53,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'hire_workers',
     title: '👷 Contrate trabalhadores',
-    message: 'Clique em "+ 10" várias vezes nos tipos Terraplanagem e Assentamento de Trilhos. Você precisa de pelo menos 50 de Terraplanagem e 30 de Assentamento para construir sua primeira linha.',
+    message: 'Para construir São Paulo → Campinas você precisa de 76 Terraplanagem, 47 Assentamento e 62 Sinalização. Clique em "+10" várias vezes em cada tipo até atingir esses valores.',
     refKey: 'workers-section',
     advanceOn: 'action',
     position: 'bottom',
@@ -36,37 +61,37 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'go_to_resources',
     title: '🪨 Compre insumos',
-    message: 'Você precisa de aço, brita e cimento para construir. Role para baixo na aba Equipe e compre insumos na seção de Recursos.',
+    message: 'Compre materiais para São Paulo → Campinas: 168 Aço, 335 Brita e 168 Cimento. Role para baixo e clique em "Comprar" em cada recurso até atingir esses valores.',
     refKey: 'resources-section',
     advanceOn: 'action',
     position: 'bottom',
   },
   {
     id: 'click_city',
-    title: '🗺️ Selecione uma cidade',
-    message: 'Ótimo! Agora vá ao mapa e clique em qualquer cidade para selecioná-la como ponto de partida da sua primeira ferrovia.',
+    title: '🗺️ Clique em São Paulo',
+    message: 'Agora vá ao mapa e clique em São Paulo (cidade destacada em âmbar) para selecioná-la como ponto de partida.',
     advanceOn: 'action',
     position: 'bottom',
   },
   {
     id: 'build_rail',
-    title: '🚂 Construa sua primeira ferrovia',
-    message: 'Perfeito! Agora clique em outra cidade para conectar as duas com uma ferrovia. O modo 🚂 Ferrovia já está ativo.',
+    title: '🚂 Conecte Campinas',
+    message: 'São Paulo selecionado! Agora clique em Campinas (também destacada) para construir sua primeira ferrovia de carga.',
     advanceOn: 'action',
     position: 'bottom',
   },
   {
     id: 'switch_balsa',
     title: '⚓ Mude para modo Hidrovia',
-    message: 'Os grandes rios do Brasil também conectam cidades! Clique no botão "⚓" na barra inferior para mudar para o modo Hidrovia.',
+    message: 'Os rios do Brasil também conectam cidades! Clique no botão "⚓" na barra inferior para mudar para o modo Hidrovia.',
     refKey: 'mode-balsa',
     advanceOn: 'action',
     position: 'center',
   },
   {
     id: 'build_balsa',
-    title: '⚓ Construa uma Hidrovia',
-    message: 'Agora conecte duas cidades com porto para criar sua primeira rota hidroviária. Sugestão: Santos ↔ Rio de Janeiro.',
+    title: '⚓ Santos → Rio de Janeiro',
+    message: 'No mapa, clique em Santos (destacada) e depois em Rio de Janeiro para criar sua primeira rota hidroviária entre os dois portos.',
     advanceOn: 'action',
     position: 'bottom',
   },
@@ -80,8 +105,8 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   },
   {
     id: 'build_passenger',
-    title: '🚆 Construa uma linha de passageiros',
-    message: 'Conecte duas cidades para criar sua primeira linha de passageiros. Ela gera receita mensal baseada na demanda e tarifa!',
+    title: '🚆 SP → Campinas (Passageiros)',
+    message: 'Clique em São Paulo e depois em Campinas para criar sua primeira linha de passageiros. Ela gera receita mensal baseada na demanda!',
     advanceOn: 'action',
     position: 'bottom',
   },

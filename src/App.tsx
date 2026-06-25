@@ -9,7 +9,7 @@ import PauseScreen from './components/PauseScreen';
 import SplashScreen from './components/SplashScreen';
 import CutsceneModal from './components/CutsceneModal';
 import TutorialOverlay from './components/TutorialOverlay';
-import { TUTORIAL_STEPS, getTutorialRef } from './data/tutorial';
+import { TUTORIAL_STEPS, TUTORIAL_ROUTES, TUTORIAL_REQS, getTutorialRef } from './data/tutorial';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -206,20 +206,32 @@ export default function App() {
     const step = TUTORIAL_STEPS[tutorialStep];
     if (step.advanceOn !== 'action') return;
     const totalWorkers = Object.values(workers).reduce((a, b) => a + b, 0);
-    const totalResources = Object.values(resources).reduce((a, b) => a + b, 0);
-    const railCount = edges.filter(e => e.type === 'rail').length;
-    const balsaCount = edges.filter(e => e.type === 'balsa').length;
-    const passengerCount = edges.filter(e => e.type === 'passenger').length;
+    const R = TUTORIAL_ROUTES;
+    const W = TUTORIAL_REQS.workers;
+    const RES = TUTORIAL_REQS.resources;
+    const hasRailEdge = edges.some(e => e.type === 'rail' &&
+      ((e.cityA === R.rail.cityAId && e.cityB === R.rail.cityBId) ||
+       (e.cityA === R.rail.cityBId && e.cityB === R.rail.cityAId)));
+    const hasBalsaEdge = edges.some(e => e.type === 'balsa' &&
+      ((e.cityA === R.balsa.cityAId && e.cityB === R.balsa.cityBId) ||
+       (e.cityA === R.balsa.cityBId && e.cityB === R.balsa.cityAId)));
+    const hasPassengerEdge = edges.some(e => e.type === 'passenger' &&
+      ((e.cityA === R.passenger.cityAId && e.cityB === R.passenger.cityBId) ||
+       (e.cityA === R.passenger.cityBId && e.cityB === R.passenger.cityAId)));
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
-      hire_workers:     workers.terraplanagem >= 50 && workers.assentamento >= 30,
-      go_to_resources:  totalResources > 0,
-      click_city:       selectedCityId !== null,
-      build_rail:       railCount > tutorialEdgeSnapshot,
+      hire_workers:     workers.terraplanagem >= W.terraplanagem
+                     && workers.assentamento  >= W.assentamento
+                     && workers.sinalizacao   >= W.sinalizacao,
+      go_to_resources:  resources.aco     >= RES.aco
+                     && resources.brita   >= RES.brita
+                     && resources.cimento >= RES.cimento,
+      click_city:       selectedCityId === R.rail.cityAId,
+      build_rail:       hasRailEdge,
       switch_balsa:     constructionType === 'balsa',
-      build_balsa:      balsaCount > 0,
+      build_balsa:      hasBalsaEdge,
       switch_passenger: constructionType === 'passenger',
-      build_passenger:  passengerCount > 0,
+      build_passenger:  hasPassengerEdge,
     };
     if (conditions[step.id]) advanceTutorial();
   }, [tutorialStep, workers, resources, selectedCityId, edges, constructionType, tutorialEdgeSnapshot, advanceTutorial]);
@@ -2423,6 +2435,15 @@ export default function App() {
           showRouteColors={showRouteColors}
           constructionType={constructionType}
           onConstructionTypeChange={setConstructionType}
+          tutorialHighlightCities={(() => {
+            if (tutorialStep === null) return [];
+            const stepId = TUTORIAL_STEPS[tutorialStep]?.id;
+            if (stepId === 'click_city') return [TUTORIAL_ROUTES.rail.cityAId];
+            if (stepId === 'build_rail') return [TUTORIAL_ROUTES.rail.cityAId, TUTORIAL_ROUTES.rail.cityBId];
+            if (stepId === 'build_balsa') return [TUTORIAL_ROUTES.balsa.cityAId, TUTORIAL_ROUTES.balsa.cityBId];
+            if (stepId === 'build_passenger') return [TUTORIAL_ROUTES.passenger.cityAId, TUTORIAL_ROUTES.passenger.cityBId];
+            return [];
+          })()}
         />
       </main>
 
@@ -2455,12 +2476,17 @@ export default function App() {
         let progressText: string | undefined;
         let progressFraction: number | undefined;
         if (tStep.id === 'hire_workers') {
-          const t = workers.terraplanagem, a = workers.assentamento;
-          progressText = `Terr: ${t}/50 · Asst: ${a}/30`;
-          progressFraction = Math.min(1, (Math.min(t, 50) + Math.min(a, 30)) / 80);
+          const { terraplanagem: wt, assentamento: wa, sinalizacao: ws } = TUTORIAL_REQS.workers;
+          const t = workers.terraplanagem, a = workers.assentamento, s = workers.sinalizacao;
+          progressText = `Terra: ${t}/${wt} · Assent: ${a}/${wa} · Sinal: ${s}/${ws}`;
+          const done = Math.min(t, wt) + Math.min(a, wa) + Math.min(s, ws);
+          progressFraction = done / (wt + wa + ws);
         } else if (tStep.id === 'go_to_resources') {
-          progressText = `${totalResources} unidades compradas`;
-          progressFraction = Math.min(1, totalResources / 50);
+          const { aco: ra, brita: rb, cimento: rc } = TUTORIAL_REQS.resources;
+          const a = resources.aco, b = resources.brita, c = resources.cimento;
+          progressText = `Aço: ${a}/${ra} · Brita: ${b}/${rb} · Cimento: ${c}/${rc}`;
+          const done = Math.min(a, ra) + Math.min(b, rb) + Math.min(c, rc);
+          progressFraction = done / (ra + rb + rc);
         }
         return (
           <TutorialOverlay
