@@ -290,7 +290,7 @@ export default function App() {
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
-      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions]);
+      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions, tutorialStep]);
 
   // Keep ref in sync so cutscene useEffect always reads current value
   useEffect(() => { shownCutscenesRef.current = shownCutscenes; }, [shownCutscenes]);

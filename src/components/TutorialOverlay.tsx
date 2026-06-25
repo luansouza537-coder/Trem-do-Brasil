@@ -50,10 +50,9 @@ export default function TutorialOverlay({
             WebkitMaskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
             maskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
           }}
-          onClick={onSkip}
         />
       ) : (
-        <div className="absolute inset-0 bg-black/75 pointer-events-auto" onClick={() => {}} />
+        <div className="absolute inset-0 bg-black/75 pointer-events-auto" />
       )}
 
       {/* Spotlight border glow */}
