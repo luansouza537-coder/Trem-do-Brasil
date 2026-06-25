@@ -16,11 +16,14 @@ export const TUTORIAL_ROUTES = {
   passenger: { cityAId: '1',  cityBId: '28', label: 'São Paulo → Campinas',    distanceKm: 84 },
 } as const;
 
-// Worker targets intentionally generous so player has capacity for all tutorial routes
+// Worker targets: 500 of every type
 export const TUTORIAL_REQS = {
   workers: {
     terraplanagem: 500,
     assentamento:  500,
+    sinalizacao:   500,
+    explosivos:    500,
+    manutencao:    500,
   },
   resources: {
     aco:     168,  // ceil(84 × 2.0) for SP→Campinas
@@ -48,7 +51,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'hire_workers',
     title: '👷 Contrate trabalhadores',
-    message: 'Contrate 500 Terraplanagem e 500 Assentamento. Clique em "+10" várias vezes em cada tipo — quanto mais, melhor! Isso garantirá capacidade para todas as obras do tutorial.',
+    message: 'Contrate 500 trabalhadores de cada tipo: Terraplanagem, Assentamento, Sinalização, Explosivos e Manutenção. Clique em "+10" várias vezes em cada linha até atingir 500.',
     refKey: 'workers-section',
     advanceOn: 'action',
     position: 'bottom',

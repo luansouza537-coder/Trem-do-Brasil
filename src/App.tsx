@@ -217,7 +217,10 @@ export default function App() {
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
       hire_workers:     workers.terraplanagem >= W.terraplanagem
-                     && workers.assentamento  >= W.assentamento,
+                     && workers.assentamento  >= W.assentamento
+                     && workers.sinalizacao   >= W.sinalizacao
+                     && workers.explosivos    >= W.explosivos
+                     && workers.manutencao    >= W.manutencao,
       go_to_resources:  resources.aco     >= RES.aco
                      && resources.brita   >= RES.brita
                      && resources.cimento >= RES.cimento,
@@ -2478,10 +2481,17 @@ export default function App() {
         let progressText: string | undefined;
         let progressFraction: number | undefined;
         if (tStep.id === 'hire_workers') {
-          const { terraplanagem: wt, assentamento: wa } = TUTORIAL_REQS.workers;
-          const t = workers.terraplanagem, a = workers.assentamento;
-          progressText = `Terraplanagem: ${t}/${wt} · Assentamento: ${a}/${wa}`;
-          progressFraction = (Math.min(t, wt) + Math.min(a, wa)) / (wt + wa);
+          const W2 = TUTORIAL_REQS.workers;
+          const done = (Math.min(workers.terraplanagem, W2.terraplanagem)
+                      + Math.min(workers.assentamento,  W2.assentamento)
+                      + Math.min(workers.sinalizacao,   W2.sinalizacao)
+                      + Math.min(workers.explosivos,    W2.explosivos)
+                      + Math.min(workers.manutencao,    W2.manutencao));
+          const total = W2.terraplanagem + W2.assentamento + W2.sinalizacao + W2.explosivos + W2.manutencao;
+          const t = workers.terraplanagem, a = workers.assentamento,
+                s = workers.sinalizacao, e2 = workers.explosivos, m = workers.manutencao;
+          progressText = `Terra:${t}/500 · Asst:${a}/500 · Sinal:${s}/500 · Explo:${e2}/500 · Mant:${m}/500`;
+          progressFraction = done / total;
         } else if (tStep.id === 'go_to_resources') {
           const { aco: ra, brita: rb, cimento: rc } = TUTORIAL_REQS.resources;
           const a = resources.aco, b = resources.brita, c = resources.cimento;
