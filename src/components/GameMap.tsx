@@ -1123,33 +1123,32 @@ export default function GameMap({
     });
   }, [cities, edges, showSuggestions, onConnectCities]);
 
+  const CONSTRUCTION_MODES = [
+    { type: 'rail',      icon: '🚂', label: 'Ferrovia',  bg: 'bg-amber-500/20',  border: 'border-amber-500/60',  text: 'text-amber-300'  },
+    { type: 'balsa',     icon: '⚓', label: 'Hidrovia',  bg: 'bg-sky-500/20',    border: 'border-sky-500/60',    text: 'text-sky-300'    },
+    { type: 'passenger', icon: '🚆', label: 'Passag.',   bg: 'bg-purple-500/20', border: 'border-purple-500/60', text: 'text-purple-300' },
+  ] as const;
+  const activeMode = CONSTRUCTION_MODES.find(m => m.type === constructionType) ?? CONSTRUCTION_MODES[0];
+  const nextMode = CONSTRUCTION_MODES[(CONSTRUCTION_MODES.indexOf(activeMode) + 1) % CONSTRUCTION_MODES.length];
+
   return (
     <div className="w-full h-full relative" id="map-container">
       <div ref={mapContainerRef} className="w-full h-full" style={{ outline: 'none' }} />
 
-      {/* Construction mode chip — floating over map */}
-      {onConstructionTypeChange && (() => {
-        const MODES = [
-          { type: 'rail',      icon: '🚂', label: 'Ferrovia',  bg: 'bg-amber-500/20',   border: 'border-amber-500/60',   text: 'text-amber-300'   },
-          { type: 'balsa',     icon: '⚓', label: 'Hidrovia',  bg: 'bg-sky-500/20',     border: 'border-sky-500/60',     text: 'text-sky-300'     },
-          { type: 'passenger', icon: '🚆', label: 'Passag.',   bg: 'bg-purple-500/20',  border: 'border-purple-500/60',  text: 'text-purple-300'  },
-        ] as const;
-        const active = MODES.find(m => m.type === constructionType) ?? MODES[0];
-        const next = MODES[(MODES.indexOf(active) + 1) % MODES.length];
-        return (
-          <button
-            onClick={e => { e.stopPropagation(); onConstructionTypeChange(next.type); }}
-            className={`absolute bottom-8 left-3 z-[1000] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${active.bg} ${active.border}`}
-            title={`Modo ativo: ${active.label} — clique para mudar para ${next.label}`}
-          >
-            <span className="text-base leading-none">{active.icon}</span>
-            <div className="flex flex-col leading-none">
-              <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Modo</span>
-              <span className={`text-[11px] font-black ${active.text}`}>{active.label}</span>
-            </div>
-          </button>
-        );
-      })()}
+      {/* Construction mode chip — fixed so overflow-hidden on parent doesn't clip it */}
+      {onConstructionTypeChange && (
+        <button
+          onClick={e => { e.stopPropagation(); onConstructionTypeChange(nextMode.type); }}
+          className={`fixed bottom-6 left-4 z-[9990] flex items-center gap-1.5 px-3 py-2 rounded-xl border shadow-xl backdrop-blur-sm cursor-pointer transition-all hover:scale-105 active:scale-95 ${activeMode.bg} ${activeMode.border}`}
+          title={`Modo ativo: ${activeMode.label} — clique para mudar para ${nextMode.label}`}
+        >
+          <span className="text-lg leading-none">{activeMode.icon}</span>
+          <div className="flex flex-col leading-none gap-0.5">
+            <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Modo</span>
+            <span className={`text-[11px] font-black ${activeMode.text}`}>{activeMode.label}</span>
+          </div>
+        </button>
+      )}
 
       {/* Revenue color legend — only shown when mode is active */}
       {showRouteColors && (
