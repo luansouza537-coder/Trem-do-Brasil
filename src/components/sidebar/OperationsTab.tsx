@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { registerTutorialRef } from '../../data/tutorial';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, InfraProject } from '../../types';
 import { RESOURCE_BUY_PRICES, RESOURCE_NAMES, WORKER_SALARIES, WORKER_NAMES, FundGrant, getSimultaneousPenalty, getActiveSeasonalEffects } from '../../utils/gameRules';
 import { getAdvisorMessages, AdvisorPriority } from '../../utils/advisor';
@@ -71,6 +72,13 @@ export default function OperationsTab({
   onFireWorker,
 }: OperationsTabProps) {
   const [showHowToPlay, setShowHowToPlay] = useState(true);
+
+  const workersSectionRef = useRef<HTMLDivElement>(null);
+  const resourcesSectionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (workersSectionRef.current) registerTutorialRef('workers-section', workersSectionRef as React.RefObject<HTMLElement>);
+    if (resourcesSectionRef.current) registerTutorialRef('resources-section', resourcesSectionRef as React.RefObject<HTMLElement>);
+  }, []);
 
   const totalPayroll = useMemo(() => {
     return (workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
@@ -156,7 +164,7 @@ export default function OperationsTab({
       )}
 
       {/* Equipe de Engenharia (Trabalhadores) */}
-      <div className="p-3.5 flex flex-col gap-2">
+      <div ref={workersSectionRef} className="p-3.5 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-amber-500" /> Equipes de Obra:
@@ -303,7 +311,7 @@ export default function OperationsTab({
       )}
 
       {/* 3. Insumos de Construção */}
-      <div className="p-3.5 flex flex-col gap-2">
+      <div ref={resourcesSectionRef} className="p-3.5 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1">
             📦 Insumos de Construção (Estoque):

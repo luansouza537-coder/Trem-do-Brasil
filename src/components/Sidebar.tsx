@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { registerTutorialRef } from '../data/tutorial';
 import { City, Edge, GameResources, GameEvent, GameWorkers, ConstructionProject, NewsItem, InfraProject } from '../types';
 import { MissionDef } from '../utils/missions';
 import { SaveGame } from '../utils/persistence';
@@ -114,6 +115,16 @@ export default function Sidebar({
   const importFileRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news' | 'financial' | 'passenger'>('cities');
   const setMobileExpanded = useCallback((v: boolean) => onMobileExpandedChange?.(v), [onMobileExpandedChange]);
+
+  // Tutorial refs
+  const tabOperationsRef = useRef<HTMLButtonElement>(null);
+  const modeBalsaRef = useRef<HTMLButtonElement>(null);
+  const modePassengerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (tabOperationsRef.current) registerTutorialRef('tab-operations', tabOperationsRef as React.RefObject<HTMLElement>);
+    if (modeBalsaRef.current) registerTutorialRef('mode-balsa', modeBalsaRef as React.RefObject<HTMLElement>);
+    if (modePassengerRef.current) registerTutorialRef('mode-passenger', modePassengerRef as React.RefObject<HTMLElement>);
+  }, []);
 
   // Orientation detection
   const [isPortrait, setIsPortrait] = useState(
@@ -316,7 +327,7 @@ export default function Sidebar({
           { id: 'financial',  icon: '💰', label: 'Finanças',   badge: (budgetState?.currentBudget ?? 0) < 0, count: 0 },
           { id: 'passenger',  icon: '🚆', label: 'Passag.',   badge: false, count: passengerEdges.filter(e => e.status === 'complete').length },
         ] as const).map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} ref={tab.id === 'operations' ? tabOperationsRef : undefined} onClick={() => setActiveTab(tab.id)}
             className={`flex-1 text-center py-2.5 rounded-t-lg text-[10px] font-black tracking-wide transition flex flex-col items-center justify-center gap-0.5 cursor-pointer relative border-b-2 ${
               activeTab === tab.id
                 ? 'bg-slate-800 text-amber-400 border-amber-500 shadow-inner'
@@ -441,6 +452,7 @@ export default function Sidebar({
           ] as const).map(m => (
             <button
               key={m.id}
+              ref={m.id === 'balsa' ? modeBalsaRef : m.id === 'passenger' ? modePassengerRef : undefined}
               onClick={() => onConstructionTypeChange(m.id)}
               className={`flex-1 py-1 rounded text-[11px] transition-all text-center ${
                 constructionType === m.id

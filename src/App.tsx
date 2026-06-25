@@ -8,8 +8,8 @@ import GameMap from './components/GameMap';
 import PauseScreen from './components/PauseScreen';
 import SplashScreen from './components/SplashScreen';
 import CutsceneModal from './components/CutsceneModal';
-import TutorialModal from './components/TutorialModal';
-import { TUTORIAL_STEPS } from './data/tutorialSteps';
+import TutorialOverlay from './components/TutorialOverlay';
+import { TUTORIAL_STEPS, getTutorialRef } from './data/tutorial';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -188,40 +188,55 @@ export default function App() {
   });
 
   // Tutorial state
-  const [tutorialStep, setTutorialStep] = useState(0);
-  const [tutorialDone, setTutorialDone] = useState(() => localStorage.getItem('trem_tutorial_done') === '1');
-  const prevEdgesLengthRef = React.useRef(0);
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [tutorialEdgeSnapshot, setTutorialEdgeSnapshot] = useState(0);
 
-  const tutorialWaitForAction = !tutorialDone ? (TUTORIAL_STEPS[tutorialStep]?.waitForAction ?? null) : null;
-
-  const handleFinishTutorial = React.useCallback(() => {
-    setTutorialDone(true);
-    localStorage.setItem('trem_tutorial_done', '1');
-  }, []);
-
-  const advanceTutorialOnAction = React.useCallback((action: 'click_city' | 'draw_route') => {
-    setTutorialDone(prev => {
-      if (prev) return prev;
-      return prev;
-    });
+  const advanceTutorial = React.useCallback(() => {
     setTutorialStep(prev => {
-      const step = TUTORIAL_STEPS[prev];
-      if (step?.waitForAction === action && prev + 1 < TUTORIAL_STEPS.length) {
-        return prev + 1;
-      }
-      return prev;
+      if (prev === null) return null;
+      const next = prev + 1;
+      return next >= TUTORIAL_STEPS.length ? null : next;
     });
   }, []);
 
-  // Detect first completed edge to advance draw_route tutorial step
+  const finalizeTutorial = React.useCallback(() => {
+    setTutorialStep(null);
+  }, []);
+
+  // Placeholder kept for compatibility with GameMap prop
+  const advanceTutorialOnAction = React.useCallback((_action: string) => {}, []);
+
+  // Auto-advance tutorial when player completes the required action
   useEffect(() => {
-    if (tutorialDone) return;
-    const completedCount = edges.filter(e => e.status === 'complete').length;
-    if (completedCount > 0 && prevEdgesLengthRef.current === 0) {
-      advanceTutorialOnAction('draw_route');
+    if (tutorialStep === null) return;
+    const step = TUTORIAL_STEPS[tutorialStep];
+    if (step.advanceOn !== 'action') return;
+    const totalWorkers = Object.values(workers).reduce((a, b) => a + b, 0);
+    const totalResources = Object.values(resources).reduce((a, b) => a + b, 0);
+    const railCount = edges.filter(e => e.type === 'rail').length;
+    const balsaCount = edges.filter(e => e.type === 'balsa').length;
+    const passengerCount = edges.filter(e => e.type === 'passenger').length;
+    const conditions: Record<string, boolean> = {
+      go_to_team:       totalWorkers > 0,
+      hire_workers:     totalWorkers >= 10,
+      go_to_resources:  totalResources > 0,
+      click_city:       selectedCityId !== null,
+      build_rail:       railCount > tutorialEdgeSnapshot,
+      switch_balsa:     constructionType === 'balsa',
+      build_balsa:      balsaCount > 0,
+      switch_passenger: constructionType === 'passenger',
+      build_passenger:  passengerCount > 0,
+    };
+    if (conditions[step.id]) advanceTutorial();
+  }, [tutorialStep, workers, resources, selectedCityId, edges, constructionType, tutorialEdgeSnapshot, advanceTutorial]);
+
+  // When reaching click_city step, reset city selection so player must act fresh
+  useEffect(() => {
+    if (tutorialStep === null) return;
+    if (TUTORIAL_STEPS[tutorialStep]?.id === 'click_city') {
+      setSelectedCityId(null);
     }
-    prevEdgesLengthRef.current = completedCount;
-  }, [edges, tutorialDone, advanceTutorialOnAction]);
+  }, [tutorialStep]);
 
   // Keep refs in sync so the monthly useEffect always reads current values without adding them as deps
   useEffect(() => { edgesRef.current = edges; }, [edges]);
@@ -264,6 +279,7 @@ export default function App() {
         infraQueue, yardLevels, warehouses, silos,
         shownCutscenes, autoBuyResources, expiredMissions,
         passengerFares: {}, passengerExtraFleets: {},
+        tutorialStep,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -281,6 +297,7 @@ export default function App() {
 
   // Cutscene triggers — runs whenever edges change, reads ref to avoid stale closure
   useEffect(() => {
+    if (tutorialStep !== null) return; // suppress cutscenes during tutorial
     const completedCount = edges.filter(e => e.status === 'complete').length;
     if (completedCount === 0) return;
     const shown = shownCutscenesRef.current;
@@ -794,6 +811,11 @@ export default function App() {
     setActiveCutscene(null);
     setExpiredMissions([]);
     setAutoBuyResources(true);
+    // Start tutorial for new games — zero out resources and workers so player learns to buy them
+    setTutorialStep(0);
+    setTutorialEdgeSnapshot(0);
+    setResources({ aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 });
+    setWorkers({ terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 });
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -830,6 +852,7 @@ export default function App() {
     shownCutscenesRef.current = loadedCutscenes;
     setAutoBuyResources(save.autoBuyResources ?? true);
     setExpiredMissions(save.expiredMissions ?? []);
+    setTutorialStep(save.tutorialStep ?? null);
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -2420,14 +2443,15 @@ export default function App() {
         ))}
       </div>
 
-      {/* --- TUTORIAL MODAL --- */}
-      {!tutorialDone && !welcomeOpen && !hasSaveGame && splashDone && (
-        <TutorialModal
-          steps={TUTORIAL_STEPS}
-          currentIndex={tutorialStep}
-          waitingForAction={tutorialWaitForAction !== null}
-          onNext={() => setTutorialStep(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1))}
-          onFinish={handleFinishTutorial}
+      {/* --- TUTORIAL OVERLAY --- */}
+      {tutorialStep !== null && splashDone && !welcomeOpen && (
+        <TutorialOverlay
+          step={TUTORIAL_STEPS[tutorialStep]}
+          stepIndex={tutorialStep}
+          totalSteps={TUTORIAL_STEPS.length}
+          highlightRef={TUTORIAL_STEPS[tutorialStep].refKey ? getTutorialRef(TUTORIAL_STEPS[tutorialStep].refKey!) : undefined}
+          onNext={advanceTutorial}
+          onSkip={finalizeTutorial}
         />
       )}
 

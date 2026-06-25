@@ -29,6 +29,7 @@ export interface SaveGame {
   expiredMissions?: string[];
   passengerFares?: Record<string, number>;
   passengerExtraFleets?: Record<string, number>;
+  tutorialStep?: number | null;
 }
 
 const getSaveKey = (slot: number) =>
@@ -63,6 +64,7 @@ export function loadGame(slot = 1): SaveGame | null {
     if (!save.expiredMissions) save.expiredMissions = [];
     if (!save.passengerFares) save.passengerFares = {};
     if (!save.passengerExtraFleets) save.passengerExtraFleets = {};
+    if (save.tutorialStep === undefined) save.tutorialStep = null;
     // Patch edge fields added in later versions
     if (save.edges) {
       save.edges = save.edges.map(e => ({
