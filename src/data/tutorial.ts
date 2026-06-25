@@ -28,7 +28,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'hire_workers',
     title: '👷 Contrate trabalhadores',
-    message: 'Contrate pelo menos 5 trabalhadores de Terraplanagem e 5 de Assentamento. Eles são essenciais para construir trilhos.',
+    message: 'Clique em "+ 10" várias vezes nos tipos Terraplanagem e Assentamento de Trilhos. Você precisa de pelo menos 50 de Terraplanagem e 30 de Assentamento para construir sua primeira linha.',
     refKey: 'workers-section',
     advanceOn: 'action',
     position: 'bottom',

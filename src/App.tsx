@@ -212,7 +212,7 @@ export default function App() {
     const passengerCount = edges.filter(e => e.type === 'passenger').length;
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
-      hire_workers:     totalWorkers >= 10,
+      hire_workers:     workers.terraplanagem >= 50 && workers.assentamento >= 30,
       go_to_resources:  totalResources > 0,
       click_city:       selectedCityId !== null,
       build_rail:       railCount > tutorialEdgeSnapshot,
@@ -2455,8 +2455,9 @@ export default function App() {
         let progressText: string | undefined;
         let progressFraction: number | undefined;
         if (tStep.id === 'hire_workers') {
-          progressText = `${totalWorkers} / 10 trabalhadores`;
-          progressFraction = totalWorkers / 10;
+          const t = workers.terraplanagem, a = workers.assentamento;
+          progressText = `Terr: ${t}/50 · Asst: ${a}/30`;
+          progressFraction = Math.min(1, (Math.min(t, 50) + Math.min(a, 30)) / 80);
         } else if (tStep.id === 'go_to_resources') {
           progressText = `${totalResources} unidades compradas`;
           progressFraction = Math.min(1, totalResources / 50);
