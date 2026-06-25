@@ -6,7 +6,7 @@ export interface SaveGame {
   edges: Edge[];
   upgradedHubs: string[];
   maintenanceYards: string[];
-  constructionType: 'rail' | 'balsa';
+  constructionType: 'rail' | 'balsa' | 'passenger';
   resources: GameResources;
   spentOnResources: number;
   workers: GameWorkers;
@@ -27,6 +27,8 @@ export interface SaveGame {
   shownCutscenes?: string[];
   autoBuyResources?: boolean;
   expiredMissions?: string[];
+  passengerFares?: Record<string, number>;
+  passengerExtraFleets?: Record<string, number>;
 }
 
 const getSaveKey = (slot: number) =>
@@ -59,6 +61,8 @@ export function loadGame(slot = 1): SaveGame | null {
     if (!save.shownCutscenes) save.shownCutscenes = [];
     if (save.autoBuyResources === undefined) save.autoBuyResources = true;
     if (!save.expiredMissions) save.expiredMissions = [];
+    if (!save.passengerFares) save.passengerFares = {};
+    if (!save.passengerExtraFleets) save.passengerExtraFleets = {};
     // Patch edge fields added in later versions
     if (save.edges) {
       save.edges = save.edges.map(e => ({

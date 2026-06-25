@@ -687,3 +687,54 @@ export function getEdgeMonthlyRevenue(
     : 1.0;
   return Math.round(base * maintPenalty * maintBonus);
 }
+
+// ── Passenger railway ─────────────────────────────────────────────────────────
+export const PASSENGER_COST_PER_KM = 30_000_000;
+export const PASSENGER_BUILD_SPEED = 0.012; // months per km
+
+export function getCityPassengerDemand(type: string): number {
+  const DEMAND: Record<string, number> = {
+    capital: 600_000,
+    polo_industrial: 350_000,
+    polo_agricola: 120_000,
+    cidade: 80_000,
+    mineracao: 60_000,
+    fronteira: 50_000,
+  };
+  return DEMAND[type] ?? 80_000;
+}
+
+export function getPassengerMonthlyRevenue(
+  edges: Edge[],
+  cities: City[],
+  gameYear: number,
+  activeEffects: string[]
+): number {
+  const demandMult = getDemandGrowthMultiplier(gameYear);
+  const eventMult = activeEffects.includes('PANDEMIA2') ? 0.80
+    : activeEffects.includes('GRIPE_AVIARIA_2') ? 0.95
+    : activeEffects.includes('COPA_MUNDO_2035') ? 1.30
+    : activeEffects.includes('OLIMPIADAS') ? 1.25
+    : activeEffects.includes('VISITA_PAPA') ? 1.20
+    : activeEffects.includes('COPA_AMERICA') ? 1.05
+    : activeEffects.includes('PROTESTOS_PEDAGIO') ? 0.80
+    : 1.0;
+
+  return edges
+    .filter(e => e.type === 'passenger' && e.status === 'complete')
+    .reduce((sum, edge) => {
+      const cityA = cities.find(c => c.id === edge.from);
+      const cityB = cities.find(c => c.id === edge.to);
+      const demandA = getCityPassengerDemand(cityA?.type ?? 'cidade');
+      const demandB = getCityPassengerDemand(cityB?.type ?? 'cidade');
+      const demandBase = (demandA + demandB) / 2;
+      const fare = edge.fare ?? 150;
+      const elasticity = Math.max(0.2, 1 - (fare - 120) / 400);
+      const capacityBase = Math.round((edge.distance / 100) * 300);
+      const capacity = Math.max(300, capacityBase + (edge.extraFleets ?? 0) * 150);
+      const pax = Math.min(demandBase * elasticity, capacity);
+      const satisfaction = edge.satisfaction ?? 100;
+      const rev = Math.round(pax * fare * (satisfaction / 100) * demandMult * eventMult);
+      return sum + rev;
+    }, 0);
+}

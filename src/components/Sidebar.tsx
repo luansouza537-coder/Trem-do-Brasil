@@ -9,6 +9,7 @@ import FinancialTab from './sidebar/FinancialTab';
 import MissionsTab from './sidebar/MissionsTab';
 import NewsTab from './sidebar/NewsTab';
 import CitiesTab from './sidebar/CitiesTab';
+import PassengersTab from './sidebar/PassengersTab';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -38,8 +39,8 @@ interface SidebarProps {
   onBuildYard?: (cityId: string, level: 1 | 2 | 3) => void;
   infraQueue?: InfraProject[];
   yardLevels?: Record<string, number>;
-  constructionType?: 'rail' | 'balsa';
-  onConstructionTypeChange?: (type: 'rail' | 'balsa') => void;
+  constructionType?: 'rail' | 'balsa' | 'passenger';
+  onConstructionTypeChange?: (type: 'rail' | 'balsa' | 'passenger') => void;
   budgetState?: {
     totalSpent: number; spentRail: number; spentBalsa: number; spentYards: number;
     spentHubs: number; grantIncome: number; currentBudget: number;
@@ -78,6 +79,9 @@ interface SidebarProps {
   onFlyToRegion?: (lat: number, lng: number) => void;
   mobileExpanded?: boolean;
   onMobileExpandedChange?: (v: boolean) => void;
+  passengerEdges?: Edge[];
+  onSetPassengerFare?: (edgeId: string, fare: number) => void;
+  onBuyExtraFleet?: (edgeId: string) => void;
 }
 
 export default function Sidebar({
@@ -86,7 +90,7 @@ export default function Sidebar({
   showSuggestions, onToggleSuggestions, showRouteColors = false, onToggleRouteColors = () => {},
   upgradedHubs = [], onBuildHub = () => {}, maintenanceYards = [],
   onBuildYard = () => {}, infraQueue = [], yardLevels = {},
-  constructionType = 'rail', onConstructionTypeChange = () => {},
+  constructionType = 'rail' as 'rail' | 'balsa' | 'passenger', onConstructionTypeChange = () => {},
   budgetState = {
     totalSpent: 0, spentRail: 0, spentBalsa: 0, spentYards: 0, spentHubs: 0,
     grantIncome: 0, currentBudget: 1250000000000, unlockedGrants: [],
@@ -105,9 +109,10 @@ export default function Sidebar({
   onDoubleTrack = () => {}, onUpgradeTrainLevel = () => {}, onPassengerUpgrade = () => {},
   expiredMissions = [], completedMissions = [], onFlyToRegion,
   mobileExpanded = false, onMobileExpandedChange,
+  passengerEdges = [], onSetPassengerFare = () => {}, onBuyExtraFleet = () => {},
 }: SidebarProps) {
   const importFileRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news' | 'financial'>('cities');
+  const [activeTab, setActiveTab] = useState<'cities' | 'operations' | 'missions' | 'news' | 'financial' | 'passenger'>('cities');
   const setMobileExpanded = useCallback((v: boolean) => onMobileExpandedChange?.(v), [onMobileExpandedChange]);
 
   // Orientation detection
@@ -130,7 +135,7 @@ export default function Sidebar({
 
   // Swipe between tabs
   const swipeTouchStartX = useRef<number | null>(null);
-  const TABS: ('cities' | 'operations' | 'missions' | 'news' | 'financial')[] = ['cities', 'operations', 'missions', 'news', 'financial'];
+  const TABS: ('cities' | 'operations' | 'missions' | 'news' | 'financial' | 'passenger')[] = ['cities', 'operations', 'missions', 'news', 'financial', 'passenger'];
   const handleTabSwipe = useCallback((e: React.TouchEvent) => {
     if (swipeTouchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
@@ -309,6 +314,7 @@ export default function Sidebar({
           { id: 'missions',   icon: '🎯', label: 'Missões',  badge: missionResults.some(m => m.completed), count: 0 },
           { id: 'news',       icon: '📰', label: 'Notícias',   badge: newsItems.length > 0 && activeTab !== 'news', count: 0 },
           { id: 'financial',  icon: '💰', label: 'Finanças',   badge: (budgetState?.currentBudget ?? 0) < 0, count: 0 },
+          { id: 'passenger',  icon: '🚆', label: 'Passag.',   badge: false, count: passengerEdges.filter(e => e.status === 'complete').length },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`flex-1 text-center py-2.5 rounded-t-lg text-[10px] font-black tracking-wide transition flex flex-col items-center justify-center gap-0.5 cursor-pointer relative border-b-2 ${
@@ -381,6 +387,18 @@ export default function Sidebar({
           budgetState={budgetState ?? { totalSpent: 0, spentRail: 0, spentBalsa: 0, spentYards: 0, spentHubs: 0, grantIncome: 0, currentBudget: 0, unlockedGrants: [] }}
           budgetHistory={budgetHistory ?? []}
         />
+      )}
+
+      {activeTab === 'passenger' && (
+        <div className="flex-1 overflow-y-auto">
+          <PassengersTab
+            passengerEdges={passengerEdges}
+            gameYear={gameYear}
+            activeEffects={activeEvents.map(e => e.statusEffect)}
+            onSetFare={onSetPassengerFare}
+            onBuyExtraFleet={onBuyExtraFleet}
+          />
+        </div>
       )}
 
       {activeTab === 'cities' && (

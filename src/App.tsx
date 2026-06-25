@@ -40,7 +40,10 @@ import {
   HUB_CONFIG,
   WAREHOUSE_CONFIG,
   SILO_CONFIG,
-  YARD_COVERAGE_KM
+  YARD_COVERAGE_KM,
+  PASSENGER_COST_PER_KM,
+  PASSENGER_BUILD_SPEED,
+  getPassengerMonthlyRevenue,
 } from './utils/gameRules';
 import { 
   Train, 
@@ -114,7 +117,9 @@ export default function App() {
   const shownCutscenesRef = React.useRef<string[]>([]);
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
   const [yardLevels, setYardLevels] = useState<Record<string, number>>({});
-  const [constructionType, setConstructionType] = useState<'rail' | 'balsa'>('rail');
+  const [constructionType, setConstructionType] = useState<'rail' | 'balsa' | 'passenger'>('rail');
+  const [passengerFares, setPassengerFares] = useState<Record<string, number>>({});
+  const [passengerExtraFleets, setPassengerExtraFleets] = useState<Record<string, number>>({});
 
   // Resource & Crises states
   const [resources, setResources] = useState<GameResources>({
@@ -260,6 +265,7 @@ export default function App() {
         currentPartyStatusEffect: activeEvents.find(e => e.statusEffect.startsWith('PARTIDO_'))?.statusEffect ?? null,
         infraQueue, yardLevels, warehouses, silos,
         shownCutscenes, autoBuyResources, expiredMissions,
+        passengerFares, passengerExtraFleets,
       }, saveSlot);
       setHasSaveGame(true);
       setSaveDate(getSaveDate(saveSlot));
@@ -270,7 +276,8 @@ export default function App() {
     };
   }, [edges, upgradedHubs, maintenanceYards, constructionType, resources,
       spentOnResources, workers, spentOnWorkers, activeEvents, gameYear, monthIdx, welcomeOpen, triggeredEventIds,
-      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions]);
+      infraQueue, yardLevels, warehouses, silos, shownCutscenes, autoBuyResources, expiredMissions,
+      passengerFares, passengerExtraFleets]);
 
   // Keep ref in sync so cutscene useEffect always reads current value
   useEffect(() => { shownCutscenesRef.current = shownCutscenes; }, [shownCutscenes]);
@@ -392,6 +399,19 @@ export default function App() {
         setTotalRevenue(prev => prev + monthlyRev);
       }
 
+      // Passenger revenue (separate from cargo)
+      const passengerRev = getPassengerMonthlyRevenue(edgesRef.current, CITIES, gameYear, activeEffects);
+      if (passengerRev > 0) {
+        setTotalRevenue(prev => prev + passengerRev);
+      }
+
+      // Passenger satisfaction decay — 3pts/month, floors at 20
+      setEdges(prev => prev.map(e =>
+        e.type === 'passenger' && e.status === 'complete'
+          ? { ...e, satisfaction: Math.max(20, (e.satisfaction ?? 100) - 3) }
+          : e
+      ));
+
       // Monthly summary toast
       const net = monthlyRev - adjustedPayroll;
       const fmt = (v: number) => v >= 1e12 ? `${(v/1e12).toFixed(2)}T` : v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : `${(v/1e6).toFixed(0)}M`;
@@ -420,6 +440,7 @@ export default function App() {
         }));
         const totalReturned: GameWorkers = { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 };
         completedProjects.forEach(p => {
+          if (p.type === 'passenger') return; // passenger projects allocate no workers
           if (p.workersAllocated) {
             (Object.keys(p.workersAllocated) as Array<keyof GameWorkers>).forEach(k => {
               totalReturned[k] += p.workersAllocated[k];
@@ -438,6 +459,11 @@ export default function App() {
         completedProjects.forEach(p => {
           const cityA = CITY_MAP.get(p.from);
           const cityB = CITY_MAP.get(p.to);
+          if (p.type === 'passenger') {
+            showToast(`🚆 Linha de passageiros concluída: ${cityA?.name} ↔ ${cityB?.name} (${p.distance.toFixed(0)} km)`, 'success');
+            sound.playConnect();
+            return;
+          }
           const workerReturn = p.workersAllocated
             ? Object.entries(p.workersAllocated).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${WORKER_NAMES[k as keyof GameWorkers].split(' ')[0]}`).join(', ')
             : '';
@@ -763,6 +789,8 @@ export default function App() {
     setActiveCutscene(null);
     setExpiredMissions([]);
     setAutoBuyResources(true);
+    setPassengerFares({});
+    setPassengerExtraFleets({});
 
     sound.playReset();
     deleteSave(); setHasSaveGame(false); setSaveDate(null);
@@ -799,6 +827,8 @@ export default function App() {
     shownCutscenesRef.current = loadedCutscenes;
     setAutoBuyResources(save.autoBuyResources ?? true);
     setExpiredMissions(save.expiredMissions ?? []);
+    setPassengerFares(save.passengerFares ?? {});
+    setPassengerExtraFleets(save.passengerExtraFleets ?? {});
     setSaveSlot(slot);
     setWelcomeOpen(false);
     sound.playConnect();
@@ -847,6 +877,8 @@ export default function App() {
       setShownCutscenes(importedCutscenes);
       shownCutscenesRef.current = importedCutscenes;
       setAutoBuyResources(data.autoBuyResources ?? true);
+      setPassengerFares(data.passengerFares ?? {});
+      setPassengerExtraFleets(data.passengerExtraFleets ?? {});
       setExpiredMissions(data.expiredMissions ?? []);
       showToast('📥 Save importado com sucesso!', 'success');
     } catch {
@@ -1445,11 +1477,84 @@ export default function App() {
     return edges.reduce((acc, edge) => acc + edge.distance, 0);
   }, [edges]);
 
+  // Passenger line construction — simpler flow, no resources/workers
+  const handleConnectPassenger = (idA: string, idB: string) => {
+    if (idA === idB) { setSelectedCityId(null); return; }
+    const cityA = CITIES.find(c => c.id === idA);
+    const cityB = CITIES.find(c => c.id === idB);
+    if (!cityA || !cityB) return;
+    const edgeId = `${idA}-${idB}`;
+    const edgeIdRev = `${idB}-${idA}`;
+    const existing = edges.find(e => (e.id === edgeId || e.id === edgeIdRev) && e.type === 'passenger');
+    if (existing) {
+      if (existing.status === 'building') {
+        setEdges(prev => prev.filter(e => e.id !== existing.id));
+        setConstructionQueue(prev => prev.filter(p => p.edgeId !== existing.id));
+        const cost = Math.round(existing.distance * PASSENGER_COST_PER_KM);
+        setSpentOnResources(prev => prev - cost);
+        showToast('🚆 Obra de passageiros cancelada. Custo reembolsado.', 'info');
+      } else {
+        const confirmed = window.confirm(`Encerrar linha de passageiros ${cityA.name} ↔ ${cityB.name}?`);
+        if (!confirmed) return;
+        setEdges(prev => prev.filter(e => e.id !== existing.id));
+        sound.playDisconnect();
+        showToast(`🚆 Linha ${cityA.name} ↔ ${cityB.name} encerrada.`, 'info');
+      }
+      setSelectedCityId(null);
+      return;
+    }
+    const dist = getHaversineDistance(cityA.lat, cityA.lng, cityB.lat, cityB.lng);
+    const cost = Math.round(dist * PASSENGER_COST_PER_KM);
+    if (budgetState.currentBudget < cost) {
+      showToast(`❌ Saldo insuficiente para linha de passageiros (R$${(cost/1e9).toFixed(1)}B necessário)`, 'error');
+      setSelectedCityId(null);
+      return;
+    }
+    const months = Math.max(1, Math.round(dist * PASSENGER_BUILD_SPEED));
+    const newEdge: Edge = {
+      id: edgeId, from: idA, to: idB,
+      distance: dist, type: 'passenger', status: 'building',
+      fare: 150, satisfaction: 100, extraFleets: 0,
+    };
+    setEdges(prev => [...prev, newEdge]);
+    setConstructionQueue(prev => [...prev, {
+      edgeId, from: idA, to: idB, distance: dist, type: 'passenger',
+      resourcesConsumed: { aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 },
+      workersAllocated: { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 },
+      totalMonths: months, monthsRemaining: months, startedYear: gameYear, startedMonth: monthIdx,
+    }]);
+    setSpentOnResources(prev => prev + cost);
+    setSelectedCityId(null);
+    sound.playConnect();
+    showToast(`🚆 Linha de passageiros ${cityA.name} ↔ ${cityB.name} em construção — ${months} meses. Custo: R$${(cost/1e9).toFixed(1)}B`, 'success');
+  };
+
+  const handleSetPassengerFare = (edgeId: string, fare: number) => {
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, fare } : e));
+  };
+
+  const handleBuyExtraFleet = (edgeId: string) => {
+    const FLEET_COST = 2_000_000_000;
+    if (budgetState.currentBudget < FLEET_COST) {
+      showToast('❌ Saldo insuficiente para frota extra (R$2B necessário)', 'error');
+      return;
+    }
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, extraFleets: (e.extraFleets ?? 0) + 1 } : e));
+    setSpentOnResources(prev => prev + FLEET_COST);
+    showToast('🚆 Frota extra adquirida! +150 lugares/mês.', 'success');
+  };
+
   // Main track-drawing click routine
   const handleConnectCities = (idA: string, idB: string) => {
     // 1. Prevent connecting City A with itself
     if (idA === idB) {
       setSelectedCityId(null);
+      return;
+    }
+
+    // Passenger mode — delegate to separate handler
+    if (constructionType === 'passenger') {
+      handleConnectPassenger(idA, idB);
       return;
     }
 
@@ -1956,6 +2061,9 @@ export default function App() {
         onFlyToRegion={(lat, lng) => setFlyToSignal({ lat, lng, timestamp: Date.now() })}
         mobileExpanded={mobileExpanded}
         onMobileExpandedChange={setMobileExpanded}
+        passengerEdges={edges.filter(e => e.type === 'passenger')}
+        onSetPassengerFare={handleSetPassengerFare}
+        onBuyExtraFleet={handleBuyExtraFleet}
       />
 
       {/* FAB — mobile only — fixed in root stacking context so it's never covered by popups */}

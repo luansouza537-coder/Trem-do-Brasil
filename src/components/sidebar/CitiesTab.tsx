@@ -16,8 +16,8 @@ interface CitiesTabProps {
   maintenanceYards: string[];
   infraQueue: InfraProject[];
   yardLevels: Record<string, number>;
-  constructionType: 'rail' | 'balsa';
-  onConstructionTypeChange: (type: 'rail' | 'balsa') => void;
+  constructionType: 'rail' | 'balsa' | 'passenger';
+  onConstructionTypeChange: (type: 'rail' | 'balsa' | 'passenger') => void;
   showSuggestions: boolean;
   onToggleSuggestions: () => void;
   showRouteColors?: boolean;
@@ -231,6 +231,16 @@ export default function CitiesTab({
               }`}
             >
               ⚓ Hidrovia
+            </button>
+            <button
+              onClick={() => onConstructionTypeChange('passenger')}
+              className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-bold border flex items-center gap-1.5 transition cursor-pointer ${
+                constructionType === 'passenger'
+                  ? 'bg-purple-500/25 border-purple-500/50 text-purple-300 font-extrabold'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              🚆 Passag.
             </button>
           </div>
         </div>
