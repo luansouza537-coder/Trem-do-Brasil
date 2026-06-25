@@ -29,6 +29,8 @@ interface GameMapProps {
   constructionType?: 'rail' | 'balsa' | 'passenger';
   onConstructionTypeChange?: (type: 'rail' | 'balsa' | 'passenger') => void;
   tutorialHighlightCities?: string[];
+  /** Cities NOT in this set are dimmed when set is non-empty (tutorial mode) */
+  tutorialActiveCities?: string[];
 }
 
 const TILE_LAYERS = {
@@ -78,6 +80,7 @@ export default function GameMap({
   constructionType = 'rail',
   onConstructionTypeChange,
   tutorialHighlightCities = [],
+  tutorialActiveCities = [],
 }: GameMapProps) {
   const hasBlockConstruction = activeEvents.some(e => e.blockConstruction);
   const hasStrike = activeEvents.some(e => e.type === 'strike');
@@ -340,14 +343,15 @@ export default function GameMap({
 
   // Helper to generate the custom marker HTML based on city properties
   const getMarkerHtml = (
-    city: City, 
-    conns: number, 
-    isSelected: boolean, 
+    city: City,
+    conns: number,
+    isSelected: boolean,
     isHovered: boolean,
     isUpgradedHub: boolean = false,
     hasMaintenanceYard: boolean = false,
     hasWarehouse: boolean = false,
-    hasSilo: boolean = false
+    hasSilo: boolean = false,
+    isDimmed: boolean = false
   ) => {
     const isCapital = city.type === 'capital';
     const maxConns = isUpgradedHub ? 3 : 2;
@@ -423,7 +427,7 @@ export default function GameMap({
       : '';
 
     return `
-      <div class="relative flex items-center justify-center transition-all duration-350 ${scaleClass}">
+      <div class="relative flex items-center justify-center transition-all duration-350 ${scaleClass}" style="${isDimmed ? 'opacity:0.18;pointer-events:none;filter:grayscale(1)' : ''}">
         ${isSelected ? '<span class="absolute inline-flex h-9 w-9 rounded-full bg-amber-500/30 animate-pulse"></span>' : ''}
         ${isHovered && !isSelected ? '<span class="absolute inline-flex h-8 w-8 rounded-full bg-slate-300/20"></span>' : ''}
         ${hubBadge}
@@ -622,7 +626,8 @@ export default function GameMap({
       const hasWarehouse = warehouses?.includes(city.id) || false;
       const hasSilo = silos?.includes(city.id) || false;
 
-      const markerHtml = getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo);
+      const isDimmed = tutorialActiveCities.length > 0 && !tutorialActiveCities.includes(city.id);
+      const markerHtml = getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo, isDimmed);
       const customIcon = L.divIcon({
         html: markerHtml,
         className: 'custom-city-marker',
@@ -742,13 +747,14 @@ export default function GameMap({
       const wasSel = prevSel === city.id;
       const wasHov = prevHov === city.id;
 
+      const isDimmed = tutorialActiveCities.length > 0 && !tutorialActiveCities.includes(city.id);
       const changed = conns !== prevConn || isSel !== wasSel || isGov !== wasHov
         || isUpgraded !== wasUpgraded || hasYard !== hadYard;
 
       if (!changed) return;
 
       marker.setIcon(L.divIcon({
-        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo),
+        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo, isDimmed),
         className: 'custom-city-marker',
         iconSize: [28, 28],
         iconAnchor: [14, 14]
@@ -801,7 +807,30 @@ export default function GameMap({
     if (!selectedCityId && rubberBandRef.current) {
       rubberBandRef.current.setLatLngs([]);
     }
-  }, [cities, edges, selectedCityId, hoveredCityId, cityConnectionsMap, upgradedHubs, maintenanceYards, nearestYardDistances]);
+  }, [cities, edges, selectedCityId, hoveredCityId, cityConnectionsMap, upgradedHubs, maintenanceYards, nearestYardDistances, tutorialActiveCities]);
+
+  // When tutorial active cities list changes, force ALL markers to re-render (dimming state changed)
+  useEffect(() => {
+    cities.forEach(city => {
+      const marker = markersRef.current[city.id];
+      if (!marker) return;
+      const conns = cityConnectionsMap[city.id] || 0;
+      const isSel = selectedCityId === city.id;
+      const isGov = hoveredCityId === city.id;
+      const isUpgraded = upgradedHubs?.includes(city.id) || false;
+      const hasYard = maintenanceYards?.includes(city.id) || false;
+      const hasWarehouse = warehouses?.includes(city.id) || false;
+      const hasSilo = silos?.includes(city.id) || false;
+      const isDimmed = tutorialActiveCities.length > 0 && !tutorialActiveCities.includes(city.id);
+      marker.setIcon(L.divIcon({
+        html: getMarkerHtml(city, conns, isSel, isGov, isUpgraded, hasYard, hasWarehouse, hasSilo, isDimmed),
+        className: 'custom-city-marker',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      }));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorialActiveCities]);
 
   // Draw actual railway lines with layered aesthetics (dark base + dashed indicator)
   useEffect(() => {

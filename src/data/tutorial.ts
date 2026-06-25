@@ -16,20 +16,17 @@ export const TUTORIAL_ROUTES = {
   passenger: { cityAId: '1',  cityBId: '28', label: 'São Paulo → Campinas',    distanceKm: 84 },
 } as const;
 
-// Exact requirements computed from game formulas — no guesswork
-// Rail SP→Campinas 84km: terra=ceil(84×0.90)=76, assent=ceil(84×0.55)=47, sinal=ceil(84×0.18)=16
-// Balsa Santos→Rio 343km: terra=70(fixed), assent=35(fixed), sinal=ceil(343×0.18)=62
-// Workers cover ALL tutorial routes; sinalizacao=62 because balsa is the bottleneck
+// Exact requirements from game formulas (getTrackWorkersRequired only checks terra+assent)
+// Rail SP→Campinas 84km: terra=ceil(84×0.90)=76, assent=ceil(84×0.55)=47
+// Resources for cargo rail SP→Campinas 84km (aco=ceil(84×2)=168, brita=ceil(84×4)=336, cimento=ceil(84×2)=168)
 export const TUTORIAL_REQS = {
   workers: {
-    terraplanagem: 76,
-    assentamento:  47,
-    sinalizacao:   62,
+    terraplanagem: 76,  // ceil(84 × 0.90)
+    assentamento:  47,  // ceil(84 × 0.55)
   },
-  // Resources for first route (cargo rail SP→Campinas 84km)
   resources: {
     aco:     168,  // ceil(84 × 2.0)
-    brita:   335,  // ceil(84 × 4.0)
+    brita:   336,  // ceil(84 × 4.0)
     cimento: 168,  // ceil(84 × 2.0)
   },
 } as const;
@@ -53,7 +50,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'hire_workers',
     title: '👷 Contrate trabalhadores',
-    message: 'Para construir São Paulo → Campinas você precisa de 76 Terraplanagem, 47 Assentamento e 62 Sinalização. Clique em "+10" várias vezes em cada tipo até atingir esses valores.',
+    message: 'Para construir São Paulo → Campinas você precisa de 76 Terraplanagem e 47 Assentamento. Clique em "+10" várias vezes em cada tipo até atingir esses valores.',
     refKey: 'workers-section',
     advanceOn: 'action',
     position: 'bottom',

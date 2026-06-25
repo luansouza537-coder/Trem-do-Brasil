@@ -221,8 +221,7 @@ export default function App() {
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
       hire_workers:     workers.terraplanagem >= W.terraplanagem
-                     && workers.assentamento  >= W.assentamento
-                     && workers.sinalizacao   >= W.sinalizacao,
+                     && workers.assentamento  >= W.assentamento,
       go_to_resources:  resources.aco     >= RES.aco
                      && resources.brita   >= RES.brita
                      && resources.cimento >= RES.cimento,
@@ -2444,6 +2443,12 @@ export default function App() {
             if (stepId === 'build_passenger') return [TUTORIAL_ROUTES.passenger.cityAId, TUTORIAL_ROUTES.passenger.cityBId];
             return [];
           })()}
+          tutorialActiveCities={tutorialStep !== null ? [
+            TUTORIAL_ROUTES.rail.cityAId,
+            TUTORIAL_ROUTES.rail.cityBId,
+            TUTORIAL_ROUTES.balsa.cityAId,
+            TUTORIAL_ROUTES.balsa.cityBId,
+          ] : []}
         />
       </main>
 
@@ -2476,11 +2481,10 @@ export default function App() {
         let progressText: string | undefined;
         let progressFraction: number | undefined;
         if (tStep.id === 'hire_workers') {
-          const { terraplanagem: wt, assentamento: wa, sinalizacao: ws } = TUTORIAL_REQS.workers;
-          const t = workers.terraplanagem, a = workers.assentamento, s = workers.sinalizacao;
-          progressText = `Terra: ${t}/${wt} · Assent: ${a}/${wa} · Sinal: ${s}/${ws}`;
-          const done = Math.min(t, wt) + Math.min(a, wa) + Math.min(s, ws);
-          progressFraction = done / (wt + wa + ws);
+          const { terraplanagem: wt, assentamento: wa } = TUTORIAL_REQS.workers;
+          const t = workers.terraplanagem, a = workers.assentamento;
+          progressText = `Terraplanagem: ${t}/${wt} · Assentamento: ${a}/${wa}`;
+          progressFraction = (Math.min(t, wt) + Math.min(a, wa)) / (wt + wa);
         } else if (tStep.id === 'go_to_resources') {
           const { aco: ra, brita: rb, cimento: rc } = TUTORIAL_REQS.resources;
           const a = resources.aco, b = resources.brita, c = resources.cimento;
