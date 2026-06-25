@@ -111,7 +111,7 @@ export default function App() {
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [silos, setSilos] = useState<string[]>([]);
-  const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | 'first_balsa' | 'event_greve' | 'event_escassez_cimento' | null>(null);
+  const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | 'first_balsa' | 'first_passenger' | 'event_greve' | 'event_escassez_cimento' | null>(null);
   const pendingEventAfterCutsceneRef = React.useRef<string | null>(null);
   const [shownCutscenes, setShownCutscenes] = useState<string[]>([]);
   const shownCutscenesRef = React.useRef<string[]>([]);
@@ -297,6 +297,14 @@ export default function App() {
       shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_balsa'];
       setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => setActiveCutscene('first_balsa'), 800);
+      return;
+    }
+    // First passenger line: fires when first passenger edge completes
+    const firstPassenger = edges.find(e => e.type === 'passenger' && e.status === 'complete');
+    if (firstPassenger && !shown.includes('first_passenger')) {
+      shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_passenger'];
+      setShownCutscenes(shownCutscenesRef.current);
+      setTimeout(() => setActiveCutscene('first_passenger'), 800);
       return;
     }
     const connectedCities = new Set(
@@ -1958,6 +1966,16 @@ export default function App() {
         title="Primeira Hidrovia Concluída"
         subtitle="Marco Hidroviário da RENIF"
         description="Sua primeira hidrovia está operando! O Brasil é um país de rios — e você acabou de transformar as grandes hidrovias em aliadas da RENIF. Novas rotas fluviais podem conectar o que os trilhos não alcançam."
+        onFinished={() => setActiveCutscene(null)}
+      />
+    )}
+    {activeCutscene === 'first_passenger' && (
+      <CutsceneModal
+        videoSrc="/cutscene_primeira_passageiros.mp4"
+        icon="🚆"
+        title="Primeira Linha de Passageiros"
+        subtitle="Marco Histórico da RENIF"
+        description="O primeiro trem de passageiros da RENIF acaba de partir! Uma nova era começa — agora o Brasil não transporta só carga, mas também pessoas. Cada viagem é um passo rumo à integração nacional."
         onFinished={() => setActiveCutscene(null)}
       />
     )}
