@@ -2374,6 +2374,8 @@ export default function App() {
           activeEvents={activeEvents}
           routeRevenueMap={routeRevenueMap}
           showRouteColors={showRouteColors}
+          constructionType={constructionType}
+          onConstructionTypeChange={setConstructionType}
         />
       </main>
 
