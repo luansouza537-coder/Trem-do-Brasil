@@ -108,7 +108,8 @@ export default function App() {
   const [maintenanceYards, setMaintenanceYards] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [silos, setSilos] = useState<string[]>([]);
-  const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | null>(null);
+  const [activeCutscene, setActiveCutscene] = useState<'first_rail' | 'half_network' | 'first_balsa' | 'event_greve' | 'event_escassez_cimento' | null>(null);
+  const pendingEventAfterCutsceneRef = React.useRef<string | null>(null);
   const [shownCutscenes, setShownCutscenes] = useState<string[]>([]);
   const shownCutscenesRef = React.useRef<string[]>([]);
   const [infraQueue, setInfraQueue] = useState<InfraProject[]>([]);
@@ -285,6 +286,14 @@ export default function App() {
       setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => setActiveCutscene('first_rail'), 800);
       return; // don't check half_network in same tick — let it fire on next change
+    }
+    // First balsa (hidrovia): fires when first balsa edge completes
+    const firstBalsa = edges.find(e => e.type === 'balsa' && e.status === 'complete');
+    if (firstBalsa && !shown.includes('first_balsa')) {
+      shownCutscenesRef.current = [...shownCutscenesRef.current, 'first_balsa'];
+      setShownCutscenes(shownCutscenesRef.current);
+      setTimeout(() => setActiveCutscene('first_balsa'), 800);
+      return;
     }
     const connectedCities = new Set(
       edges.filter(e => e.status === 'complete').flatMap(e => [e.from, e.to])
@@ -564,6 +573,14 @@ export default function App() {
         }, ...prev].slice(0, 60));
       }
 
+      // Cutscene events: play video first, then activate event via onFinished
+      if (ev.id === 'ev005' || ev.id === 'ev002') {
+        const cutsceneId = ev.id === 'ev005' ? 'event_greve' : 'event_escassez_cimento';
+        pendingEventAfterCutsceneRef.current = ev.id;
+        setTimeout(() => setActiveCutscene(cutsceneId as typeof activeCutscene), 400);
+        continue;
+      }
+
       // Apply game event effect
       if (ev.gameEvent) {
         const ge = ev.gameEvent;
@@ -647,6 +664,42 @@ export default function App() {
   }, [splashDone, isMuted]);
 
   // Sound muter toggle
+  // Activates the event that was deferred while a cutscene was playing
+  const handleCutsceneFinished = React.useCallback((cutsceneId: string) => {
+    setActiveCutscene(null);
+    const pendingId = pendingEventAfterCutsceneRef.current;
+    if (!pendingId) return;
+    pendingEventAfterCutsceneRef.current = null;
+    const ev = SCHEDULED_EVENTS.find(e => e.id === pendingId);
+    if (!ev || !ev.gameEvent) return;
+    const ge = ev.gameEvent;
+    const gameEventObj: GameEvent = {
+      id: `ge_${ev.id}`,
+      title: ev.title,
+      description: ev.description,
+      type: ge.type,
+      statusEffect: ge.statusEffect,
+      durationMonths: ge.durationMonths,
+      monthsLeft: ge.durationMonths,
+      ...(ge.costPerMonth !== undefined ? { costPerMonth: ge.costPerMonth } : {}),
+      ...(ge.costToResolve !== undefined ? { costToResolve: ge.costToResolve } : {}),
+      ...(ge.workerLoss !== undefined ? { workerLoss: ge.workerLoss } : {}),
+      ...(ge.revenueMultiplier !== undefined ? { revenueMultiplier: ge.revenueMultiplier } : {}),
+      ...(ge.monthlyBonus !== undefined ? { monthlyBonus: ge.monthlyBonus } : {}),
+      ...(ge.resourceMultipliers !== undefined ? { resourceMultipliers: ge.resourceMultipliers } : {}),
+      ...(ge.constructionSlowFactor !== undefined ? { constructionSlowFactor: ge.constructionSlowFactor } : {}),
+      ...(ge.balsaFrozen !== undefined ? { balsaFrozen: ge.balsaFrozen } : {}),
+      ...(ge.blockConstruction !== undefined ? { blockConstruction: ge.blockConstruction } : {}),
+      ...(ge.payrollMultiplier !== undefined ? { payrollMultiplier: ge.payrollMultiplier } : {}),
+    };
+    if (!currentEventRef.current) {
+      setCurrentEvent(gameEventObj);
+      sound.playError();
+    } else {
+      setActiveEvents(prev => [...prev, gameEventObj]);
+    }
+  }, []);
+
   const handleToggleMute = () => {
     const nextMute = sound.toggleMute();
     setIsMuted(nextMute);
@@ -1800,6 +1853,36 @@ export default function App() {
         subtitle="50% da Malha Concluída"
         description="Você alcançou um marco extraordinário: metade das cidades do Brasil agora estão ligadas pela malha ferroviária da RENIF. A integração nacional está a meio caminho de se tornar realidade."
         onFinished={() => setActiveCutscene(null)}
+      />
+    )}
+    {activeCutscene === 'first_balsa' && (
+      <CutsceneModal
+        videoSrc="/cutscene_primeira_hidrovia.mp4"
+        icon="🚢"
+        title="Primeira Hidrovia Concluída"
+        subtitle="Marco Hidroviário da RENIF"
+        description="Sua primeira hidrovia está operando! O Brasil é um país de rios — e você acabou de transformar as grandes hidrovias em aliadas da RENIF. Novas rotas fluviais podem conectar o que os trilhos não alcançam."
+        onFinished={() => setActiveCutscene(null)}
+      />
+    )}
+    {activeCutscene === 'event_greve' && (
+      <CutsceneModal
+        videoSrc="/cutscene_greve.mp4"
+        icon="🚧"
+        title="Greve Geral Ferroviária"
+        subtitle="Crise Trabalhista — 2028"
+        description="Os trabalhadores paralisaram as obras. Os sindicatos exigem aumento salarial e melhores condições de campo. A RENIF pagará multas mensais enquanto o conflito durar."
+        onFinished={() => handleCutsceneFinished('event_greve')}
+      />
+    )}
+    {activeCutscene === 'event_escassez_cimento' && (
+      <CutsceneModal
+        videoSrc="/cutscene_escassez_cimento.mp4"
+        icon="🏗️"
+        title="Escassez Nacional de Cimento"
+        subtitle="Crise de Insumos — 2027"
+        description="A crise no setor de construção civil drenou os estoques nacionais. Todas as obras avançam mais devagar por falta de cimento no mercado."
+        onFinished={() => handleCutsceneFinished('event_escassez_cimento')}
       />
     )}
     {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
