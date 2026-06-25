@@ -424,7 +424,7 @@ export default function Sidebar({
             <button
               key={type}
               onClick={() => onTileLayerChange(type)}
-              className={`px-1.5 py-1 rounded text-[8px] font-bold uppercase transition-all ${
+              className={`flex-1 py-1 rounded text-[8px] font-bold uppercase transition-all text-center ${
                 tileLayerType === type
                   ? 'bg-amber-500 text-slate-950 font-black'
                   : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
@@ -442,7 +442,7 @@ export default function Sidebar({
             <button
               key={m.id}
               onClick={() => onConstructionTypeChange(m.id)}
-              className={`px-2 py-1 rounded text-[11px] transition-all ${
+              className={`flex-1 py-1 rounded text-[11px] transition-all text-center ${
                 constructionType === m.id
                   ? m.active + ' font-black'
                   : 'text-slate-400 bg-slate-900 border border-slate-700 hover:text-slate-200'
