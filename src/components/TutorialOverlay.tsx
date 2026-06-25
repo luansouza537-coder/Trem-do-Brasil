@@ -33,6 +33,8 @@ export default function TutorialOverlay({
     return () => window.removeEventListener('resize', update);
   }, [highlightRef, step.id]);
 
+  const isButtonStep = step.advanceOn === 'button';
+
   const balloonPosition = step.position === 'top'
     ? 'top-[12%]'
     : step.position === 'bottom'
@@ -41,21 +43,23 @@ export default function TutorialOverlay({
 
   return (
     <div className="fixed inset-0 z-[99990] pointer-events-none">
-      {/* Dark overlay — pointer-events only on 'button' steps so action steps let clicks through */}
-      {spotlight ? (
-        <div
-          className={`absolute inset-0 ${step.advanceOn === 'button' ? 'pointer-events-auto' : 'pointer-events-none'}`}
-          style={{
-            background: 'rgba(0,0,0,0.75)',
-            WebkitMaskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
-            maskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
-          }}
-        />
-      ) : (
-        <div className={`absolute inset-0 bg-black/75 ${step.advanceOn === 'button' ? 'pointer-events-auto' : 'pointer-events-none'}`} />
+      {/* Dark overlay only for button steps (welcome/done). Action steps need the screen fully interactive. */}
+      {isButtonStep && (
+        spotlight ? (
+          <div
+            className="absolute inset-0 pointer-events-auto"
+            style={{
+              background: 'rgba(0,0,0,0.80)',
+              WebkitMaskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
+              maskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-black/80 pointer-events-auto" />
+        )
       )}
 
-      {/* Spotlight border glow */}
+      {/* Spotlight border glow — always visible when ref found */}
       {spotlight && (
         <div
           className="absolute rounded-xl border-2 border-amber-400 shadow-[0_0_20px_4px_rgba(251,191,36,0.5)] pointer-events-none"
@@ -70,7 +74,7 @@ export default function TutorialOverlay({
 
       {/* Instruction balloon */}
       <div className={`absolute left-1/2 -translate-x-1/2 ${balloonPosition} w-[85vw] max-w-sm pointer-events-auto`}>
-        <div className="bg-slate-900 border border-amber-500/50 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="bg-slate-900/95 border border-amber-500/60 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-sm">
           {/* Progress bar */}
           <div className="h-1 bg-slate-800">
             <div
@@ -89,7 +93,7 @@ export default function TutorialOverlay({
                 onClick={onSkip}
                 className="text-[9px] text-slate-500 hover:text-slate-300 transition font-bold uppercase tracking-wider"
               >
-                Pular tutorial ✕
+                Pular ✕
               </button>
             </div>
 
@@ -100,7 +104,7 @@ export default function TutorialOverlay({
             </div>
 
             {/* Action hint or button */}
-            {step.advanceOn === 'button' ? (
+            {isButtonStep ? (
               <button
                 onClick={onNext}
                 className="w-full py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm uppercase tracking-widest rounded-xl transition shadow-lg shadow-amber-500/30"
