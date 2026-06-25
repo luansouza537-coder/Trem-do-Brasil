@@ -120,24 +120,18 @@ export default function App() {
   const [constructionType, setConstructionType] = useState<'rail' | 'balsa' | 'passenger'>('rail');
 
   // Resource & Crises states
-  const [resources, setResources] = useState<GameResources>({
-    aco: 2500,
-    brita: 4000,
-    madeira: 2000,
-    cimento: 2500,
-    cobre: 850,
-    explosivos: 300
-  });
+  const isNewPlayer = !hasSave();
+  const [resources, setResources] = useState<GameResources>(isNewPlayer
+    ? { aco: 0, brita: 0, madeira: 0, cimento: 0, cobre: 0, explosivos: 0 }
+    : { aco: 2500, brita: 4000, madeira: 2000, cimento: 2500, cobre: 850, explosivos: 300 }
+  );
   const [autoBuyResources, setAutoBuyResources] = useState(true);
 
   // Workforce state (workers pool)
-  const [workers, setWorkers] = useState<GameWorkers>({
-    terraplanagem: 500,
-    assentamento:  300,
-    sinalizacao:   80,
-    explosivos:    30,
-    manutencao:    150,
-  });
+  const [workers, setWorkers] = useState<GameWorkers>(isNewPlayer
+    ? { terraplanagem: 0, assentamento: 0, sinalizacao: 0, explosivos: 0, manutencao: 0 }
+    : { terraplanagem: 500, assentamento: 300, sinalizacao: 80, explosivos: 30, manutencao: 150 }
+  );
   const [constructionQueue, setConstructionQueue] = useState<ConstructionProject[]>([]);
   const [saveSlot, setSaveSlot] = useState(1);
   const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
@@ -187,8 +181,8 @@ export default function App() {
     showToast: (msg, type) => showToastRef.current(msg, type),
   });
 
-  // Tutorial state
-  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  // Tutorial state — start on step 0 for brand new players (no save exists)
+  const [tutorialStep, setTutorialStep] = useState<number | null>(() => hasSave() ? null : 0);
   const [tutorialEdgeSnapshot, setTutorialEdgeSnapshot] = useState(0);
 
   const advanceTutorial = React.useCallback(() => {
