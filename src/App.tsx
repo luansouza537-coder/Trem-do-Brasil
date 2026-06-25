@@ -232,6 +232,17 @@ export default function App() {
     }
   }, [tutorialStep]);
 
+  // Auto-expand sidebar for tutorial steps that require sidebar interaction
+  const SIDEBAR_STEPS = new Set(['go_to_team', 'hire_workers', 'go_to_resources', 'switch_balsa', 'switch_passenger']);
+  useEffect(() => {
+    if (tutorialStep === null) return;
+    const stepId = TUTORIAL_STEPS[tutorialStep]?.id;
+    if (stepId && SIDEBAR_STEPS.has(stepId)) {
+      setMobileExpanded(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorialStep]);
+
   // Keep refs in sync so the monthly useEffect always reads current values without adding them as deps
   useEffect(() => { edgesRef.current = edges; }, [edges]);
   useEffect(() => { constructionQueueRef.current = constructionQueue; }, [constructionQueue]);

@@ -20,7 +20,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'go_to_team',
     title: '👷 Contrate sua equipe',
-    message: 'Sem trabalhadores, nada é construído. Clique na aba "Equipe" no menu acima para contratar seus primeiros operários.',
+    message: 'Sem trabalhadores, nada é construído. O painel lateral foi aberto — clique na aba "Equipe" para contratar seus primeiros operários.',
     refKey: 'tab-operations',
     advanceOn: 'action',
     position: 'bottom',
