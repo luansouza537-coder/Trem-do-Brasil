@@ -2448,16 +2448,32 @@ export default function App() {
       </div>
 
       {/* --- TUTORIAL OVERLAY --- */}
-      {tutorialStep !== null && splashDone && !welcomeOpen && (
-        <TutorialOverlay
-          step={TUTORIAL_STEPS[tutorialStep]}
-          stepIndex={tutorialStep}
-          totalSteps={TUTORIAL_STEPS.length}
-          highlightRef={TUTORIAL_STEPS[tutorialStep].refKey ? getTutorialRef(TUTORIAL_STEPS[tutorialStep].refKey!) : undefined}
-          onNext={advanceTutorial}
-          onSkip={finalizeTutorial}
-        />
-      )}
+      {tutorialStep !== null && splashDone && !welcomeOpen && (() => {
+        const tStep = TUTORIAL_STEPS[tutorialStep];
+        const totalWorkers = Object.values(workers).reduce((a, b) => a + b, 0);
+        const totalResources = Object.values(resources).reduce((a, b) => a + b, 0);
+        let progressText: string | undefined;
+        let progressFraction: number | undefined;
+        if (tStep.id === 'hire_workers') {
+          progressText = `${totalWorkers} / 10 trabalhadores`;
+          progressFraction = totalWorkers / 10;
+        } else if (tStep.id === 'go_to_resources') {
+          progressText = `${totalResources} unidades compradas`;
+          progressFraction = Math.min(1, totalResources / 50);
+        }
+        return (
+          <TutorialOverlay
+            step={tStep}
+            stepIndex={tutorialStep}
+            totalSteps={TUTORIAL_STEPS.length}
+            highlightRef={tStep.refKey ? getTutorialRef(tStep.refKey!) : undefined}
+            progressText={progressText}
+            progressFraction={progressFraction}
+            onNext={advanceTutorial}
+            onSkip={finalizeTutorial}
+          />
+        );
+      })()}
 
       {/* --- PAUSE SCREEN --- */}
       {playSpeed === 'paused' && !welcomeOpen && !victoryOpen && !gameOverOpen && (
