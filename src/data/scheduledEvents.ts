@@ -34,7 +34,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
 
   // ── 2028 ──
   { id:'ev004', triggerYear:2028, triggerMonth:4, category:'POS', title:'Colheita Recorde no Agronegócio', description:'Safra histórica gera demanda por escoamento ferroviário e atrai investidores para o setor de logística.', immediateCash:5_000_000_000 },
-  { id:'ev005', triggerYear:2028, triggerMonth:8, category:'CRI', title:'Greve Geral Ferroviária 🚧', description:'Sindicatos paralisaram parcialmente as obras. Os trabalhadores exigem aumento salarial e melhores condições de campo. A RENIF paga multas mensais até a resolução.', gameEvent:{ type:'strike', statusEffect:'GREVE_GERAL', durationMonths:8, costPerMonth:1_500_000_000, costToResolve:12_000_000_000 } },
+  { id:'ev005', triggerYear:2028, triggerMonth:8, category:'CRI', title:'Greve Geral Ferroviária 🚧', description:'Sindicatos paralisaram parcialmente as obras. Os trabalhadores exigem aumento salarial e melhores condições de campo. A RENIF paga multas mensais até a resolução.', gameEvent:{ type:'strike', statusEffect:'GREVE_GERAL', durationMonths:8, costPerMonth:1_500_000_000, costToResolve:7_000_000_000 } },
   { id:'ev006', triggerYear:2028, triggerMonth:12, category:'NEU', title:'Festa do Peão de Barretos', description:'O maior rodeio do Brasil movimenta o interior paulista e impulsiona a demanda por transporte ferroviário regional.', gameEvent:{ type:'neutral', statusEffect:'FESTA_PEAO', durationMonths:1, revenueMultiplier:1.10 } },
 
   // ── 2029 ──
@@ -60,7 +60,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
   // ── 2033 ──
   { id:'ev019', triggerYear:2033, triggerMonth:4, category:'POS', title:'Recorde de Exportação Brasileiro', description:'Volume de exportações bate recorde histórico, gerando excedente de receita que é repassado parcialmente à RENIF.', immediateCash:15_000_000_000 },
   { id:'ev020', triggerYear:2033, triggerMonth:8, category:'CRI', title:'Acidente Grave em Frente de Obra ⚠️', description:'Uma explosão descontrolada em canteiro de túnel causou baixas na equipe. Especialistas em Explosivos foram afastados e a RENIF paga indenizações imediatas.', gameEvent:{ type:'accident', statusEffect:'ACIDENTE_OBRA', durationMonths:1, workerLoss:{ role:'explosivos', amount:80 } } },
-  { id:'ev021', triggerYear:2033, triggerMonth:12, category:'CRI', title:'Seca Severa no Tocantins 🏜️', description:'Nível histórico baixo do Rio Tocantins e afluentes paralisou totalmente o transporte hidroviário. Receita de balsas = R$0 por 8 meses.', gameEvent:{ type:'natural', statusEffect:'SECA_TOCANTINS', durationMonths:8, costToResolve:6_000_000_000 } },
+  { id:'ev021', triggerYear:2033, triggerMonth:12, category:'CRI', title:'Seca Severa no Tocantins 🏜️', description:'Nível histórico baixo do Rio Tocantins e afluentes paralisou totalmente o transporte hidroviário. Receita de balsas = R$0 por 8 meses.', gameEvent:{ type:'natural', statusEffect:'SECA_TOCANTINS', durationMonths:8, costToResolve:6_000_000_000, balsaFrozen:true } },
 
   // ── 2034 ──
   { id:'ev022', triggerYear:2034, triggerMonth:4, category:'CRI', title:'Multas e Emendas Legislativas 🏛️', description:'Bancadas bloquearam autorizações de novas construções ferroviárias. Nenhuma obra pode ser iniciada enquanto a crise perdurar.', gameEvent:{ type:'politics', statusEffect:'LOBBY_REGIONAL', durationMonths:8, costPerMonth:2_000_000_000, costToResolve:9_000_000_000, blockConstruction:true } },
@@ -84,7 +84,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
 
   // ── 2038 ──
   { id:'ev034', triggerYear:2038, triggerMonth:4, category:'CRI', title:'Crise de Energia Elétrica ⚡', description:'Colapso no sistema elétrico nacional eleva o custo de produção siderúrgica, encarecendo o aço no mercado interno.', gameEvent:{ type:'crisis', statusEffect:'CRISE_ENERGIA', durationMonths:6, resourceMultipliers:{ aco:1.40 } } },
-  { id:'ev035', triggerYear:2038, triggerMonth:8, category:'CRI', title:'Pandemia de Gripe Aviária', description:'Surto limita a circulação de trabalhadores nas frentes de obra, reduzindo levemente a receita operacional por 6 meses.', gameEvent:{ type:'natural', statusEffect:'GRIPE_AVIARIA', durationMonths:6, revenueMultiplier:0.95 } },
+  { id:'ev035', triggerYear:2038, triggerMonth:8, category:'CRI', title:'Pandemia de Gripe Aviária', description:'Surto de gripe aviária limita circulação de trabalhadores e passageiros nas frentes de obra e estações, reduzindo receita operacional por 6 meses.', gameEvent:{ type:'natural', statusEffect:'GRIPE_AVIARIA', durationMonths:6, revenueMultiplier:0.85 } },
   { id:'ev036', triggerYear:2038, triggerMonth:12, category:'POS', title:'Acordo Mercosul–UE', description:'Novo tratado comercial reduz tarifas de importação de brita e cimento europeu, beneficiando as obras da RENIF por dois anos.', gameEvent:{ type:'positive', statusEffect:'MERCOSUL_UE', durationMonths:24, resourceMultipliers:{ brita:0.85, cimento:0.85 } } },
 
   // ── 2039 ──
@@ -169,7 +169,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
 
   // ── 2055 ──
   { id:'ev085', triggerYear:2055, triggerMonth:4, category:'POS', title:'Investimento Estrangeiro Direto', description:'Fundo soberano asiático aporta capital na RENIF como parte de estratégia de diversificação de infraestrutura global.', immediateCash:12_000_000_000 },
-  { id:'ev086', triggerYear:2055, triggerMonth:8, category:'POS', title:'Erupção Vulcânica nos Andes', description:'Cinzas vulcânicas paralisam voos no cone sul, desviando passageiros e cargas para o modal ferroviário brasileiro por 4 meses.', gameEvent:{ type:'positive', statusEffect:'ERUPCAO_ANDES', durationMonths:4, revenueMultiplier:1.10 } },
+  { id:'ev086', triggerYear:2055, triggerMonth:8, category:'POS', title:'Erupção Vulcânica nos Andes 🌋', description:'Cinzas vulcânicas fecham aeroportos e bloqueiam rodovias no cone sul. Passageiros e cargas são desviados para a malha ferroviária da RENIF, disparando a demanda por 4 meses.', gameEvent:{ type:'positive', statusEffect:'ERUPCAO_ANDES', durationMonths:4, revenueMultiplier:1.10 } },
   { id:'ev087', triggerYear:2055, triggerMonth:12, category:'POL', title:'Eleição — Partido Social assume', description:'O Partido Social retorna ao poder com agenda de reindustrialização e expansão ferroviária, restabelecendo o subsídio mensal à RENIF.', party:'PS' },
 
   // ── 2056 ──
@@ -235,7 +235,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
   // ── 2068 ──
   { id:'ev124', triggerYear:2068, triggerMonth:4, category:'NEU', title:'Fusão das Ferrovias Nacionais', description:'Consolidação das operações ferroviárias nacionais sob a marca RENIF cria eficiências de escala e aumenta a receita de toda a malha.', gameEvent:{ type:'neutral', statusEffect:'FUSAO_FERROVIAS', durationMonths:120, revenueMultiplier:1.12 } },
   { id:'ev125', triggerYear:2068, triggerMonth:8, category:'CRI', title:'Vazamento no Rio Doce — Embargo IBAMA 🌊', description:'Acidente com rejeitos de mineração contamina o Rio Doce. IBAMA embarga fornecedores regionais de brita e cimento, elevando os preços.', gameEvent:{ type:'env_delay', statusEffect:'VAZAMENTO_DOCE', durationMonths:6, costPerMonth:2_000_000_000, resourceMultipliers:{ brita:1.60, cimento:1.60 }, costToResolve:7_000_000_000 } },
-  { id:'ev126', triggerYear:2068, triggerMonth:12, category:'POS', title:'Megaporto Marítimo Concluído', description:'O maior porto da América Latina entra em operação integrado à malha da RENIF, ampliando permanentemente as rotas de exportação e a receita.', gameEvent:{ type:'positive', statusEffect:'MEGAPORTO', durationMonths:120, revenueMultiplier:1.15 } },
+  { id:'ev126', triggerYear:2068, triggerMonth:12, category:'POS', title:'Megaporto Marítimo Concluído', description:'O maior porto da América Latina entra em operação integrado à malha da RENIF, ampliando as rotas de exportação e a receita até o encerramento da era RENIF.', gameEvent:{ type:'positive', statusEffect:'MEGAPORTO', durationMonths:96, revenueMultiplier:1.15 } },
 
   // ── 2069 ──
   { id:'ev127', triggerYear:2069, triggerMonth:4, category:'CRI', title:'Incêndio Florestal no Pantanal', description:'Incêndios destroem estoques de dormentes de madeira armazenados ao longo do corredor pantaneiro, gerando prejuízo imediato.', immediateCash:-8_000_000_000 },
@@ -259,7 +259,7 @@ export const SCHEDULED_EVENTS: ScheduledEventDef[] = [
 
   // ── 2073 ──
   { id:'ev139', triggerYear:2073, triggerMonth:4, category:'POS', title:'Copa do Mundo Feminino no Brasil ⚽', description:'O Brasil sedia o Mundial Feminino, com grande público e fluxo de visitantes que aumentam a demanda pelo transporte ferroviário.', gameEvent:{ type:'positive', statusEffect:'COPA_FEM', durationMonths:3, monthlyBonus:2_000_000_000 } },
-  { id:'ev140', triggerYear:2073, triggerMonth:8, category:'NEU', title:'Superlua — Momento de Leveza 🌕', description:'Fenômeno astronômico gera cobertura midiática inusitada sobre as linhas ferroviárias noturnas da RENIF. Sem impacto financeiro direto.', },
+  { id:'ev140', triggerYear:2073, triggerMonth:8, category:'NEU', title:'Superlua — Momento de Leveza 🌕', description:'Fenômeno astronômico gera cobertura midiática inusitada sobre as linhas ferroviárias noturnas da RENIF. O turismo ferroviário sobe brevemente com o evento.', gameEvent:{ type:'neutral', statusEffect:'SUPERLUA', durationMonths:1, revenueMultiplier:1.05 } },
   { id:'ev141', triggerYear:2073, triggerMonth:12, category:'CRI', title:'Escassez Global de Chips Eletrônicos', description:'Crise global de semicondutores afeta os sistemas de sinalização e controle ferroviário, reduzindo a eficiência operacional temporariamente.', gameEvent:{ type:'crisis', statusEffect:'ESCASSEZ_CHIPS', durationMonths:3, revenueMultiplier:0.85 } },
 
   // ── 2074 ──
