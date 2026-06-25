@@ -216,6 +216,7 @@ export default function App() {
     const hasPassengerEdge = edges.some(e => e.type === 'passenger' && matchesRoute(e, R.passenger));
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
+      close_sidebar:    !mobileExpanded,
       hire_workers:     workers.terraplanagem >= W.terraplanagem
                      && workers.assentamento  >= W.assentamento
                      && workers.sinalizacao   >= W.sinalizacao
@@ -232,7 +233,7 @@ export default function App() {
       build_passenger:  hasPassengerEdge,
     };
     if (conditions[step.id]) advanceTutorial();
-  }, [tutorialStep, workers, resources, selectedCityId, edges, constructionType, tutorialEdgeSnapshot, advanceTutorial]);
+  }, [tutorialStep, workers, resources, selectedCityId, edges, constructionType, tutorialEdgeSnapshot, mobileExpanded, advanceTutorial]);
 
   // When reaching click_city step, reset city selection so player must act fresh
   useEffect(() => {

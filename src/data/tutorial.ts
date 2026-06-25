@@ -65,9 +65,17 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     position: 'bottom',
   },
   {
+    id: 'close_sidebar',
+    title: '🗺️ Acesse o mapa',
+    message: 'Ótimo! Agora toque no botão ✕ destacado para fechar o painel e acessar o mapa.',
+    refKey: 'close-sidebar-btn',
+    advanceOn: 'action',
+    position: 'bottom',
+  },
+  {
     id: 'click_city',
     title: '🗺️ Clique em São Paulo',
-    message: 'Agora vá ao mapa e clique em São Paulo (cidade destacada em âmbar) para selecioná-la como ponto de partida.',
+    message: 'Agora clique em São Paulo (cidade destacada em âmbar) para selecioná-la como ponto de partida.',
     advanceOn: 'action',
     position: 'bottom',
   },

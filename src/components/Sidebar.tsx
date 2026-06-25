@@ -120,10 +120,12 @@ export default function Sidebar({
   const tabOperationsRef = useRef<HTMLButtonElement>(null);
   const modeBalsaRef = useRef<HTMLButtonElement>(null);
   const modePassengerRef = useRef<HTMLButtonElement>(null);
+  const closeSidebarBtnRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (tabOperationsRef.current) registerTutorialRef('tab-operations', tabOperationsRef as React.RefObject<HTMLElement>);
     if (modeBalsaRef.current) registerTutorialRef('mode-balsa', modeBalsaRef as React.RefObject<HTMLElement>);
     if (modePassengerRef.current) registerTutorialRef('mode-passenger', modePassengerRef as React.RefObject<HTMLElement>);
+    if (closeSidebarBtnRef.current) registerTutorialRef('close-sidebar-btn', closeSidebarBtnRef as React.RefObject<HTMLElement>);
   }, []);
 
   // Orientation detection
@@ -202,7 +204,7 @@ export default function Sidebar({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setMobileExpanded(e => !e)}
+          <button ref={closeSidebarBtnRef} onClick={() => setMobileExpanded(e => !e)}
             className="md:hidden p-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition text-[11px] font-black"
             title={mobileExpanded ? 'Minimizar painel' : 'Expandir painel'}>
             {mobileExpanded ? '✕' : '⬆'}
