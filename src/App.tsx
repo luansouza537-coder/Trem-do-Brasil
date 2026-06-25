@@ -167,6 +167,22 @@ export default function App() {
   const currentEventRef = React.useRef<GameEvent | null>(null);
   const [triggeredEventIds, setTriggeredEventIds] = useState<string[]>([]);
 
+  // Stable showToast ref so useBudget can be placed early (before showToast arrow fn is defined)
+  const showToastRef = React.useRef<(msg: string, type: 'success' | 'error' | 'info') => void>(() => {});
+
+  // ── Budget hook — must come before any useEffect that references its outputs ──
+  const {
+    spentOnResources, setSpentOnResources,
+    spentOnWorkers,   setSpentOnWorkers,
+    totalRevenue,     setTotalRevenue,
+    budgetState,      budgetHistory, setBudgetHistory,
+  } = useBudget({
+    edges, workers, activeEvents, maintenanceYards,
+    upgradedHubs, warehouses, silos,
+    gameYear, monthIdx, welcomeOpen,
+    showToast: (msg, type) => showToastRef.current(msg, type),
+  });
+
   // Tutorial state
   const [tutorialStep, setTutorialStep] = useState(0);
   const [tutorialDone, setTutorialDone] = useState(() => localStorage.getItem('trem_tutorial_done') === '1');
@@ -614,11 +630,13 @@ export default function App() {
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
-    
+
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
   };
+  // Wire the ref now that showToast is defined
+  showToastRef.current = showToast;
 
   // Soundtrack: start after splash, respect mute
   useEffect(() => {
@@ -912,18 +930,6 @@ export default function App() {
     if (city.type === 'polo_industrial' || city.type === 'mineracao') return 3;
     return 2;
   };
-
-  // ── Budget hook ──────────────────────────────────────────────────────────
-  const {
-    spentOnResources, setSpentOnResources,
-    spentOnWorkers,   setSpentOnWorkers,
-    totalRevenue,     setTotalRevenue,
-    budgetState,      budgetHistory, setBudgetHistory,
-  } = useBudget({
-    edges, workers, activeEvents, maintenanceYards,
-    upgradedHubs, warehouses, silos,
-    gameYear, monthIdx, welcomeOpen, showToast,
-  });
 
   // Revenue-per-km map for route color visualization — only computed when feature is on
   const routeRevenueMap = useMemo(() => {
