@@ -23,7 +23,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     message: 'Sem trabalhadores, nada é construído. Clique na aba "Equipe" no menu acima para contratar seus primeiros operários.',
     refKey: 'tab-operations',
     advanceOn: 'action',
-    position: 'top',
+    position: 'bottom',
   },
   {
     id: 'hire_workers',
@@ -31,7 +31,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     message: 'Contrate pelo menos 5 trabalhadores de Terraplanagem e 5 de Assentamento. Eles são essenciais para construir trilhos.',
     refKey: 'workers-section',
     advanceOn: 'action',
-    position: 'center',
+    position: 'bottom',
   },
   {
     id: 'go_to_resources',
@@ -39,7 +39,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     message: 'Você precisa de aço, brita e cimento para construir. Role para baixo na aba Equipe e compre insumos na seção de Recursos.',
     refKey: 'resources-section',
     advanceOn: 'action',
-    position: 'center',
+    position: 'bottom',
   },
   {
     id: 'click_city',
@@ -61,7 +61,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     message: 'Os grandes rios do Brasil também conectam cidades! Clique no botão "⚓" na barra inferior para mudar para o modo Hidrovia.',
     refKey: 'mode-balsa',
     advanceOn: 'action',
-    position: 'top',
+    position: 'center',
   },
   {
     id: 'build_balsa',
@@ -76,7 +76,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     message: 'Hora de transportar pessoas! Clique em "🚆" na barra inferior para ativar o modo de ferrovia de passageiros.',
     refKey: 'mode-passenger',
     advanceOn: 'action',
-    position: 'top',
+    position: 'center',
   },
   {
     id: 'build_passenger',
