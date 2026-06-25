@@ -41,10 +41,10 @@ export default function TutorialOverlay({
 
   return (
     <div className="fixed inset-0 z-[99990] pointer-events-none">
-      {/* Dark overlay with spotlight cutout */}
+      {/* Dark overlay — pointer-events only on 'button' steps so action steps let clicks through */}
       {spotlight ? (
         <div
-          className="absolute inset-0 pointer-events-auto"
+          className={`absolute inset-0 ${step.advanceOn === 'button' ? 'pointer-events-auto' : 'pointer-events-none'}`}
           style={{
             background: 'rgba(0,0,0,0.75)',
             WebkitMaskImage: `radial-gradient(ellipse ${spotlight.width / 2 + 20}px ${spotlight.height / 2 + 20}px at ${spotlight.left + spotlight.width / 2}px ${spotlight.top + spotlight.height / 2}px, transparent 70%, black 100%)`,
@@ -52,7 +52,7 @@ export default function TutorialOverlay({
           }}
         />
       ) : (
-        <div className="absolute inset-0 bg-black/75 pointer-events-auto" />
+        <div className={`absolute inset-0 bg-black/75 ${step.advanceOn === 'button' ? 'pointer-events-auto' : 'pointer-events-none'}`} />
       )}
 
       {/* Spotlight border glow */}
