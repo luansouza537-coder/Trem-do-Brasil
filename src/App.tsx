@@ -297,7 +297,6 @@ export default function App() {
 
   // Cutscene triggers — runs whenever edges change, reads ref to avoid stale closure
   useEffect(() => {
-    if (tutorialStep !== null) return; // suppress cutscenes during tutorial
     const completedCount = edges.filter(e => e.status === 'complete').length;
     if (completedCount === 0) return;
     const shown = shownCutscenesRef.current;
