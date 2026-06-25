@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { City, Edge, ConstructionProject, GameEvent } from '../types';
 import { getSuggestedConnections } from '../utils/geo';
 import { getTrackCostDetail, TERRAIN_COLORS } from '../utils/gameRules';
+import { getRouteColor } from '../utils/routeColors';
 
 interface GameMapProps {
   cities: City[];
@@ -23,6 +24,8 @@ interface GameMapProps {
   constructionQueue?: ConstructionProject[];
   activeEvents?: GameEvent[];
   onFlyToReady?: (fn: (lat: number, lng: number) => void) => void;
+  routeRevenueMap?: Map<string, number>;
+  showRouteColors?: boolean;
 }
 
 const TILE_LAYERS = {
@@ -67,6 +70,8 @@ export default function GameMap({
   constructionQueue = [],
   activeEvents = [],
   onFlyToReady,
+  routeRevenueMap,
+  showRouteColors = false,
 }: GameMapProps) {
   const hasBlockConstruction = activeEvents.some(e => e.blockConstruction);
   const hasStrike = activeEvents.some(e => e.type === 'strike');
@@ -913,8 +918,14 @@ export default function GameMap({
           // 4. Center split
           const railsSplit = L.polyline(latlngs, { color: '#0f172a', weight: 1.4, opacity: 1.0, lineCap: 'round' });
 
-          // Train level / quality glow
-          if ((edge.trainLevel ?? 1) >= 2 || edge.passenger) {
+          // Revenue color glow — replaces quality glow when showRouteColors is active
+          if (showRouteColors && routeRevenueMap) {
+            const revenuePerKm = routeRevenueMap.get(edge.id) ?? 0;
+            const revenueColor = getRouteColor(revenuePerKm, false);
+            const revenueGlow = L.polyline(latlngs, { color: revenueColor, weight: 6, opacity: 0.75, lineCap: 'round' });
+            trackGroupRef.current?.addLayer(revenueGlow);
+          } else if ((edge.trainLevel ?? 1) >= 2 || edge.passenger) {
+            // Train level / quality glow (only when revenue mode is off)
             const glowColor = (edge.trainLevel ?? 1) >= 3 ? '#22d3ee' : edge.passenger ? '#a78bfa' : '#60a5fa';
             const glowLayer = L.polyline(latlngs, { color: glowColor, weight: 2, opacity: 0.6, lineCap: 'round' });
             trackGroupRef.current?.addLayer(glowLayer);
@@ -1110,8 +1121,27 @@ export default function GameMap({
 
   return (
     <div className="w-full h-full relative" id="map-container">
-      {/* Absolute Loading Marker layer in leaf bounds */}
       <div ref={mapContainerRef} className="w-full h-full" style={{ outline: 'none' }} />
+
+      {/* Revenue color legend — only shown when mode is active */}
+      {showRouteColors && (
+        <div className="absolute bottom-8 right-3 z-[400] bg-slate-950/90 border border-slate-700/60 rounded-lg px-2.5 py-2 flex flex-col gap-1 pointer-events-none">
+          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Receita/km</span>
+          {[
+            { color: '#10b981', label: 'Excelente' },
+            { color: '#22c55e', label: 'Boa' },
+            { color: '#eab308', label: 'Média' },
+            { color: '#f97316', label: 'Abaixo da média' },
+            { color: '#ef4444', label: 'Deficitária' },
+            { color: '#f59e0b', label: 'Em construção' },
+          ].map(item => (
+            <div key={item.label} className="flex items-center gap-1.5">
+              <span className="w-3 h-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+              <span className="text-[8px] text-slate-300">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

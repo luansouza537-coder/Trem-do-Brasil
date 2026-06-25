@@ -640,3 +640,50 @@ export const HUB_CONFIG = {
   workers: { assentamento: 30, sinalizacao: 15 },
   resources: { aco: 500, cimento: 300, cobre: 80 } as Partial<GameResources>,
 };
+
+/**
+ * Revenue for a single completed edge (same logic as getMonthlyRevenue but for one edge).
+ * Returns 0 for edges that are still building.
+ */
+export function getEdgeMonthlyRevenue(
+  edge: Edge,
+  workers: { manutencao: number },
+  activeEffects: string[] = [],
+  cities: City[] = [],
+  balsaFrozenOverride?: boolean,
+  gameYear?: number,
+  upgradedHubs?: string[],
+  silos?: string[]
+): number {
+  if (edge.status === 'building') return 0;
+  const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
+  if (edge.type === 'balsa' && balsaFrozen) return 0;
+  const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
+  const demandMult = gameYear ? getDemandGrowthMultiplier(gameYear) : 1.0;
+  const baseKm = Math.round(edge.distance * (edge.type === 'balsa' ? 40000 : 80000));
+  const cityA = cities.find(c => c.id === edge.from);
+  const cityB = cities.find(c => c.id === edge.to);
+  const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
+  const multB = cityB ? getCityTypeRevenueMultiplier(cityB.type) : 1.0;
+  const avgMult = (multA + multB) / 2;
+  const doubledMult = edge.doubled ? 1.5 : 1.0;
+  const trainMult = TRAIN_LEVEL_MULT[(edge.trainLevel ?? 1) as 1|2|3];
+  const passengerBonus = edge.passenger
+    ? (() => {
+        const highPop = (c: City | undefined) => c && (c.type === 'capital' || c.type === 'polo_industrial');
+        return (highPop(cityA) || highPop(cityB)) ? 1.4 : 1.15;
+      })()
+    : 1.0;
+  const hubA = upgradedHubs ? upgradedHubs.includes(edge.from) : false;
+  const hubB = upgradedHubs ? upgradedHubs.includes(edge.to) : false;
+  const hubBonus = hubA && hubB ? 1.40 : (hubA || hubB) ? 1.20 : 1.0;
+  const siloA = silos ? silos.includes(edge.from) : false;
+  const siloB = silos ? silos.includes(edge.to) : false;
+  const siloBonus = (siloA || siloB) ? SILO_CONFIG.revenueMultiplier : 1.0;
+  const base = Math.round(baseKm * avgMult * doubledMult * trainMult * passengerBonus * hubBonus * siloBonus * demandMult);
+  const maintPenalty = workers.manutencao === 0 ? 0.85 : workers.manutencao < 20 ? 0.93 : workers.manutencao < 50 ? 0.97 : 1.0;
+  const maintBonus = workers.manutencao >= 100
+    ? Math.min(1.20, 1.0 + Math.floor((workers.manutencao - 100) / 50) * 0.05)
+    : 1.0;
+  return Math.round(base * maintPenalty * maintBonus);
+}

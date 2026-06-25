@@ -20,6 +20,8 @@ interface CitiesTabProps {
   onConstructionTypeChange: (type: 'rail' | 'balsa') => void;
   showSuggestions: boolean;
   onToggleSuggestions: () => void;
+  showRouteColors?: boolean;
+  onToggleRouteColors?: () => void;
   unmaintainedEdgesCount: number;
   tileLayerType: 'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain';
   onTileLayerChange: (type: 'voyager' | 'positron' | 'dark' | 'satellite' | 'terrain') => void;
@@ -51,6 +53,8 @@ export default function CitiesTab({
   onConstructionTypeChange,
   showSuggestions,
   onToggleSuggestions,
+  showRouteColors = false,
+  onToggleRouteColors = () => {},
   unmaintainedEdgesCount,
   tileLayerType,
   onTileLayerChange,
@@ -279,21 +283,34 @@ export default function CitiesTab({
         </div>
       </div>
 
-      {/* Guia de Trilhas / Sugestões */}
-      <div className="px-3 py-1.5 bg-slate-950/65 border-b border-slate-850 flex items-center justify-between text-[10px] text-slate-355 shrink-0">
-        <span className="flex items-center gap-1 font-semibold text-slate-400">
-          <Compass className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Guia Planejado:
+      {/* Guia de Trilhas / Sugestões + Cores de Receita */}
+      <div className="px-3 py-1.5 bg-slate-950/65 border-b border-slate-850 flex items-center justify-between text-[10px] text-slate-355 shrink-0 gap-2">
+        <span className="flex items-center gap-1 font-semibold text-slate-400 shrink-0">
+          <Compass className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Guia:
         </span>
-        <button
-          onClick={onToggleSuggestions}
-          className={`px-2 py-0.5 rounded text-[9px] uppercase font-extrabold tracking-wider transition cursor-pointer ${
-            showSuggestions
-              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 hover:bg-amber-500/30'
-              : 'bg-slate-900 text-slate-500 border border-slate-800 hover:text-slate-300'
-          }`}
-        >
-          {showSuggestions ? 'Ver Guia' : 'Ocultar Guia'}
-        </button>
+        <div className="flex items-center gap-1 ml-auto">
+          <button
+            onClick={onToggleRouteColors}
+            title="Colorir rotas por rentabilidade"
+            className={`px-2 py-0.5 rounded text-[9px] uppercase font-extrabold tracking-wider transition cursor-pointer ${
+              showRouteColors
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30'
+                : 'bg-slate-900 text-slate-500 border border-slate-800 hover:text-slate-300'
+            }`}
+          >
+            🎨 Receita
+          </button>
+          <button
+            onClick={onToggleSuggestions}
+            className={`px-2 py-0.5 rounded text-[9px] uppercase font-extrabold tracking-wider transition cursor-pointer ${
+              showSuggestions
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 hover:bg-amber-500/30'
+                : 'bg-slate-900 text-slate-500 border border-slate-800 hover:text-slate-300'
+            }`}
+          >
+            {showSuggestions ? 'Ver Guia' : 'Ocultar Guia'}
+          </button>
+        </div>
       </div>
 
       {/* Search & Filters */}

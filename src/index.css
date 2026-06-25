@@ -121,3 +121,17 @@
   animation: passenger-glide 1.0s linear infinite;
 }
 
+
+/* Tutorial highlight ring */
+.tutorial-highlight {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 3px;
+  border-radius: 8px;
+  position: relative;
+  z-index: 9985 !important;
+  animation: tutorial-pulse 1.5s ease-in-out infinite;
+}
+@keyframes tutorial-pulse {
+  0%, 100% { outline-color: #f59e0b; }
+  50% { outline-color: #fbbf24; box-shadow: 0 0 0 4px rgba(245,158,11,0.25); }
+}

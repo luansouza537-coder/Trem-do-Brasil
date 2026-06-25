@@ -30,6 +30,8 @@ interface SidebarProps {
   onToggleMute: () => void;
   showSuggestions: boolean;
   onToggleSuggestions: () => void;
+  showRouteColors?: boolean;
+  onToggleRouteColors?: () => void;
   upgradedHubs?: string[];
   onBuildHub?: (cityId: string) => void;
   maintenanceYards?: string[];
@@ -81,7 +83,7 @@ interface SidebarProps {
 export default function Sidebar({
   cities, edges, selectedCityId, hoveredCityId, onSelectCity, onHoverCity, onFlyTo,
   onReset, tileLayerType, onTileLayerChange, isMuted, onToggleMute,
-  showSuggestions, onToggleSuggestions,
+  showSuggestions, onToggleSuggestions, showRouteColors = false, onToggleRouteColors = () => {},
   upgradedHubs = [], onBuildHub = () => {}, maintenanceYards = [],
   onBuildYard = () => {}, infraQueue = [], yardLevels = {},
   constructionType = 'rail', onConstructionTypeChange = () => {},
@@ -391,6 +393,7 @@ export default function Sidebar({
           onToggleSuggestions={onToggleSuggestions} unmaintainedEdgesCount={unmaintainedEdgesCount}
           tileLayerType={tileLayerType} onTileLayerChange={onTileLayerChange}
           onBuildHub={onBuildHub} onBuildYard={onBuildYard}
+          showRouteColors={showRouteColors} onToggleRouteColors={onToggleRouteColors}
         />
       )}
       </div>

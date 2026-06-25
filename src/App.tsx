@@ -8,6 +8,8 @@ import GameMap from './components/GameMap';
 import PauseScreen from './components/PauseScreen';
 import SplashScreen from './components/SplashScreen';
 import CutsceneModal from './components/CutsceneModal';
+import TutorialModal from './components/TutorialModal';
+import { TUTORIAL_STEPS } from './data/tutorialSteps';
 import { sound } from './services/sound';
 import { 
   getHaversineDistance, 
@@ -17,7 +19,6 @@ import {
 } from './utils/geo';
 import {
   getTrackCostDetail,
-  getIntermodalGrants,
   RESOURCE_NAMES,
   calculateRailwayDistancesFromYards,
   getTrackResourcesRequired,
@@ -33,6 +34,7 @@ import {
   WORKER_NAMES,
   getYearInflationMultiplier,
   getMonthlyRevenue,
+  getEdgeMonthlyRevenue,
   getCityTypeRevenueMultiplier,
   YARD_CONFIGS,
   HUB_CONFIG,
@@ -62,6 +64,7 @@ import {
   Layers
 } from 'lucide-react';
 import { saveGame, loadGame, deleteSave, hasSave, getSaveDate, getAllSlotDates, SaveGame } from './utils/persistence';
+import { useBudget, STARTING_BUDGET } from './hooks/useBudget';
 import { SCHEDULED_EVENTS } from './data/scheduledEvents';
 
 interface Toast {
@@ -82,7 +85,6 @@ const MONTHS_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set'
 
 export default function App() {
   const lastPaidMonthRef = React.useRef('');
-  const lowBudgetAlertedRef = React.useRef(false);
   const edgesRef = React.useRef<Edge[]>([]);
   const constructionQueueRef = React.useRef<ConstructionProject[]>([]);
   const infraQueueRef = React.useRef<InfraProject[]>([]);
@@ -98,6 +100,7 @@ export default function App() {
   const [mobileExpanded, setMobileExpanded] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [showRouteColors, setShowRouteColors] = useState(false);
   const [flyToSignal, setFlyToSignal] = useState<{ lat: number; lng: number; timestamp: number } | null>(null);
 
   // Tycoon expansions
@@ -122,9 +125,8 @@ export default function App() {
     explosivos: 300
   });
   const [autoBuyResources, setAutoBuyResources] = useState(true);
-  const [spentOnResources, setSpentOnResources] = useState(0);
 
-  // Workforce state (workers pool and spent payroll)
+  // Workforce state (workers pool)
   const [workers, setWorkers] = useState<GameWorkers>({
     terraplanagem: 500,
     assentamento:  300,
@@ -132,9 +134,7 @@ export default function App() {
     explosivos:    30,
     manutencao:    150,
   });
-  const [spentOnWorkers, setSpentOnWorkers] = useState(0);
   const [constructionQueue, setConstructionQueue] = useState<ConstructionProject[]>([]);
-  const [totalRevenue, setTotalRevenue] = useState(0);
   const [saveSlot, setSaveSlot] = useState(1);
   const [slotDates, setSlotDates] = useState<(string | null)[]>(() => getAllSlotDates());
   const [completedMissions, setCompletedMissions] = useState<string[]>([]);
@@ -166,7 +166,42 @@ export default function App() {
   const triggeredEventIdsRef = React.useRef<string[]>([]);
   const currentEventRef = React.useRef<GameEvent | null>(null);
   const [triggeredEventIds, setTriggeredEventIds] = useState<string[]>([]);
-  const [budgetHistory, setBudgetHistory] = useState<{ label: string; budget: number }[]>([]);
+
+  // Tutorial state
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [tutorialDone, setTutorialDone] = useState(() => localStorage.getItem('trem_tutorial_done') === '1');
+  const prevEdgesLengthRef = React.useRef(0);
+
+  const tutorialWaitForAction = !tutorialDone ? (TUTORIAL_STEPS[tutorialStep]?.waitForAction ?? null) : null;
+
+  const handleFinishTutorial = React.useCallback(() => {
+    setTutorialDone(true);
+    localStorage.setItem('trem_tutorial_done', '1');
+  }, []);
+
+  const advanceTutorialOnAction = React.useCallback((action: 'click_city' | 'draw_route') => {
+    setTutorialDone(prev => {
+      if (prev) return prev;
+      return prev;
+    });
+    setTutorialStep(prev => {
+      const step = TUTORIAL_STEPS[prev];
+      if (step?.waitForAction === action && prev + 1 < TUTORIAL_STEPS.length) {
+        return prev + 1;
+      }
+      return prev;
+    });
+  }, []);
+
+  // Detect first completed edge to advance draw_route tutorial step
+  useEffect(() => {
+    if (tutorialDone) return;
+    const completedCount = edges.filter(e => e.status === 'complete').length;
+    if (completedCount > 0 && prevEdgesLengthRef.current === 0) {
+      advanceTutorialOnAction('draw_route');
+    }
+    prevEdgesLengthRef.current = completedCount;
+  }, [edges, tutorialDone, advanceTutorialOnAction]);
 
   // Keep refs in sync so the monthly useEffect always reads current values without adding them as deps
   useEffect(() => { edgesRef.current = edges; }, [edges]);
@@ -878,81 +913,41 @@ export default function App() {
     return 2;
   };
 
-  // Dynamic cost & grant budget state (calculated reactively to avoid state bugs)
-  const startingBudget = 1250000000000; // R$ 1.250.000.000.000,00 starting cash
+  // ── Budget hook ──────────────────────────────────────────────────────────
+  const {
+    spentOnResources, setSpentOnResources,
+    spentOnWorkers,   setSpentOnWorkers,
+    totalRevenue,     setTotalRevenue,
+    budgetState,      budgetHistory, setBudgetHistory,
+  } = useBudget({
+    edges, workers, activeEvents, maintenanceYards,
+    upgradedHubs, warehouses, silos,
+    gameYear, monthIdx, welcomeOpen, showToast,
+  });
 
-  // Split intermodal grants into own useMemo — only re-runs when edges change
-  const intermodalGrants = useMemo(() => getIntermodalGrants(CITIES, edges), [edges]);
-
-  const budgetState = useMemo(() => {
-    let spentRail = 0;
-    let spentBalsa = 0;
-
-    edges.forEach(edge => {
-      const cityA = CITY_MAP.get(edge.from);
-      const cityB = CITY_MAP.get(edge.to);
-      if (cityA && cityB) {
-        if (edge.type === 'balsa') {
-          spentBalsa += Math.round(edge.distance * 12000000);
-        } else {
-          spentRail += getTrackCostDetail(cityA, cityB, edge.distance).totalCost;
-        }
-      }
+  // Revenue-per-km map for route color visualization — only computed when feature is on
+  const routeRevenueMap = useMemo(() => {
+    if (!showRouteColors) return new Map<string, number>();
+    const activeEffects = activeEvents.map(e => e.statusEffect);
+    const balsaFrozen = activeEvents.some(e => e.balsaFrozen);
+    const map = new Map<string, number>();
+    edges.filter(e => e.status === 'complete').forEach(edge => {
+      const rev = getEdgeMonthlyRevenue(edge, workers, activeEffects, CITIES, balsaFrozen, gameYear, upgradedHubs, silos);
+      map.set(edge.id, edge.distance > 0 ? rev / edge.distance : 0);
     });
+    return map;
+  }, [showRouteColors, edges, workers, activeEvents, gameYear, upgradedHubs, silos]);
 
-    // Yards and hubs are debited directly via spentOnResources — no separate tracking needed
-    const spentYards = 0;
-    const spentHubs = 0;
-
-    const grantIncome = intermodalGrants
-      .filter(g => g.unlocked)
-      .reduce((sum, g) => sum + g.value, 0);
-
-    const totalSpent = spentRail + spentBalsa + spentYards + spentHubs + spentOnResources + spentOnWorkers;
-    const currentBudget = startingBudget - totalSpent + grantIncome + totalRevenue;
-    const activeEffectsForDisplay = activeEvents.map(e => e.statusEffect);
-    const seasonalRevForDisplay = getActiveSeasonalEffects(monthIdx).reduce((acc, s) => acc * (s.revenueFactor ?? 1.0), 1.0);
-    const balsaFrozenForDisplay = activeEvents.some(e => e.balsaFrozen);
-    const warehouseBonusDisplay = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
-    const monthlyRevenue = Math.round(
-      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs, silos) * seasonalRevForDisplay
-    ) + warehouseBonusDisplay;
-
-    return {
-      totalSpent,
-      spentRail,
-      spentBalsa,
-      spentYards,
-      spentHubs,
-      grantIncome,
-      currentBudget,
-      unlockedGrants: intermodalGrants,
-      spentOnWorkers,
-      spentOnResources,
-      totalRevenue,
-      monthlyRevenue,
-    };
-  }, [edges, maintenanceYards, upgradedHubs, spentOnResources, spentOnWorkers, intermodalGrants, totalRevenue, gameYear, workers, activeEvents, monthIdx]);
-
-  // Record budget snapshot whenever the budget actually changes (after payroll/expenses settle)
-  useEffect(() => {
-    setBudgetHistory(prev => [
-      ...prev.slice(-23),
-      { label: `${gameYear}/${String(monthIdx + 1).padStart(2, '0')}`, budget: budgetState.currentBudget }
-    ]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budgetState.currentBudget]);
-
-  // Budget critically low alert
+  // Sound effect when budget alert fires (hook handles the toast, App handles the sound)
+  const budgetAlertFiredRef = React.useRef(false);
   useEffect(() => {
     if (welcomeOpen) return;
-    const pct = budgetState.currentBudget / startingBudget;
-    if (pct < 0.08 && budgetState.currentBudget > 0 && !lowBudgetAlertedRef.current) {
-      lowBudgetAlertedRef.current = true;
-      showToast('🚨 ALERTA CRÍTICO: Caixa abaixo de 8% do orçamento inicial! Reduza gastos urgentemente.', 'error');
+    const pct = budgetState.currentBudget / STARTING_BUDGET;
+    if (pct < 0.08 && budgetState.currentBudget > 0 && !budgetAlertFiredRef.current) {
+      budgetAlertFiredRef.current = true;
       sound.playError();
     } else if (pct >= 0.15) {
-      lowBudgetAlertedRef.current = false;
+      budgetAlertFiredRef.current = false;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [budgetState.currentBudget, welcomeOpen]);
@@ -1821,6 +1816,8 @@ export default function App() {
         onToggleMute={handleToggleMute}
         showSuggestions={showSuggestions}
         onToggleSuggestions={() => setShowSuggestions(!showSuggestions)}
+        showRouteColors={showRouteColors}
+        onToggleRouteColors={() => setShowRouteColors(v => !v)}
         
         // Tycoon extensions
         upgradedHubs={upgradedHubs}
@@ -2174,7 +2171,7 @@ export default function App() {
           edges={edges}
           selectedCityId={selectedCityId}
           hoveredCityId={hoveredCityId}
-          onSelectCity={setSelectedCityId}
+          onSelectCity={(id) => { setSelectedCityId(id); if (id) advanceTutorialOnAction('click_city'); }}
           onHoverCity={setHoveredCityId}
           onConnectCities={handleConnectCities}
           tileLayerType={tileLayerType}
@@ -2187,6 +2184,8 @@ export default function App() {
           nearestYardDistances={nearestYardDistances}
           constructionQueue={constructionQueue}
           activeEvents={activeEvents}
+          routeRevenueMap={routeRevenueMap}
+          showRouteColors={showRouteColors}
         />
       </main>
 
@@ -2210,6 +2209,17 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* --- TUTORIAL MODAL --- */}
+      {!tutorialDone && !welcomeOpen && !hasSaveGame && splashDone && (
+        <TutorialModal
+          steps={TUTORIAL_STEPS}
+          currentIndex={tutorialStep}
+          waitingForAction={tutorialWaitForAction !== null}
+          onNext={() => setTutorialStep(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1))}
+          onFinish={handleFinishTutorial}
+        />
+      )}
 
       {/* --- PAUSE SCREEN --- */}
       {playSpeed === 'paused' && !welcomeOpen && !victoryOpen && !gameOverOpen && (
