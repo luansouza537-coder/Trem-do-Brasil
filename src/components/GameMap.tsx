@@ -1139,7 +1139,7 @@ export default function GameMap({
         return (
           <button
             onClick={e => { e.stopPropagation(); onConstructionTypeChange(next.type); }}
-            className={`absolute bottom-10 right-3 z-[1000] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${active.bg} ${active.border}`}
+            className={`absolute bottom-8 left-3 z-[1000] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-sm cursor-pointer transition-all hover:scale-105 ${active.bg} ${active.border}`}
             title={`Modo ativo: ${active.label} — clique para mudar para ${next.label}`}
           >
             <span className="text-base leading-none">{active.icon}</span>
