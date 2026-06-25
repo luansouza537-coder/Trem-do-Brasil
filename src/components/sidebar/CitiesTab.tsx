@@ -207,54 +207,16 @@ export default function CitiesTab({
         })()}
       </div>
 
-      {/* Construction Mode Selector */}
-      <div className="bg-slate-900/95 border-b border-slate-850 p-3 flex flex-col gap-2 shrink-0">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-slate-300 uppercase text-[9px] tracking-wider">Modo de Obra Ativo:</span>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => onConstructionTypeChange('rail')}
-              className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-bold border flex items-center gap-1.5 transition cursor-pointer ${
-                constructionType === 'rail'
-                  ? 'bg-amber-500/25 border-amber-500/50 text-amber-300 font-extrabold'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              🚂 Ferrovia
-            </button>
-            <button
-              onClick={() => onConstructionTypeChange('balsa')}
-              className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-bold border flex items-center gap-1.5 transition cursor-pointer ${
-                constructionType === 'balsa'
-                  ? 'bg-sky-500/25 border-sky-500/50 text-sky-300 font-extrabold'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              ⚓ Hidrovia
-            </button>
-            <button
-              onClick={() => onConstructionTypeChange('passenger')}
-              className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-bold border flex items-center gap-1.5 transition cursor-pointer ${
-                constructionType === 'passenger'
-                  ? 'bg-purple-500/25 border-purple-500/50 text-purple-300 font-extrabold'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              🚆 Passag.
-            </button>
+      {/* Maintenance warning */}
+      {unmaintainedEdgesCount > 0 && (
+        <div className="bg-rose-950/20 border-b border-rose-900/30 p-3 flex items-start gap-2.5 animate-pulse shrink-0">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-[10px] text-rose-300 font-bold">⚠️ Risco de Quebras!</p>
+            <p className="text-[9px] text-rose-400 leading-tight">Você possui {unmaintainedEdgesCount} trechos distantes mais de 800 km de um pátio de manutenção. Eles correm risco de quebra!</p>
           </div>
         </div>
-
-        {unmaintainedEdgesCount > 0 && (
-          <div className="bg-rose-950/20 border border-rose-500/30 rounded-lg p-2 flex items-start gap-2.5 animate-pulse">
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-[10px] text-rose-300 font-bold">⚠️ Risco de Quebras!</p>
-              <p className="text-[9px] text-rose-450 leading-tight">Você possui {unmaintainedEdgesCount} trechos distantes mais de 800 km de um pátio de manutenção. Eles correm risco de quebra!</p>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Quick Stats Grid */}
       <div className="bg-slate-950/40 p-2.5 border-b border-slate-900 grid grid-cols-2 gap-2 text-center text-[9px] font-bold text-slate-400 shrink-0">
