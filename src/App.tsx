@@ -29,6 +29,7 @@ import {
   getActiveSeasonalEffects,
   getDemandGrowthMultiplier,
   WORKER_SALARIES,
+  cappedEventCost,
   WORKER_HIRE_COST,
   WORKER_SEVERANCE,
   WORKER_NAMES,
@@ -396,11 +397,12 @@ export default function App() {
     if (lastPaidMonthRef.current !== monthKey) {
       lastPaidMonthRef.current = monthKey;
 
-      const monthlyPayroll = (workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
+      const inflationMult = getYearInflationMultiplier(gameYear);
+      const monthlyPayroll = ((workers.terraplanagem * WORKER_SALARIES.terraplanagem) +
                              (workers.assentamento  * WORKER_SALARIES.assentamento)  +
                              (workers.sinalizacao   * WORKER_SALARIES.sinalizacao)   +
                              (workers.explosivos    * WORKER_SALARIES.explosivos)    +
-                             (workers.manutencao    * WORKER_SALARIES.manutencao);
+                             (workers.manutencao    * WORKER_SALARIES.manutencao)) * inflationMult;
 
       const totalWorkers = workers.terraplanagem + workers.assentamento + workers.sinalizacao + workers.explosivos + workers.manutencao;
       const curEvents = activeEventsRef.current;
@@ -564,7 +566,9 @@ export default function App() {
     }
 
     // 1. Durations Tick — pre-calculate from ref, then pure state update
-    const totalFines = activeEventsRef.current.reduce((acc, e) => acc + (e.costPerMonth && e.monthsLeft > 0 ? e.costPerMonth : 0), 0);
+    const rawFines = activeEventsRef.current.reduce((acc, e) => acc + (e.costPerMonth && e.monthsLeft > 0 ? e.costPerMonth : 0), 0);
+    // Cap automatic crisis debits at 25% of current balance to prevent bankruptcy spikes
+    const totalFines = cappedEventCost(rawFines, budgetState.currentBudget);
     const expiredEvents = activeEventsRef.current.filter(e => e.monthsLeft <= 1);
     setActiveEvents(prev => prev
       .map(e => ({ ...e, monthsLeft: e.monthsLeft - 1 }))
@@ -573,7 +577,8 @@ export default function App() {
     if (totalFines > 0) {
       setSpentOnResources(p => p + totalFines);
       const fmt = (v: number) => v >= 1e9 ? `R$ ${(v/1e9).toFixed(1)}B` : `R$ ${(v/1e6).toFixed(0)}M`;
-      showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}`, 'error');
+      const capMsg = totalFines < rawFines ? ` (limitado a 25% do caixa)` : '';
+      showToast(`💸 Multas mensais de crises ativas: -${fmt(totalFines)}${capMsg}`, 'error');
     }
     expiredEvents.forEach(e => {
       showToast(`✅ Crise encerrada: "${e.title}" — efeitos cessados.`, 'success');

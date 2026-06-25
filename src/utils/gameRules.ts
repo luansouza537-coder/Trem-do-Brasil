@@ -98,7 +98,7 @@ export const WORKER_SALARIES: Record<keyof GameWorkers, number> = {
   terraplanagem: 4_500_000,
   assentamento:  5_500_000,
   sinalizacao:   7_000_000,
-  explosivos:    12_000_000,
+  explosivos:    6_000_000,  // reduzido de 12M — era punitivo demais para obras de túnel
   manutencao:    4_000_000,
 };
 
@@ -107,7 +107,7 @@ export const WORKER_HIRE_COST: Record<keyof GameWorkers, number> = {
   terraplanagem: 4_500_000 * 3,
   assentamento:  5_500_000 * 3,
   sinalizacao:   7_000_000 * 3,
-  explosivos:    12_000_000 * 3,
+  explosivos:    6_000_000 * 3,
   manutencao:    4_000_000 * 3,
 };
 
@@ -116,7 +116,7 @@ export const WORKER_SEVERANCE: Record<keyof GameWorkers, number> = {
   terraplanagem: 4_500_000 * 2,
   assentamento:  5_500_000 * 2,
   sinalizacao:   7_000_000 * 2,
-  explosivos:    12_000_000 * 2,
+  explosivos:    6_000_000 * 2,
   manutencao:    4_000_000 * 2,
 };
 
@@ -454,6 +454,14 @@ export function calculateRailwayDistancesFromYards(
   return { distances, nearestYardIds };
 }
 
+// Crisis cost cap: automatic event debits cannot exceed 25% of current balance per month
+export function cappedEventCost(cost: number, currentBalance: number): number {
+  return Math.min(cost, Math.max(0, currentBalance * 0.25));
+}
+
+export const BASE_RAIL_REVENUE_PER_KM = 100_000;  // era 80k; +25% para viabilizar retorno em menos de 49 anos
+export const BASE_BALSA_REVENUE_PER_KM = 64_000;  // era 40k; elevado para 80% do trilho
+
 export function getCityTypeRevenueMultiplier(type: City['type']): number {
   switch (type) {
     case 'mineracao':     return 1.4;
@@ -481,22 +489,22 @@ export const SEASONAL_EFFECTS: SeasonalEffect[] = [
     label: 'Chuvas Amazônicas',
     months: [0, 1, 2], // Jan–Mar
     states: ['AM', 'PA', 'RO', 'RR', 'AP', 'AC', 'TO'],
-    constructionSlowFactor: 1.35,
-    headline: '🌧️ Chuvas intensas na Amazônia: obras no Norte com ritmo reduzido em 35%',
+    constructionSlowFactor: 1.60,
+    headline: '🌧️ Chuvas intensas na Amazônia: obras no Norte com ritmo reduzido em 60%',
   },
   {
     id: 'seca_nordeste',
     label: 'Seca no Nordeste',
     months: [6, 7, 8], // Jul–Sep
-    revenueFactor: 0.88,
-    headline: '☀️ Seca histórica no Nordeste: demanda de transportes cai 12% no país',
+    revenueFactor: 0.78,
+    headline: '☀️ Seca histórica no Nordeste: demanda de transportes cai 22% no país',
   },
   {
     id: 'festas_dezembro',
     label: 'Temporada de Festas',
     months: [11], // December
-    revenueFactor: 1.20,
-    headline: '🎄 Temporada festiva: demanda de passageiros sobe 20% em todo o Brasil',
+    revenueFactor: 1.30,
+    headline: '🎄 Temporada festiva: demanda de passageiros sobe 30% em todo o Brasil',
   },
 ];
 
@@ -529,7 +537,7 @@ export function getMonthlyRevenue(
   const demandMult = gameYear ? getDemandGrowthMultiplier(gameYear) : 1.0;
   const base = completedEdges.reduce((sum, e) => {
     if (e.type === 'balsa' && balsaFrozen) return sum;
-    const baseKm = Math.round(e.distance * (e.type === 'balsa' ? 40000 : 80000));
+    const baseKm = Math.round(e.distance * (e.type === 'balsa' ? BASE_BALSA_REVENUE_PER_KM : BASE_RAIL_REVENUE_PER_KM));
     const cityA = cities.find(c => c.id === e.from);
     const cityB = cities.find(c => c.id === e.to);
     const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
@@ -608,7 +616,7 @@ export const YARD_CONFIGS: Record<1|2|3, {
   2: {
     name: 'Avançado',
     coverage: 900,
-    cost: 28_000_000_000,
+    cost: 18_000_000_000,
     months: 10,
     workers: { terraplanagem: 40, assentamento: 20 },
     resources: { aco: 400, brita: 600, cimento: 300, cobre: 50 },
@@ -616,7 +624,7 @@ export const YARD_CONFIGS: Record<1|2|3, {
   3: {
     name: 'Industrial',
     coverage: 1400,
-    cost: 50_000_000_000,
+    cost: 32_000_000_000,
     months: 16,
     workers: { terraplanagem: 80, assentamento: 40, sinalizacao: 20 },
     resources: { aco: 800, brita: 1200, cimento: 600, cobre: 100, madeira: 200 },
@@ -643,7 +651,7 @@ export const SILO_CONFIG = {
 
 // Hub (Terminal Central) config
 export const HUB_CONFIG = {
-  cost: 30_000_000_000,
+  cost: 18_000_000_000,
   months: 8,
   workers: { assentamento: 30, sinalizacao: 15 },
   resources: { aco: 500, cimento: 300, cobre: 80 } as Partial<GameResources>,
@@ -668,7 +676,7 @@ export function getEdgeMonthlyRevenue(
   if (edge.type === 'balsa' && balsaFrozen) return 0;
   const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
   const demandMult = gameYear ? getDemandGrowthMultiplier(gameYear) : 1.0;
-  const baseKm = Math.round(edge.distance * (edge.type === 'balsa' ? 40000 : 80000));
+  const baseKm = Math.round(edge.distance * (edge.type === 'balsa' ? BASE_BALSA_REVENUE_PER_KM : BASE_RAIL_REVENUE_PER_KM));
   const cityA = cities.find(c => c.id === edge.from);
   const cityB = cities.find(c => c.id === edge.to);
   const multA = cityA ? getCityTypeRevenueMultiplier(cityA.type) : 1.0;
