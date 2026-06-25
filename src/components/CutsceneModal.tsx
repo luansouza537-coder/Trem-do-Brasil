@@ -6,10 +6,11 @@ interface CutsceneModalProps {
   subtitle: string;
   description: string;
   icon: string;
+  type?: 'achievement' | 'event';
   onFinished: () => void;
 }
 
-export default function CutsceneModal({ videoSrc, title, subtitle, description, icon, onFinished }: CutsceneModalProps) {
+export default function CutsceneModal({ videoSrc, title, subtitle, description, icon, type = 'achievement', onFinished }: CutsceneModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [phase, setPhase] = useState<'waiting' | 'playing' | 'achievement'>('waiting');
 
@@ -75,9 +76,15 @@ export default function CutsceneModal({ videoSrc, title, subtitle, description, 
 
             {/* Badge */}
             <div className="flex flex-col items-center gap-1">
-              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-amber-400 bg-amber-950/60 border border-amber-700/50 px-3 py-1 rounded-full">
-                🏆 Conquista Desbloqueada
-              </span>
+              {type === 'achievement' ? (
+                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-amber-400 bg-amber-950/60 border border-amber-700/50 px-3 py-1 rounded-full">
+                  🏆 Conquista Desbloqueada
+                </span>
+              ) : (
+                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-rose-400 bg-rose-950/60 border border-rose-700/50 px-3 py-1 rounded-full">
+                  ⚠️ Evento Crítico
+                </span>
+              )}
               <h2 className="text-white text-2xl font-black mt-2">{title}</h2>
               <p className="text-amber-400 text-xs font-bold uppercase tracking-wider">{subtitle}</p>
             </div>

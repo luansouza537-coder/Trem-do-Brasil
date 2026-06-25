@@ -1965,6 +1965,7 @@ export default function App() {
       <CutsceneModal
         videoSrc="/cutscene_greve.mp4"
         icon="🚧"
+        type="event"
         title="Greve Geral Ferroviária"
         subtitle="Crise Trabalhista — 2028"
         description="Os trabalhadores paralisaram as obras. Os sindicatos exigem aumento salarial e melhores condições de campo. A RENIF pagará multas mensais enquanto o conflito durar."
@@ -1975,6 +1976,7 @@ export default function App() {
       <CutsceneModal
         videoSrc="/cutscene_escassez_cimento.mp4"
         icon="🏗️"
+        type="event"
         title="Escassez Nacional de Cimento"
         subtitle="Crise de Insumos — 2027"
         description="A crise no setor de construção civil drenou os estoques nacionais. Todas as obras avançam mais devagar por falta de cimento no mercado."
