@@ -209,15 +209,11 @@ export default function App() {
     const R = TUTORIAL_ROUTES;
     const W = TUTORIAL_REQS.workers;
     const RES = TUTORIAL_REQS.resources;
-    const hasRailEdge = edges.some(e => e.type === 'rail' &&
-      ((e.cityA === R.rail.cityAId && e.cityB === R.rail.cityBId) ||
-       (e.cityA === R.rail.cityBId && e.cityB === R.rail.cityAId)));
-    const hasBalsaEdge = edges.some(e => e.type === 'balsa' &&
-      ((e.cityA === R.balsa.cityAId && e.cityB === R.balsa.cityBId) ||
-       (e.cityA === R.balsa.cityBId && e.cityB === R.balsa.cityAId)));
-    const hasPassengerEdge = edges.some(e => e.type === 'passenger' &&
-      ((e.cityA === R.passenger.cityAId && e.cityB === R.passenger.cityBId) ||
-       (e.cityA === R.passenger.cityBId && e.cityB === R.passenger.cityAId)));
+    const matchesRoute = (e: typeof edges[0], r: { cityAId: string; cityBId: string }) =>
+      (e.from === r.cityAId && e.to === r.cityBId) || (e.from === r.cityBId && e.to === r.cityAId);
+    const hasRailEdge      = edges.some(e => e.type === 'rail'      && matchesRoute(e, R.rail));
+    const hasBalsaEdge     = edges.some(e => e.type === 'balsa'     && matchesRoute(e, R.balsa));
+    const hasPassengerEdge = edges.some(e => e.type === 'passenger' && matchesRoute(e, R.passenger));
     const conditions: Record<string, boolean> = {
       go_to_team:       totalWorkers > 0,
       hire_workers:     workers.terraplanagem >= W.terraplanagem
