@@ -332,10 +332,16 @@ export function getIntermodalGrants(cities: City[], edges: Edge[]): FundGrant[] 
     c.portType === 'fluvial' && ['MS', 'MT'].includes(c.state);
 
   const isInnerSpPrPort = (c: City) =>
-    c.portType === 'fluvial' && ['SP', 'PR', 'SC', 'RS'].includes(c.state);
+    c.portType === 'fluvial' && ['SP', 'PR'].includes(c.state);
+
+  const isSouthernFluvialPort = (c: City) =>
+    c.portType === 'fluvial' && ['SC', 'RS'].includes(c.state);
 
   const isCoastMaritimePort = (c: City) =>
     c.portType === 'maritime' && ['SP', 'RJ', 'ES', 'SC', 'PR', 'RS', 'BA', 'SE', 'AL', 'PE', 'PB', 'RN', 'CE', 'MA', 'PI'].includes(c.state);
+
+  const isSouthernMaritimePort = (c: City) =>
+    c.portType === 'maritime' && ['RS', 'SC'].includes(c.state);
 
   const grants: FundGrant[] = [
     {
@@ -355,8 +361,15 @@ export function getIntermodalGrants(cities: City[], edges: Edge[]): FundGrant[] 
     {
       id: 'hydro_tiete_parana',
       title: 'Conexão Hidro-Aliança Tietê e Paraná',
-      description: 'Conecte portos fluviais de SP ou PR (Pederneiras, Epitácio, Foz) a portos oceânicos ou capitais portuárias.',
+      description: 'Conecte portos fluviais de SP ou PR (Pederneiras, Epitácio, Foz do Iguaçu) a portos oceânicos costeiros.',
       value: 100000000000,
+      unlocked: false,
+    },
+    {
+      id: 'corridor_sul_laguna',
+      title: 'Corredor Laguna–Guaíba',
+      description: 'Conecte Porto Alegre ou outro porto fluvial do RS/SC ao porto marítimo de Rio Grande ou Itajaí, integrando a bacia do Guaíba ao litoral gaúcho.',
+      value: 70000000000,
       unlocked: false,
     },
     {
@@ -372,12 +385,13 @@ export function getIntermodalGrants(cities: City[], edges: Edge[]): FundGrant[] 
     const componentCities = getCitiesInComponent(compIds);
     if (componentCities.length < 2) return;
 
-    const hasFluvialAmazon = componentCities.some(isAmazonFluvialPort);
-    const hasFluvialAgro = componentCities.some(isAgroPantanalPort);
-    const hasFluvialInner = componentCities.some(isInnerSpPrPort);
-    const hasMaritimeCoast = componentCities.some(isCoastMaritimePort);
+    const hasFluvialAmazon   = componentCities.some(isAmazonFluvialPort);
+    const hasFluvialAgro     = componentCities.some(isAgroPantanalPort);
+    const hasFluvialInner    = componentCities.some(isInnerSpPrPort);
+    const hasFluvialSouth    = componentCities.some(isSouthernFluvialPort);
+    const hasMaritimeCoast   = componentCities.some(isCoastMaritimePort);
+    const hasMaritimeSouth   = componentCities.some(isSouthernMaritimePort);
 
-    // Specific sub-region triggers for more refined locks
     if (hasFluvialAmazon && hasMaritimeCoast) {
       const grant = grants.find(g => g.id === 'amazon_corridor');
       if (grant) grant.unlocked = true;
@@ -388,6 +402,10 @@ export function getIntermodalGrants(cities: City[], edges: Edge[]): FundGrant[] 
     }
     if (hasFluvialInner && hasMaritimeCoast) {
       const grant = grants.find(g => g.id === 'hydro_tiete_parana');
+      if (grant) grant.unlocked = true;
+    }
+    if (hasFluvialSouth && hasMaritimeSouth) {
+      const grant = grants.find(g => g.id === 'corridor_sul_laguna');
       if (grant) grant.unlocked = true;
     }
     if (hasMaritimeCoast && componentCities.some(c => c.portType === 'fluvial' && ['CE', 'PE', 'RN', 'MA', 'AL', 'SE', 'BA'].includes(c.state))) {
