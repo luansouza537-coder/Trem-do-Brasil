@@ -255,43 +255,43 @@ export default function GameMap({
     requestAnimationFrame(updateFrame);
   };
 
-  // 1. Detect route COMPLETION (building → complete) and start celebratory animation + shuttle
+  // 1. Detect and Animate new track validations immediately, and start continuous shuttles
   useEffect(() => {
     const prevEdges = prevEdgesRef.current;
-    if (prevEdges) {
-      // Detect edges that just finished construction this tick
-      const justCompleted = edges.filter(e =>
-        e.status === 'complete' &&
-        prevEdges.find(pe => pe.id === e.id && pe.status === 'building')
-      );
-
-      justCompleted.forEach(edge => {
+    if (prevEdges && edges.length > prevEdges.length) {
+      // Find the edge that was recently added
+      const addedEdges = edges.filter(e => !prevEdges.some(pe => pe.id === e.id));
+      addedEdges.forEach(edge => {
         const fromCity = cities.find(c => c.id === edge.from);
         const toCity = cities.find(c => c.id === edge.to);
-        if (!fromCity || !toCity) return;
-        const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
-        const celebrationDuration = 4000;
-        // Play one-time completion animation from A → B
-        animateTrainPath(fromCity, toCity, eType, celebrationDuration);
-        // Start continuous back-and-forth shuttle after the celebration finishes
-        if (!activeRouteTrainsRef.current.has(edge.id)) {
-          const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
-          activeRouteTrainsRef.current.add(edge.id);
-          const shuttle = (from: City, to: City) => {
-            if (!edgesRef.current.find(e => e.id === edge.id)) {
-              activeRouteTrainsRef.current.delete(edge.id);
-              return;
-            }
-            animateTrainPath(from, to, eType, tripDuration);
-            setTimeout(() => {
+        if (fromCity && toCity) {
+          const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
+          // Play train traveling from origin to destination on first build
+          // (balsa routes skip the initial animation since boats can't go through land)
+          if (eType !== 'balsa') {
+            animateTrainPath(fromCity, toCity, eType);
+          }
+          // Start continuous shuttle if edge is already complete (rail only — balsa shuttle
+          // would cross land in straight-line interpolation)
+          if (eType !== 'balsa' && edge.status !== 'building' && !activeRouteTrainsRef.current.has(edge.id)) {
+            const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
+            activeRouteTrainsRef.current.add(edge.id);
+            const shuttle = (from: City, to: City) => {
               if (!edgesRef.current.find(e => e.id === edge.id)) {
                 activeRouteTrainsRef.current.delete(edge.id);
                 return;
               }
-              shuttle(to, from);
-            }, tripDuration + 500);
-          };
-          setTimeout(() => shuttle(toCity, fromCity), celebrationDuration + 600);
+              animateTrainPath(from, to, eType, tripDuration);
+              setTimeout(() => {
+                if (!edgesRef.current.find(e => e.id === edge.id)) {
+                  activeRouteTrainsRef.current.delete(edge.id);
+                  return;
+                }
+                shuttle(to, from);
+              }, tripDuration + 500);
+            };
+            shuttle(fromCity, toCity);
+          }
         }
       });
     }
@@ -305,7 +305,8 @@ export default function GameMap({
       const completedEdges = edgesRef.current.filter(e => e.status !== 'building');
       if (completedEdges.length === 0) return;
 
-      const idleEdges = completedEdges.filter(e => !activeRouteTrainsRef.current.has(e.id));
+      // Skip balsa (ferry) routes — straight-line animation would cross land
+      const idleEdges = completedEdges.filter(e => e.type !== 'balsa' && !activeRouteTrainsRef.current.has(e.id));
       const toStart = idleEdges.slice(0, 3);
 
       toStart.forEach(edge => {
