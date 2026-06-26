@@ -151,7 +151,7 @@ export default function GameMap({
     // For Brazil, the Atlantic is to the east (higher lng).
     // We push the control point toward whichever perpendicular side has higher lng
     // (i.e., closer to the ocean), with a magnitude proportional to route length.
-    const offset = Math.max(1.0, len * 0.6);
+    const offset = len * 0.12;
     const sign = perpLng >= 0 ? 1 : -1;
     return [midLat + sign * perpLat * offset, midLng + sign * perpLng * offset];
   };
