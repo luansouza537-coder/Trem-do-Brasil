@@ -733,7 +733,7 @@ export function getPassengerMonthlyRevenue(
 ): number {
   const demandMult = getDemandGrowthMultiplier(gameYear);
   const eventMult = activeEffects.includes('PANDEMIA2') ? 0.80
-    : activeEffects.includes('GRIPE_AVIARIA_2') ? 0.95
+    : activeEffects.includes('GRIPE_AVIARIA_2') ? 0.88
     : activeEffects.includes('COPA_MUNDO_2035') ? 1.30
     : activeEffects.includes('OLIMPIADAS') ? 1.25
     : activeEffects.includes('VISITA_PAPA') ? 1.20
@@ -751,8 +751,8 @@ export function getPassengerMonthlyRevenue(
       const demandBase = (demandA + demandB) / 2;
       const fare = edge.fare ?? 150;
       const elasticity = Math.max(0.2, 1 - (fare - 120) / 400);
-      const capacityBase = Math.round((edge.distance / 100) * 300);
-      const capacity = Math.max(300, capacityBase + (edge.extraFleets ?? 0) * 150);
+      const capacityBase = Math.round((edge.distance / 100) * 75_000);
+      const capacity = Math.max(15_000, capacityBase + (edge.extraFleets ?? 0) * 37_500);
       const pax = Math.min(demandBase * elasticity, capacity);
       const satisfaction = edge.satisfaction ?? 100;
       const rev = Math.round(pax * fare * (satisfaction / 100) * demandMult * eventMult);
