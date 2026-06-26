@@ -326,12 +326,13 @@ export default function App() {
     const completedCount = edges.filter(e => e.status === 'complete').length;
     if (completedCount === 0) return;
     const shown = shownCutscenesRef.current;
-    // First rail: fires as soon as ≥1 edge is complete (handles simultaneous completions)
-    if (completedCount >= 1 && !shown.includes('first_rail')) {
+    // First rail: fires only when the first RAIL edge completes (not balsa/passenger)
+    const firstRail = edges.find(e => e.type === 'rail' && e.status === 'complete');
+    if (firstRail && !shown.includes('first_rail')) {
       shownCutscenesRef.current = [...shown, 'first_rail'];
       setShownCutscenes(shownCutscenesRef.current);
       setTimeout(() => enqueueCutscene('first_rail'), 800);
-      return; // don't check half_network in same tick — let it fire on next change
+      return;
     }
     // First balsa (hidrovia): fires when first balsa edge completes
     const firstBalsa = edges.find(e => e.type === 'balsa' && e.status === 'complete');
