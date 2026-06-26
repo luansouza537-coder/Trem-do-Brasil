@@ -134,10 +134,35 @@ export default function GameMap({
     citiesRef.current = cities;
   }, [selectedCityId, onSelectCity, onConnectCities, onHoverCity, cities]);
 
+  // Compute bezier control point for balsa routes so the boat arcs over water
+  // instead of cutting through land in a straight line.
+  const balsaControlPoint = (fromCity: City, toCity: City): [number, number] => {
+    const midLat = (fromCity.lat + toCity.lat) / 2;
+    const midLng = (fromCity.lng + toCity.lng) / 2;
+
+    // Perpendicular direction (rotate route vector 90°)
+    const dLat = toCity.lat - fromCity.lat;
+    const dLng = toCity.lng - fromCity.lng;
+    const len = Math.sqrt(dLat * dLat + dLng * dLng) || 1;
+    // Perpendicular unit vector (rotated right = clockwise)
+    const perpLat = -dLng / len;
+    const perpLng =  dLat / len;
+
+    // For Brazil, the Atlantic is to the east (higher lng).
+    // We push the control point toward whichever perpendicular side has higher lng
+    // (i.e., closer to the ocean), with a magnitude proportional to route length.
+    const offset = Math.max(1.0, len * 0.6);
+    const sign = perpLng >= 0 ? 1 : -1;
+    return [midLat + sign * perpLat * offset, midLng + sign * perpLng * offset];
+  };
+
   // Train animation helper
   const animateTrainPath = (fromCity: City, toCity: City, edgeType: 'rail' | 'balsa' = 'rail', durationMs = 2500) => {
     if (!mapRef.current) return;
     const map = mapRef.current;
+
+    // For balsa routes, compute bezier control point to arc over water
+    const ctrlPt = edgeType === 'balsa' ? balsaControlPoint(fromCity, toCity) : null;
 
     // Create a beautiful, premium, custom SVG train/locomotive wrapper
     const trainSvg = `
@@ -187,20 +212,19 @@ export default function GameMap({
     const iconSize: [number, number] = edgeType === 'balsa' ? [30, 30] : [28, 28];
     const iconAnchor: [number, number] = edgeType === 'balsa' ? [15, 15] : [14, 14];
 
-    // Angle of movement for rotation
-    const dLat = toCity.lat - fromCity.lat;
-    const dLng = toCity.lng - fromCity.lng;
-    const angle = Math.atan2(dLat, dLng) * (180 / Math.PI);
-    // Since geographic maps have positive Y pointing North, but pixel grids have positive Y pointing South:
-    const rotationAngle = -angle;
+    // Initial rotation from source bearing (updated dynamically for balsa arcs)
+    const dLatInit = toCity.lat - fromCity.lat;
+    const dLngInit = toCity.lng - fromCity.lng;
+    const initialAngle = Math.atan2(dLatInit, dLngInit) * (180 / Math.PI);
+    const initialRotation = -initialAngle;
 
     // Create Marker that transforms rotatively
+    const markerEl = document.createElement('div');
+    markerEl.style.cssText = `transform: rotate(${initialRotation}deg); transform-origin: center; width: ${iconSize[0]}px; height: ${iconSize[1]}px;`;
+    markerEl.innerHTML = iconSvg;
+
     const trainIcon = L.divIcon({
-      html: `
-        <div style="transform: rotate(${rotationAngle}deg); transform-origin: center; width: ${iconSize[0]}px; height: ${iconSize[1]}px;">
-          ${iconSvg}
-        </div>
-      `,
+      html: markerEl.outerHTML,
       className: 'leaflet-train-icon-marker',
       iconSize: iconSize,
       iconAnchor: iconAnchor
@@ -223,10 +247,35 @@ export default function GameMap({
         ? 2 * pct * pct
         : 1 - Math.pow(-2 * pct + 2, 2) / 2;
 
-      const currentLat = fromCity.lat + (toCity.lat - fromCity.lat) * ease;
-      const currentLng = fromCity.lng + (toCity.lng - fromCity.lng) * ease;
+      let currentLat: number;
+      let currentLng: number;
+      let rotation = initialRotation;
+
+      if (ctrlPt) {
+        // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+        const t = ease;
+        const t1 = 1 - t;
+        currentLat = t1 * t1 * fromCity.lat + 2 * t1 * t * ctrlPt[0] + t * t * toCity.lat;
+        currentLng = t1 * t1 * fromCity.lng + 2 * t1 * t * ctrlPt[1] + t * t * toCity.lng;
+        // Tangent direction for dynamic rotation: B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
+        const tangentLat = 2 * t1 * (ctrlPt[0] - fromCity.lat) + 2 * t * (toCity.lat - ctrlPt[0]);
+        const tangentLng = 2 * t1 * (ctrlPt[1] - fromCity.lng) + 2 * t * (toCity.lng - ctrlPt[1]);
+        rotation = -Math.atan2(tangentLat, tangentLng) * (180 / Math.PI);
+      } else {
+        currentLat = fromCity.lat + (toCity.lat - fromCity.lat) * ease;
+        currentLng = fromCity.lng + (toCity.lng - fromCity.lng) * ease;
+      }
 
       trainMarker.setLatLng([currentLat, currentLng]);
+      // Update icon rotation dynamically (for bezier arc boats)
+      if (ctrlPt) {
+        const el = trainMarker.getElement();
+        if (el) {
+          const inner = el.querySelector('.leaflet-train-icon-marker > div') as HTMLElement | null
+            ?? el.firstElementChild as HTMLElement | null;
+          if (inner) inner.style.transform = `rotate(${rotation}deg)`;
+        }
+      }
 
       if (pct < 1) {
         requestAnimationFrame(updateFrame);
@@ -266,14 +315,10 @@ export default function GameMap({
         const toCity = cities.find(c => c.id === edge.to);
         if (fromCity && toCity) {
           const eType = edge.type === 'balsa' ? 'balsa' : 'rail';
-          // Play train traveling from origin to destination on first build
-          // (balsa routes skip the initial animation since boats can't go through land)
-          if (eType !== 'balsa') {
-            animateTrainPath(fromCity, toCity, eType);
-          }
-          // Start continuous shuttle if edge is already complete (rail only — balsa shuttle
-          // would cross land in straight-line interpolation)
-          if (eType !== 'balsa' && edge.status !== 'building' && !activeRouteTrainsRef.current.has(edge.id)) {
+          // Play icon traveling from origin to destination on first build
+          animateTrainPath(fromCity, toCity, eType);
+          // Start continuous shuttle if edge is already complete
+          if (edge.status !== 'building' && !activeRouteTrainsRef.current.has(edge.id)) {
             const tripDuration = Math.max(3000, Math.min(8000, edge.distance * 6));
             activeRouteTrainsRef.current.add(edge.id);
             const shuttle = (from: City, to: City) => {
@@ -305,8 +350,7 @@ export default function GameMap({
       const completedEdges = edgesRef.current.filter(e => e.status !== 'building');
       if (completedEdges.length === 0) return;
 
-      // Skip balsa (ferry) routes — straight-line animation would cross land
-      const idleEdges = completedEdges.filter(e => e.type !== 'balsa' && !activeRouteTrainsRef.current.has(e.id));
+      const idleEdges = completedEdges.filter(e => !activeRouteTrainsRef.current.has(e.id));
       const toStart = idleEdges.slice(0, 3);
 
       toStart.forEach(edge => {
