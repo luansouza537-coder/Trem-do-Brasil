@@ -549,7 +549,7 @@ export function getMonthlyRevenue(
   upgradedHubs?: string[],
   silos?: string[]
 ): number {
-  const completedEdges = edges.filter(e => e.status !== 'building');
+  const completedEdges = edges.filter(e => e.status !== 'building' && e.type !== 'passenger');
   const balsaFrozen = balsaFrozenOverride || activeEffects.includes('SECA_TOCANTINS');
   const TRAIN_LEVEL_MULT: Record<1|2|3, number> = { 1: 1.0, 2: 1.25, 3: 1.60 };
   const demandMult = gameYear ? getDemandGrowthMultiplier(gameYear) : 1.0;

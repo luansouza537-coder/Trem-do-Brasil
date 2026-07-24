@@ -449,8 +449,8 @@ export default function App() {
         setTotalRevenue(prev => prev + monthlyRev);
       }
 
-      // Passenger revenue (separate from cargo)
-      const passengerRev = getPassengerMonthlyRevenue(edgesRef.current, CITIES, gameYear, activeEffects);
+      // Passenger revenue (separate from cargo; also blocked during cyber attack)
+      const passengerRev = cyberAttack ? 0 : getPassengerMonthlyRevenue(edgesRef.current, CITIES, gameYear, activeEffects);
       if (passengerRev > 0) {
         setTotalRevenue(prev => prev + passengerRev);
       }
@@ -1578,7 +1578,8 @@ export default function App() {
   };
 
   const handleSetPassengerFare = (edgeId: string, fare: number) => {
-    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, fare } : e));
+    const safeFare = Math.max(1, Math.round(fare));
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, fare: safeFare } : e));
   };
 
   const handleBuyExtraFleet = (edgeId: string) => {
@@ -1656,9 +1657,14 @@ export default function App() {
       }
 
       const refundRatio = isBuilding ? 0.5 : 1.0;
-      const baseCost = existingEdge.type === 'balsa'
-        ? Math.round(existingEdge.distance * 12000000)
-        : getTrackCostDetail(cityA, cityB, existingEdge.distance).totalCost;
+      // Use costPaid (inflation-adjusted) when available so the refund
+      // matches what the player actually spent. Fall back to base cost for
+      // edges from old saves that predate this field.
+      const baseCost = existingEdge.costPaid ?? (
+        existingEdge.type === 'balsa'
+          ? Math.round(existingEdge.distance * 12000000)
+          : getTrackCostDetail(cityA, cityB, existingEdge.distance).totalCost
+      );
       const refundedCost = Math.round(baseCost * refundRatio);
 
       const activeEffects = activeEvents.map(e => e.statusEffect);
@@ -1854,10 +1860,7 @@ export default function App() {
     });
 
     // Start construction — edge enters queue as 'building'
-    const cimentoShortage = activeEffectsList.includes('ESCASSEZ_CIMENTO');
     const rawMonths = getConstructionMonths(cityA, cityB, distanceVal, constructionType, workers);
-    const baseMths = cimentoShortage ? Math.ceil(rawMonths * 1.5) : rawMonths;
-    if (cimentoShortage) showToast('🏗️ Escassez de cimento: obra terá duração +50% mais longa!', 'info');
     const slowFactor = activeEvents.reduce((acc, e) => acc * (e.constructionSlowFactor ?? 1.0), 1.0);
     const simultaneousPenalty = getSimultaneousPenalty(constructionQueue.length + 1);
     if (constructionQueue.length >= 1) {
@@ -1873,7 +1876,7 @@ export default function App() {
     if (seasonalSlowFactor > 1.0 && (NORTE_STATES.includes(cityA.state) || NORTE_STATES.includes(cityB.state))) {
       showToast(`🌧️ Chuvas amazônicas: obra no Norte terá duração +${Math.round((seasonalSlowFactor - 1) * 100)}% mais longa`, 'info');
     }
-    const months = Math.ceil(baseMths * slowFactor * seasonalSlowFactor / simultaneousPenalty);
+    const months = Math.ceil(rawMonths * slowFactor * seasonalSlowFactor / simultaneousPenalty);
 
     // Allocate workers to the project — they stay dedicated until completion
     const allocated: GameWorkers = {
@@ -1923,6 +1926,7 @@ export default function App() {
       type: constructionType,
       resourcesConsumed: reqs,
       status: 'building',
+      costPaid: targetCost,
     };
     const nextEdges = [...edges, buildingEdge];
     setEdges(nextEdges);

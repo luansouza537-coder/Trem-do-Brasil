@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, Dispatch, SetStateAction } from 'react';
 import { Edge, GameEvent, GameWorkers } from '../types';
-import { FundGrant, getTrackCostDetail, getIntermodalGrants, getMonthlyRevenue, getActiveSeasonalEffects, WAREHOUSE_CONFIG } from '../utils/gameRules';
+import { FundGrant, getTrackCostDetail, getIntermodalGrants, getMonthlyRevenue, getPassengerMonthlyRevenue, getActiveSeasonalEffects, WAREHOUSE_CONFIG } from '../utils/gameRules';
 import { CITIES, CITY_MAP } from '../data/cities';
 
 export const STARTING_BUDGET = 1_250_000_000_000;
@@ -72,13 +72,21 @@ export function useBudget({
     let spentRail = 0;
     let spentBalsa = 0;
     edges.forEach(edge => {
-      const cityA = CITY_MAP.get(edge.from);
-      const cityB = CITY_MAP.get(edge.to);
-      if (cityA && cityB) {
-        if (edge.type === 'balsa') {
-          spentBalsa += Math.round(edge.distance * 12_000_000);
-        } else {
-          spentRail += getTrackCostDetail(cityA, cityB, edge.distance).totalCost;
+      // Use costPaid (inflation-adjusted) when available; fall back to base cost for
+      // edges created before this field existed (e.g. loaded from old saves).
+      const paid = edge.costPaid;
+      if (paid !== undefined) {
+        if (edge.type === 'balsa') spentBalsa += paid;
+        else spentRail += paid;
+      } else {
+        const cityA = CITY_MAP.get(edge.from);
+        const cityB = CITY_MAP.get(edge.to);
+        if (cityA && cityB) {
+          if (edge.type === 'balsa') {
+            spentBalsa += Math.round(edge.distance * 12_000_000);
+          } else {
+            spentRail += getTrackCostDetail(cityA, cityB, edge.distance).totalCost;
+          }
         }
       }
     });
@@ -91,9 +99,16 @@ export function useBudget({
     const seasonalRevForDisplay = getActiveSeasonalEffects(monthIdx).reduce((acc, s) => acc * (s.revenueFactor ?? 1.0), 1.0);
     const balsaFrozenForDisplay = activeEvents.some(e => e.balsaFrozen);
     const warehouseBonusDisplay = warehouses.length * WAREHOUSE_CONFIG.monthlyBonus;
-    const monthlyRevenue = Math.round(
-      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs, silos) * seasonalRevForDisplay
-    ) + warehouseBonusDisplay;
+    const cyberAttackDisplay = activeEffectsForDisplay.includes('CYBER_ATAQUE');
+    const compoundRevMultDisplay = Math.max(0, Math.min(2.0,
+      activeEvents.reduce((acc, e) => acc * (e.revenueMultiplier ?? 1.0), 1.0)
+    ));
+    const cargoRevDisplay = cyberAttackDisplay ? 0 : Math.round(
+      getMonthlyRevenue(edges, workers, activeEffectsForDisplay, CITIES, balsaFrozenForDisplay, gameYear, upgradedHubs, silos)
+      * compoundRevMultDisplay * seasonalRevForDisplay
+    );
+    const passengerRevDisplay = cyberAttackDisplay ? 0 : getPassengerMonthlyRevenue(edges, CITIES, gameYear, activeEffectsForDisplay);
+    const monthlyRevenue = cargoRevDisplay + passengerRevDisplay + warehouseBonusDisplay;
 
     return {
       totalSpent,

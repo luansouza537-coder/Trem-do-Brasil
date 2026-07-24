@@ -16,6 +16,7 @@ export interface Edge {
   type?: 'rail' | 'balsa' | 'passenger';
   resourcesConsumed?: GameResources;
   status?: 'complete' | 'building';
+  costPaid?: number;
   doubled?: boolean;
   trainLevel?: 1 | 2 | 3;
   passenger?: boolean;
